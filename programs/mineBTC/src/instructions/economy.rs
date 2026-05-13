@@ -487,19 +487,21 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
     // Simplified: Price = (sol_for_swap * 10^6) / (dbtc_received * 10^9)
     // Store as lamports per whole MINE_BTC token:
     // Final: Price = (sol_for_swap * 10^6) / dbtc_received
-    let current_price = if dbtc_received > 0 {
-        // Prevent overflow by checking limits
-        // Calculate: (sol_for_swap * 10^DBTC_DECIMALS) / dbtc_received
-        // This gives lamports per whole MINE_BTC.
-        let raw_price = (sol_for_swap as u128)
-            .checked_mul(DBTC_BASE_UNITS as u128)
-            .ok_or(ErrorCode::ArithmeticOverflow)?
-            .checked_div(dbtc_received as u128)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        u64::try_from(raw_price).map_err(|_| ErrorCode::ArithmeticOverflow)?
-    } else {
-        0
-    };
+    //
+    // Hard-reject zero-output swaps. Raydium's `swap_base_input` accepts
+    // `min_amount_out = 0`, so an attacker who can move the pool around the
+    // CPI (e.g. sandwich) could drive `dbtc_received` to 0, push a 0-price
+    // entry into `price_history`, and corrupt the weighted-average → emission
+    // rate. The whole oracle pipeline is meaningless without a non-zero
+    // price, so we revert the snapshot instead of recording a sentinel.
+    require!(dbtc_received > 0, ErrorCode::InvalidAmount);
+    let raw_price = (sol_for_swap as u128)
+        .checked_mul(DBTC_BASE_UNITS as u128)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_div(dbtc_received as u128)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let current_price = u64::try_from(raw_price).map_err(|_| ErrorCode::ArithmeticOverflow)?;
+    require!(current_price > 0, ErrorCode::InvalidAmount);
 
     // Calculate human-readable price for logging
     // Convert back to actual SOL per MINE_BTC
@@ -860,7 +862,88 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
         return Ok(());
     }
 
-    // Transfer SOL from buybacks vault to sol_token_account
+    // === Pool-state read happens BEFORE any SOL movement ===
+    //
+    // Order matters here for a P0 reason: an earlier version of this ix did
+    // the buybacks-vault → `sol_token_account` transfer first, then read the
+    // pool's `sol_vault` / `lp_supply`, then early-returned `Ok(())` if either
+    // was zero. With the old unchecked `sol_token_account`, that ordering let
+    // a caller drain `sol_for_pol` straight into an attacker-owned WSOL
+    // account by also passing a zero-balance `sol_vault`. We've since
+    // anchored `sol_token_account` to the canonical `authority_pda`-owned
+    // WSOL ATA (see Accounts struct) so the drain is no longer possible
+    // even on the early-return path — but we also reorder the work here so
+    // the early-return fires *before* any SOL leaves the buybacks vault.
+    // Belt and suspenders: either change alone closes the bug, both together
+    // make accidental reintroduction harder.
+    //
+    // We also pin `sol_vault` / `dbtc_vault` / `lp_mint` to the addresses
+    // recorded in the canonical pool state so a forged token account with
+    // matching mint can't slip through subsequent reads.
+    let available_dbtc = ctx.accounts.dbtc_token_account.amount;
+    let authority_seeds = &[
+        DEGEN_BTC_VAULT_AUTHORITY_SEED.as_ref(),
+        &[dbtc_mining.vault_auth_bump],
+    ];
+    let signer_seeds = &[&authority_seeds[..]];
+
+    let (lp_supply, pool_token_0_vault, pool_token_1_vault, pool_token_0_mint, pool_lp_mint) = {
+        let pool_state = RaydiumAccountLoad::<RaydiumPoolState>::load_data_mut(
+            ctx.accounts.pool_state.as_ref(),
+        )?;
+        (
+            pool_state.lp_supply,
+            pool_state.token_0_vault,
+            pool_state.token_1_vault,
+            pool_state.token_0_mint,
+            pool_state.lp_mint,
+        )
+    };
+
+    // Match `sol_vault` / `dbtc_vault` against the pool's recorded vaults.
+    // Token-0 is whichever of (sol_mint, dbtc_mint) sorts lower — same
+    // ordering as the deposit CPI below.
+    let sol_is_token_0 = pool_token_0_mint == ctx.accounts.sol_mint.key();
+    let (expected_sol_vault, expected_dbtc_vault) = if sol_is_token_0 {
+        (pool_token_0_vault, pool_token_1_vault)
+    } else {
+        (pool_token_1_vault, pool_token_0_vault)
+    };
+    require!(
+        ctx.accounts.sol_vault.key() == expected_sol_vault,
+        ErrorCode::InvalidAccount
+    );
+    require!(
+        ctx.accounts.dbtc_vault.key() == expected_dbtc_vault,
+        ErrorCode::InvalidAccount
+    );
+    require!(
+        ctx.accounts.lp_mint.key() == pool_lp_mint,
+        ErrorCode::InvalidAccount
+    );
+
+    let sol_vault_balance = {
+        let data = ctx.accounts.sol_vault.try_borrow_data()?;
+        anchor_spl::token::TokenAccount::try_deserialize(&mut &data[..])?.amount
+    };
+
+    let dbtc_vault_balance = {
+        let data = ctx.accounts.dbtc_vault.try_borrow_data()?;
+        anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &data[..])?.amount
+    };
+
+    // Early-return for empty/uninit pool BEFORE moving any SOL out of the
+    // buybacks vault. `lp_token_amount == 0` is the permissionless path; the
+    // admin override path with `lp_token_amount > 0` falls through and lets
+    // Raydium's deposit CPI surface the bad-pool error.
+    if lp_token_amount == 0 && (sol_vault_balance == 0 || lp_supply == 0) {
+        msg!("   ⚠️ Pool vault balance is zero, skipping LP operation");
+        dbtc_mining.lp_operation_pending = false;
+        return Ok(());
+    }
+
+    // Transfer SOL from buybacks vault to sol_token_account (the canonical
+    // `authority_pda`-owned WSOL ATA enforced by the Accounts struct).
     msg!(
         "\n   💸 === TRANSFERRING {} SOL FOR LP from buybacks vault to sol_token_account ===",
         total_sol_for_lp as f64 / 1e9
@@ -887,34 +970,9 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
         },
     ))?;
 
-    // Read pool state
-    let available_dbtc = ctx.accounts.dbtc_token_account.amount;
-    let authority_seeds = &[
-        DEGEN_BTC_VAULT_AUTHORITY_SEED.as_ref(),
-        &[dbtc_mining.vault_auth_bump],
-    ];
-    let signer_seeds = &[&authority_seeds[..]];
-
     let lp_balance_before = {
         let data = ctx.accounts.lp_token_account.try_borrow_data()?;
         anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &data[..])?.amount
-    };
-
-    let sol_vault_balance = {
-        let data = ctx.accounts.sol_vault.try_borrow_data()?;
-        anchor_spl::token::TokenAccount::try_deserialize(&mut &data[..])?.amount
-    };
-
-    let dbtc_vault_balance = {
-        let data = ctx.accounts.dbtc_vault.try_borrow_data()?;
-        anchor_spl::token_interface::TokenAccount::try_deserialize(&mut &data[..])?.amount
-    };
-
-    let lp_supply = {
-        let pool_state = RaydiumAccountLoad::<RaydiumPoolState>::load_data_mut(
-            ctx.accounts.pool_state.as_ref(),
-        )?;
-        pool_state.lp_supply
     };
 
     msg!(
@@ -951,12 +1009,9 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
             required_dbtc,
         )
     } else {
-        // Guard against division by zero if pool state is empty
-        if sol_vault_balance == 0 || lp_supply == 0 {
-            msg!("   ⚠️ Pool vault balance is zero, skipping LP operation");
-            dbtc_mining.lp_operation_pending = false;
-            return Ok(());
-        }
+        // The (sol_vault_balance == 0 || lp_supply == 0) early-return is
+        // hoisted above — see the pool-state read block. Reaching this branch
+        // means both are non-zero, so the divisions below are safe.
         let lp_from_sol = u64_mul_div(available_sol, lp_supply, sol_vault_balance)?;
         let required_dbtc_post_fee = u64_mul_div(lp_from_sol, dbtc_vault_balance, lp_supply)?;
         let required_dbtc = gross_up_for_token2022_fee(
@@ -1092,8 +1147,12 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!("   💰 LP tokens minted: {}", lp_tokens_minted);
 
+    // Re-deserialize directly via Account's underlying info — the typed
+    // `Account<TokenAccount>` was loaded at ix entry and won't reflect the
+    // post-CPI balance change without an explicit reload.
     let sol_balance_after = {
-        let data = ctx.accounts.sol_token_account.try_borrow_data()?;
+        let info = ctx.accounts.sol_token_account.to_account_info();
+        let data = info.try_borrow_data()?;
         anchor_spl::token::TokenAccount::try_deserialize(&mut &data[..])?.amount
     };
     msg!("   💰 SOL balance after: {}", sol_balance_after);
@@ -1219,9 +1278,11 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
         });
     }
 
-    // Return remaining SOL
+    // Return remaining SOL — re-read fresh data, same reason as
+    // `sol_balance_after` above.
     let sol_remaining = {
-        let data = ctx.accounts.sol_token_account.try_borrow_data()?;
+        let info = ctx.accounts.sol_token_account.to_account_info();
+        let data = info.try_borrow_data()?;
         anchor_spl::token::TokenAccount::try_deserialize(&mut &data[..])?.amount
     };
 
@@ -1878,9 +1939,21 @@ pub struct AddLpAndBurn<'info> {
     )]
     pub dbtc_token_account: InterfaceAccount<'info, TokenAccount2022>,
 
-    /// CHECK: SOL token account for LP addition
-    #[account(mut)]
-    pub sol_token_account: UncheckedAccount<'info>,
+    /// SOL token account for LP addition. **Must be the canonical WSOL ATA
+    /// owned by `authority_pda`** — without this binding, a caller could pass
+    /// an attacker-owned WSOL account and siphon the earnmarked
+    /// `buybacks_account.sol_for_pol` through the early-return path (e.g. by
+    /// also passing a zero-balance `sol_vault`). With the constraint, any
+    /// SOL transferred here is held under `authority_pda`'s signer authority
+    /// and is recovered to `buybacks_sol_vault` by the trailing close at the
+    /// end of this ix. SnapshotPrice init-if-needs this exact ATA, so it will
+    /// exist by the time the first LP burn fires.
+    #[account(
+        mut,
+        token::mint = sol_mint,
+        token::authority = authority_pda,
+    )]
+    pub sol_token_account: Account<'info, TokenAccount>,
 
     /// CHECK: MINE_BTC mint
     #[account(mut)]

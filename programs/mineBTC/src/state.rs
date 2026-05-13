@@ -105,6 +105,14 @@ pub const FACTION_WAR_RANK_WEIGHT_BPS: [u16; NUM_FACTIONS] = [
 
 /// SOL fee taken from each bet as a whole percent of the bet amount.
 pub const DEFAULT_PROTOCOL_FEE_PCT: u8 = 15;
+/// Minimum protocol fee percentage. Referral cuts (up to 1% of gross via
+/// `REFERRAL_FEE_BPS_SAME_FACTION = 100 bps`) are deducted **from** the
+/// per-bet protocol fee in `internal_process_bets`. If `protocol_fee_pct`
+/// were ever set below the max referral cut, that subtraction would
+/// underflow and DOS every referred user's bet. We pin the floor at 1
+/// (which equals the 1% same-faction referral cap) to keep referred flows
+/// solvent regardless of admin config drift.
+pub const MIN_PROTOCOL_FEE_PCT: u8 = 1;
 /// Percent of accumulated protocol SOL used for buybacks / POL during economy cycle.
 pub const DEFAULT_BUYBACK_PCT: u8 = 70;
 /// Percent of per-bet SOL fee routed to the staker reward vault.

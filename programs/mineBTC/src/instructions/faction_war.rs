@@ -830,7 +830,11 @@ pub fn initialize_war_internal(
         ErrorCode::InvalidParameters
     );
 
-    let faction_count = global_config.supported_factions.len() as u8;
+    require!(
+        global_config.supported_factions.len() == NUM_FACTIONS,
+        ErrorCode::InvalidFactionId
+    );
+    let faction_count = NUM_FACTIONS as u8;
     let start_ranks = war_config.prev_ranks;
     let unassigned = tax_config.unassigned_war_treasury_amount;
 
@@ -1292,6 +1296,10 @@ pub fn claim_war_rewards_internal(
             msg!("📊 [faction_war.claim_war_rewards_internal] hashbeast calc hashbeast_pool={} faction_mutation_total={} user_mutation_score={}",
                 hashbeast_pool, faction_mutation_total, user_mutation_score);
             if hashbeast_pool > 0 && faction_mutation_total > 0 {
+                require!(
+                    user_mutation_score <= faction_mutation_total,
+                    ErrorCode::InvalidState
+                );
                 let bonus_u128 = (hashbeast_pool as u128)
                     .checked_mul(user_mutation_score as u128)
                     .ok_or(ErrorCode::ArithmeticOverflow)?

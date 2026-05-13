@@ -509,7 +509,14 @@ pub fn int_unstake_degenbtc(ctx: Context<UnstakeMineBtc>, position_index: u8) ->
             current_ts,
             EMERGENCY_WITHDRAWAL_PENALTY_PCT as u64,
         )?;
-        return_amount = staked_amount - penalty_amount;
+        // `calculate_emergency_tax` caps penalty at
+        // `EMERGENCY_WITHDRAWAL_PENALTY_PCT (15) × remaining_pct (≤100) × stake / 10_000`,
+        // which is always ≤ stake. Using checked_sub anyway so a future change
+        // to the penalty formula can't quietly turn into an underflow that
+        // mints free tokens via wrap.
+        return_amount = staked_amount
+            .checked_sub(penalty_amount)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
             "   Total Staked: {}, Returned: {}, Penalty: {}",
             staked_amount,
@@ -1050,7 +1057,10 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
             current_ts,
             EMERGENCY_WITHDRAWAL_PENALTY_PCT as u64,
         )?;
-        return_amount = staked_amount - penalty_amount;
+        // Defensive checked_sub: see matching note in `int_unstake_degenbtc`.
+        return_amount = staked_amount
+            .checked_sub(penalty_amount)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
             "   Total Staked: {}, Returned: {}, Penalty: {}",
             staked_amount,

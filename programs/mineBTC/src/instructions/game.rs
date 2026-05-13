@@ -156,6 +156,11 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
     require!(round_duration_seconds > 0, ErrorCode::InvalidParameters);
     require!(global_state.is_active, ErrorCode::InvalidParameters);
     require!(global_state.can_begin_round, ErrorCode::CannotBeginRound);
+    require!(
+        ctx.accounts.global_config.supported_factions.len() == NUM_FACTIONS
+            && ctx.accounts.war_state.faction_count as usize == NUM_FACTIONS,
+        ErrorCode::InvalidFactionId
+    );
 
     // Once the LP burn has snapshotted the cycle's final round, no new rounds
     // start under the current war — settle_war must run first so the
@@ -354,6 +359,7 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
     let global_config = &ctx.accounts.global_config;
     let clock = Clock::get()?;
     let faction_count = global_config.supported_factions.len();
+    require!(faction_count == NUM_FACTIONS, ErrorCode::InvalidFactionId);
 
     if game_session.stage == 1 || game_session.stage == 2 {
         msg!("⚠️ [end_round] early return stage={}", game_session.stage);
@@ -884,11 +890,18 @@ fn track_war_round_completion(
     );
 
     let winning_faction_index = winning_faction_id as usize;
-    // Only count this as a faction "round win" if there was real betting
-    // activity. Empty rounds still flow through here (so the boundary round
-    // can fold cleanly), but their random hash-picked "winner" shouldn't
-    // shift cycle rank tiebreakers since no economic activity backed it.
-    if actually_distributed > 0 {
+    // "Real activity" = any economic bet (SOL or ticket-backed points)
+    // landed in this round. Previously this was gated on
+    // `actually_distributed > 0` (dBTC paid to winners), but that's the
+    // wrong proxy: at the emission floor with no exact-direction winners,
+    // dBTC distribution can be 0 even though the country leaderboard,
+    // jackpot pot, and SOL betting volume all moved. Gating round-wins
+    // / drought-reset on bets instead means "round happened" → bookkeeping
+    // fires, "empty boundary round with a hash-picked random winner" → it
+    // doesn't.
+    let has_real_activity =
+        game_session.total_sol_bets > 0 || game_session.total_points_bets > 0;
+    if has_real_activity {
         war_state.round_wins[winning_faction_index] = war_state
             .round_wins[winning_faction_index]
             .checked_add(1)
@@ -964,11 +977,18 @@ fn track_war_round_completion(
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
         }
 
-        // Snapshot the winner's volume AFTER folding this round in, then reset
-        // it so the next drought starts from zero.
-        let snap = war_config.sol_volume_since_last_win[winning_faction_index];
-        game_session.winning_faction_volume_at_round = snap;
-        war_config.sol_volume_since_last_win[winning_faction_index] = 0;
+        // Snapshot the winner's volume AFTER folding this round in, then
+        // reset it so the next drought starts from zero. Gated on the same
+        // `has_real_activity` predicate as the `round_wins` bump above —
+        // empty boundary rounds pick a hash-random "winner" with no economic
+        // backing, so they must not wipe that faction's drought history.
+        // Skipping the snap is also fine — empty rounds produce no claims,
+        // so nothing reads `winning_faction_volume_at_round`.
+        if has_real_activity {
+            let snap = war_config.sol_volume_since_last_win[winning_faction_index];
+            game_session.winning_faction_volume_at_round = snap;
+            war_config.sol_volume_since_last_win[winning_faction_index] = 0;
+        }
 
         // Lazy boundary capture: if the LP-burn threshold has already crossed
         // but no LP burn happened during a real round to capture cycle_end_round_id
@@ -1063,11 +1083,6 @@ pub fn int_settle_round<'info>(
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
         }
     }
-
-    global_state.last_round_id = game_session.round_id;
-    game_session.stage = 2;
-    global_state.can_begin_round = true;
-    msg!("✅ [settle_round] round={} stage=2 can_begin=true", game_session.round_id);
 
     // --- JACKPOT DISTRIBUTION (inline) ---
     if !game_session.jackpot_distributed && game_session.jackpot_hit {
@@ -1196,6 +1211,17 @@ pub fn int_settle_round<'info>(
         winning_faction_volume_at_round: volume_snapshot,
         timestamp: Clock::get()?.unix_timestamp,
     });
+
+    // Mark the round claimable only after jackpot distribution and faction-war
+    // folding have both completed. This is also the final account state users
+    // observe after the atomic settle_round transaction commits.
+    accounts.global_game_state.last_round_id = round_id_for_event;
+    accounts.game_session.stage = 2;
+    accounts.global_game_state.can_begin_round = true;
+    msg!(
+        "✅ [settle_round] round={} stage=2 can_begin=true",
+        round_id_for_event
+    );
 
     Ok(())
 }

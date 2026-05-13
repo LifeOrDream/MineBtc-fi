@@ -253,7 +253,7 @@ pub fn set_raydium_pool_state_internal(
 /// Add a single faction to the global config (admin only)
 ///
 /// Adds a new faction to the supported factions list and initializes its FactionState account.
-/// Maximum of MAX_FACTIONS (15) factions can be added.
+/// Maximum of MAX_FACTIONS (12) factions can be added.
 ///
 /// # Parameters
 /// - `faction_name`: Name of the faction (max MAX_FACTION_NAME_LENGTH characters)
@@ -454,6 +454,15 @@ pub fn update_fees_internal(
 
         require!(
             protocol_fee_pct <= PERCENTAGE_DENOMINATOR_U8,
+            ErrorCode::InvalidParameters
+        );
+        // Referral cuts (up to 100 bps of gross) are taken from the per-bet
+        // protocol fee in `internal_process_bets` via `fee.checked_sub(cut)`.
+        // Setting protocol_fee_pct below MIN_PROTOCOL_FEE_PCT would cause
+        // that subtraction to underflow and DOS every referred user. Pin the
+        // floor so the runtime math is always solvent.
+        require!(
+            protocol_fee_pct >= MIN_PROTOCOL_FEE_PCT,
             ErrorCode::InvalidParameters
         );
         require!(
