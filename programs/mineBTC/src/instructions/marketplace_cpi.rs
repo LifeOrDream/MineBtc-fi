@@ -1,32 +1,188 @@
-// # Marketplace CPI + Permissionless Market Making
-//
-// This module is the on-chain market maker for the program-owned HashBeast inventory.
-// The crank-gated flow is gone; everything here is either user-signed or
-// permissionless (anyone can call, with a small keeper bounty paid from
-// `inventory_sweep_vault` where applicable).
-//
-// User-signed (asset owner is signer):
-// - `list_user_nft` / `cancel_user_listing` / `update_user_listing_price`
-//   — wrap the marketplace ix and keep `FloorQueue` in sync atomically.
-// - `buy_user_listing` — wraps `degenbtc_market::buy_listing`, also records
-//   the sale into `SaleHistory` if it qualifies as a real-demand signal.
-//
-// Permissionless:
-// - `register_floor_listing` — anyone pushes an existing user listing into
-//   the sorted `FloorQueue`. Bots will register their own listings + others
-//   to stay competitive for sweep keeper rewards.
-// - `sweep_floor_lowest` — buys queue.entries[0], or purges a stale head so
-//   bots can retry, then disposes a live sweep (queue -> relist -> burn).
-// - `record_floor_snapshot` — daily snapshot using qualifying user-to-user
-//   sale median, with floor-queue median as low-volume fallback.
-// - `expire_program_listing` — 7-day TTL trigger that re-disposes a stuck
-//   inventory listing (relist with progressive discount, or burn).
-// - `handle_inventory_proceeds` — splits accrued sale proceeds 50/50 to
-//   sweep_vault and sol_treasury.
-// - `inventory_finalize_sale` — closes a sold inventory `RebornEntry`
-//   after verifying the asset's owner is no longer `inventory_pda`.
-// - `claim_lootbox_nft` — delivers a reserved loser-roll HashBeast to its
-//   recorded winner.
+//! # Marketplace CPI + Permissionless On-Chain Market Maker
+//!
+//! This module is the bridge between the `mineBTC` program and the
+//! standalone `degenbtc_market` program, **and** the on-chain market maker
+//! that defends the HashBeast floor price by buying cheap listings into a
+//! protocol-owned inventory. There is no admin crank — every path is either
+//! user-signed (the asset owner) or fully permissionless (anyone can call,
+//! with a small keeper bounty paid from `inventory_sweep_vault`).
+//!
+//! ## Why this module exists
+//!
+//! Without floor support, secondary-market panic sells could spiral the
+//! HashBeast floor below the breed price, breaking the breeding bonding
+//! curve and trapping new mints. To prevent that, the protocol earmarks a
+//! slice of every distributed SOL fee into `inventory_sweep_vault`, then
+//! lets permissionless keepers spend it on cheap floor listings. The
+//! protocol absorbs those NFTs into `inventory_pda` and disposes them via:
+//!   - dropping into a faction's `LootboxQueue` (rewards round losers), or
+//!   - relisting at a markup (resells back into the market), or
+//!   - burning (only on deep bearish trend).
+//!
+//! ## State
+//!
+//! ```text
+//!   InventoryPool        seeds [INVENTORY_POOL]
+//!                        — cached marketplace_program / marketplace_config
+//!                        — total_count (cap MAX_INVENTORY)
+//!                        — the account *itself* IS the inventory custody
+//!                          PDA (same address as `inventory_pda` in every
+//!                          struct). Sale proceeds land here as lamports.
+//!
+//!   inventory_sweep_vault   seeds [INVENTORY_SWEEP_VAULT]
+//!                           system-owned SOL vault, no data. Pays for
+//!                           sweep buys + keeper bounties.
+//!
+//!   FloorQueue           seeds [FLOOR_QUEUE]
+//!                        sorted-ascending fixed-size buffer of the
+//!                        cheapest live user listings (size FLOOR_QUEUE_SIZE)
+//!
+//!   SaleHistory          seeds [SALE_HISTORY]
+//!                        ringbuffer of last SALE_HISTORY_SIZE qualifying
+//!                        user-to-user sales (price + timestamps + parties).
+//!
+//!   FloorHistory         seeds [FLOOR_HISTORY]
+//!                        7-day rolling ringbuffer of (timestamp,
+//!                        anchor_price) snapshots. `current_anchor()` is the
+//!                        floor reference used by breed + sweep pricing.
+//!                        Snapshots are pushed at most once per 24h.
+//!
+//!   RebornEntry          seeds [REBORN_ENTRY, asset]
+//!                        one per asset currently held by inventory_pda.
+//!                        Tracks faction / quality / status (Listed |
+//!                        Lootbox) / original_buy_price / expire_count.
+//!
+//!   LootboxClaim         seeds [LOOTBOX_CLAIM, user]
+//!                        per-user reservation populated by a winning
+//!                        loser-roll. Delivery via `claim_lootbox_nft`.
+//! ```
+//!
+//! ## Money flow
+//!
+//! ```text
+//!   protocol SOL fees (economy.rs)
+//!         │
+//!         ▼ DistributeSolFees splits `nft_market_making_pct`
+//!   inventory_sweep_vault  ◀──┐
+//!         │                    │ 50% (handle_inventory_proceeds)
+//!         │ sweep buy ≤        │
+//!         │ min(5%×vault,      │
+//!         │     1.05×anchor)   │
+//!         ▼                    │
+//!   inventory_pda  ── sale proceeds (any time the protocol lists & sells)
+//!         │                    │
+//!         │ 50% to sweep_vault │
+//!         │ 50% to sol_treasury (handle_inventory_proceeds)
+//!         └────────────────────┘
+//!
+//!   keeper bounties (out of inventory_sweep_vault):
+//!     KEEPER_REWARD_LAMPORTS         = 500k  ; real sweep / snapshot / expire
+//!     STALE_PURGE_KEEPER_REWARD…     = 20k   ; queue head cleanup only
+//! ```
+//!
+//! ## Caller surface
+//!
+//! **User-signed (asset owner is signer):**
+//! - `list_user_nft` / `cancel_user_listing` / `update_user_listing_price`
+//!   wrap the marketplace ix and keep `FloorQueue` in sync atomically.
+//! - `buy_user_listing` wraps `degenbtc_market::buy_listing`, pops the
+//!   listing from `FloorQueue` if present, and records the sale into
+//!   `SaleHistory` if it qualifies as a real-demand signal
+//!   (user-to-user, ≥5min listing age).
+//!
+//! **Permissionless (anyone can crank):**
+//! - `register_floor_listing` — pushes an existing live marketplace listing
+//!   into the sorted `FloorQueue` (deduped, address-bound to the canonical
+//!   HashBeast collection, min-price gated). No direct reward; bots register
+//!   to keep the queue accurate so they can win sweep races.
+//! - `sweep_floor_lowest` — buys `floor_queue.entries[0]` from
+//!   `inventory_sweep_vault`, disposes the swept asset (lootbox-push /
+//!   relist / burn), pays full `KEEPER_REWARD_LAMPORTS`. If the head is
+//!   stale (listing canceled out from under us), purges that one entry and
+//!   pays the *reduced* `STALE_PURGE_KEEPER_REWARD_LAMPORTS` — this lower
+//!   reward exists specifically to defuse a list→raw-cancel→purge spam
+//!   attack that could otherwise drain the vault via keeper bounties. See
+//!   the constant docs.
+//! - `record_floor_snapshot` — once per 24h, computes a new anchor (median
+//!   of qualifying recent user-to-user sales, falling back to floor-queue
+//!   median if sales are sparse) and pushes it to `FloorHistory`.
+//! - `expire_program_listing` — after a 7-day TTL, cancels a stuck
+//!   inventory-owned listing and re-runs the disposition cascade. After
+//!   `MAX_EXPIRES` strikes the asset is burned.
+//! - `handle_inventory_proceeds` — drains accumulated sale lamports from
+//!   inventory_pda, splitting 50/50 between sweep_vault and sol_treasury.
+//! - `inventory_finalize_sale` — closes a sold inventory `RebornEntry`
+//!   after verifying the on-chain asset owner is no longer inventory_pda.
+//! - `claim_lootbox_nft` — delivers a reserved loser-roll HashBeast to its
+//!   recorded winner. Cranker can be anyone; recipient is fixed by the
+//!   `LootboxClaim.user` address constraint on the `user` field.
+//!
+//! ## Oracle (anchor) design
+//!
+//! The "floor anchor" the protocol prices against is the head of
+//! `FloorHistory`. Snapshots:
+//!   - fire at most once per 24h (`FLOOR_SNAPSHOT_INTERVAL_SECS`),
+//!   - prefer the median of recent user-to-user sales (≥ `MIN_SALES_FOR_ANCHOR`
+//!     samples in the last 24h, with ≥5min listing-age qualifier),
+//!   - fall back to `FloorQueue` median when sales volume is too low.
+//!
+//! Trend is computed across all populated history slots, clamped to ±100%
+//! per 7d.
+//!
+//! **Wash-trade resistance:** the 5-min listing-age qualifier means each
+//! manipulation cycle takes ≥5min; the median over 32 sales means ≥17 wash
+//! trades are needed to move the median; the ±100% trend clamp limits the
+//! per-snapshot price move; and the 24h interval caps how fast the anchor
+//! can be moved. Manipulation cost grows with the move size (each wash trade
+//! pays marketplace fee + tx gas), so brute anchor manipulation is loss-
+//! leading at typical vault sizes.
+//!
+//! ## Disposition cascade (sweep_floor_lowest + expire_program_listing)
+//!
+//! Both flows end in the same three-way decision for what to do with an
+//! asset that's now owned by `inventory_pda`:
+//!
+//! 1. **Lootbox queue has space** → push to faction's `LootboxQueue`. The
+//!    asset becomes a reward for a future round-losing player in that
+//!    faction. `RebornEntry.status = Lootbox`.
+//! 2. **Trend < `BURN_TREND_BPS_THRESHOLD` (-30%)** → burn the asset and
+//!    close `RebornEntry`. Deep-bear deflationary lever.
+//! 3. **Otherwise** → relist at `apply_markup(buy_price, markup_bps)` where
+//!    `markup_bps = compute_relist_markup_bps(trend, expire_count)`. Each
+//!    expire strike chips the markup down. `RebornEntry.status = Listed`.
+//!
+//! ## Key invariants
+//!
+//! - `inventory_pool.total_count` ≤ `MAX_INVENTORY` (200). Enforced on every
+//!   intake path.
+//! - `inventory_sweep_vault` lamports always ≥ `MIN_SWEEP_RESERVE_LAMPORTS`
+//!   after any payout (the floor inside `pay_keeper`).
+//! - Per-sweep cost ≤ `min(vault × 5%, anchor × 1.05)`.
+//! - `FloorQueue` is sorted ascending by price; `insert_floor_entry` enforces.
+//! - No duplicate assets in `FloorQueue` (rejected at insert).
+//! - All program-owned NFT moves use the `inventory_pool` PDA seeds; no other
+//!   PDA can authorize a transfer from inventory.
+//! - Claim recipient is always seed-bound — `claim_lootbox_nft` enforces
+//!   `user.key() == lootbox_claim.user` via `address = …` constraint.
+//!
+//! ## Future-AI-agent notes
+//!
+//! - **Never** add a permissionless path that pays from
+//!   `inventory_sweep_vault` without:
+//!   1. Rate-limiting how often a single attacker can invoke it.
+//!   2. Tying the payout to bounded value (not just "anyone can call").
+//!   3. Reviewing the attack-vector analogue of the list→raw-cancel→purge
+//!      drain that motivated `STALE_PURGE_KEEPER_REWARD_LAMPORTS`.
+//! - The `caller: Signer<'info>` field on permissionless ix is there so the
+//!   tx has a fee-payer and a stable identity for keeper rewards. It is NOT
+//!   an authority check — never assume the caller has any privilege.
+//! - `inventory_pool` and `inventory_pda` share the same address; the
+//!   former is the typed `Account<InventoryPool>` view, the latter the raw
+//!   custody view. Both seed-pinned. Keep them mutually consistent in every
+//!   Accounts struct that uses both.
+//! - The `raw_*` helpers (raw_floor_entry / raw_record_sale etc.) deserialize
+//!   in-place to keep the validator stack small. If you change any state-struct
+//!   field offsets, update the corresponding `*_OFFSET` constants here.
 
 use anchor_lang::prelude::*;
 use anchor_lang::system_program::{self as sys_prog, Transfer};
@@ -1330,12 +1486,17 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
     };
 
     let Some(chosen_entry) = maybe_chosen_entry else {
+        // Stale-head purge: pay a *reduced* keeper bounty so the cleanup is
+        // still economically viable for honest bots (covers ~14k tx gas) but
+        // can't be farmed via list → raw-cancel → purge cycles, which would
+        // otherwise turn the cleanup path into a vault drain. See the docs
+        // on `STALE_PURGE_KEEPER_REWARD_LAMPORTS` for full attack math.
         pay_keeper(
             &ctx.accounts.inventory_sweep_vault.to_account_info(),
             &ctx.accounts.caller.to_account_info(),
             &ctx.accounts.system_program.to_account_info(),
             ctx.bumps.inventory_sweep_vault,
-            KEEPER_REWARD_LAMPORTS,
+            STALE_PURGE_KEEPER_REWARD_LAMPORTS,
         )?;
         return Ok(());
     };
@@ -1347,6 +1508,12 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
     require_keys_eq!(
         chosen_entry.asset,
         ctx.accounts.hashbeast_asset.key(),
+        ErrorCode::InvalidAccount
+    );
+    // Defense-in-depth: caller must pass the correct seller account.
+    require_keys_eq!(
+        ctx.accounts.seller.key(),
+        chosen_entry.seller,
         ErrorCode::InvalidAccount
     );
     assert_listing_pda(
@@ -1455,7 +1622,7 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
             original_buy_price: chosen_entry.price,
             expire_count: 0,
         };
-        crate::instructions::helper::init_pda_account_if_needed::<RebornEntry>(
+        let was_created = crate::instructions::helper::init_pda_account_if_needed::<RebornEntry>(
             &ctx.accounts.caller.to_account_info(),
             &entry_info,
             &ctx.accounts.system_program.to_account_info(),
@@ -1463,6 +1630,9 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
             RebornEntry::LEN,
             &blank,
         )?;
+        // A pre-existing RebornEntry means stale state (e.g. finalize_sale not
+        // called after a previous sale). Refuse to overwrite — force cleanup first.
+        require!(was_created, ErrorCode::InvalidState);
 
         let depth_after = {
             let lootbox = &mut ctx.accounts.lootbox_queue;
@@ -1535,7 +1705,7 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
             original_buy_price: chosen_entry.price,
             expire_count: 0,
         };
-        crate::instructions::helper::init_pda_account_if_needed::<RebornEntry>(
+        let was_created = crate::instructions::helper::init_pda_account_if_needed::<RebornEntry>(
             &ctx.accounts.caller.to_account_info(),
             &entry_info,
             &ctx.accounts.system_program.to_account_info(),
@@ -1543,6 +1713,7 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
             RebornEntry::LEN,
             &blank,
         )?;
+        require!(was_created, ErrorCode::InvalidState);
 
         // CPI list_nft as inventory_pda. The just-closed listing PDA is the
         // same address as the new listing PDA (same seeds), so re-init is OK.
@@ -2235,6 +2406,16 @@ pub fn internal_claim_lootbox_nft(ctx: Context<ClaimLootboxNft>) -> Result<()> {
         ErrorCode::InvalidRebornStatus
     );
     require_keys_eq!(entry.asset, asset_key, ErrorCode::InvalidAccount);
+    // The asset's intake faction (recorded on `RebornEntry`) must match the
+    // winner's faction recorded at loser-roll time. This is invariant under
+    // current flow — each lootbox_queue PDA is keyed by faction, and the
+    // loser-roll only ever pops from the player's home queue. Asserting it
+    // here makes the invariant explicit so a future cross-faction reroll
+    // path can't quietly route an asset to the wrong indexer bucket.
+    require!(
+        entry.faction_id == claim.faction_id,
+        ErrorCode::InvalidFactionId
+    );
 
     let faction_id = claim.faction_id;
 

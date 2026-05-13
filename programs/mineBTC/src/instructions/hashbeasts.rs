@@ -1,3 +1,133 @@
+//! # HashBeasts — minting, staking, rebirth, breeding
+//!
+//! HashBeasts are MineBTC's primary NFT asset, implemented on Metaplex Core
+//! (mpl-core) with a per-asset `HashBeastMetadata` PDA holding game state. They
+//! serve three roles:
+//!
+//! 1. **Primary-market NFTs** minted from a bonding-curve-like pricing path
+//!    (genesis allocations) plus free-mint allowances and admin grants.
+//! 2. **Passive staking boosters** — staking a HashBeast raises the owner's
+//!    home-faction staking hashpower multiplier
+//!    (`player_data.hashbeast_multiplier`).
+//! 3. **Gameplay avatars** — used in round betting / mutation rolls. The
+//!    "deploy for gameplay" flow itself lives in `user.rs`
+//!    (`use_hashbeast_for_gameplay` / `withdraw_hashbeast_from_gameplay`);
+//!    this file owns the lifecycle entry points (mint / breed / rebirth) and
+//!    the passive staking flows (`stake_hashbeast` / `unstake_hashbeast`).
+//!
+//! ## Multiplier model — important distinction
+//!
+//! Two different multipliers live on `PlayerData`. They have NOTHING to do
+//! with each other and editing one never affects the other:
+//!
+//! | Field                                | Set by                          | Read by                          |
+//! |--------------------------------------|---------------------------------|----------------------------------|
+//! | `player_data.hashbeast_multiplier`   | `stake_hashbeast` / `unstake`   | `stake.rs` staking reward calc   |
+//! | `player_data.active_multiplier`     | mutation rolls during gameplay  | `user.rs` round / cycle scoring  |
+//!
+//! ## Account graph
+//!
+//! ```text
+//!   GlobalConfig    (program config root)
+//!       ▲
+//!       └── referenced by all mint/stake paths for is_paused / supported_factions
+//!
+//!   HashBeastConfig             ── canonical Core collection pubkey, breed flags,
+//!     seeds [HASHBEAST_CONFIG]     total_hashbeasts_minted, breed_curve params
+//!
+//!   HashBeastMintConfig         ── genesis allocation counters
+//!     seeds [HASHBEAST_MINT_CONFIG]
+//!
+//!   HashBeastMetadata           ── one per minted asset: DNA, XP, faction_id,
+//!     seeds [HASHBEAST_METADATA,    breed_count, rebirth_count, incubated flag
+//!            mint]
+//!
+//!   The on-chain mpl-core Asset is the source of truth for ownership; we
+//!   read it via `BaseAssetV1::try_from` or `get_mpl_core_owner`.
+//! ```
+//!
+//! ## Mint paths (all 4 funnel through the same metadata creation)
+//!
+//! - `batch_mint_hashbeasts` — public bonding-curve mint, batched (up to 10).
+//! - `admin_mint_hashbeast` — admin allocation (free) for treasury/airdrops.
+//! - `whitelist_mint_hashbeast` — pre-list free mints from
+//!   `HashBeastFreeMintAllowance`.
+//! - `breed_hashbeasts` — two parents → one offspring, post-genesis.
+//!
+//! All four paths:
+//!   - **MUST** receive the canonical `hashbeast_collection` (seed-pinned
+//!     via `address = hashbeast_config.hashbeast_collection` constraint +
+//!     handler-side `require!(hashbeast_collection.is_some())`). Mints
+//!     outside the official Core collection break royalties, identity, and
+//!     marketplace gating, so we hard-reject them.
+//!   - Call `create_mpl_core_asset` to mint the Core asset attached to the
+//!     collection.
+//!   - Init a `HashBeastMetadata` PDA, seeded by asset key, holding DNA/XP/
+//!     faction/incubated/rebirth/breed-count.
+//!   - Increment `hashbeast_config.total_hashbeasts_minted` (monotonic; used
+//!     for the breed bonding curve).
+//!
+//! ## Breeding economics
+//!
+//! `breed_hashbeasts` enforces an "always above marketplace floor" invariant:
+//!   - Curve price = bonding-curve formula(`breed_base_price`,
+//!     `breed_curve_a`, `total_minted`).
+//!   - Floor min price = `floor_history.current_anchor() × 1.5` (150%).
+//!   - Final price = `max(curve, floor)`.
+//!
+//! **Floor staleness guard**: we require `last_snapshot_at` to be within
+//! `BREED_FLOOR_MAX_AGE_SECS` (48h, one snapshot interval + grace). If the
+//! oracle pipeline stalls, breeding hard-reverts rather than pricing against
+//! months-old data. (See marketplace_cpi.rs for how the snapshot is fed.)
+//!
+//! Payment split: half SOL (with fee-recipient/treasury legs), half degenBTC
+//! (burn/emission split). See `BREED_*_BPS` constants in state.rs.
+//!
+//! ## Rebirth
+//!
+//! `rebirth_hashbeast` lets an owner burn a HashBeast and receive a new one
+//! with carry-over rebirth_count + 1. This is a deflationary lever that
+//! tightens supply over time. The new asset's DNA is freshly rolled; the
+//! original is burned via mpl-core CPI.
+//!
+//! ## Passive staking (`stake_hashbeast` / `unstake_hashbeast`)
+//!
+//! Stakes a HashBeast asset (transferred to a custody PDA) and adds its
+//! `passive_multiplier_bps` to `player_data.hashbeast_multiplier`, capped at
+//! `PASSIVE_HASHBEAST_STAKING_MAX_MULTIPLIER` (3x). Stake also bumps
+//! `faction_state.hashbeasts_staked_count` (faction loyalty signal).
+//!
+//! Unstaking pulls the asset back to the owner and subtracts the multiplier.
+//! Two-step: `request_unstake` sets a `unstake_request_at`, actual unstake
+//! becomes valid after `UNSTAKE_DELAY_SECS`. This prevents stake-flip
+//! attacks where someone front-runs faction-war settle.
+//!
+//! ## Tickets
+//!
+//! Free mint / breed paths can grant "free tickets" via `add_tickets_to_player`,
+//! which credit `player_data.free_tickets_remaining` for use as gameplay
+//! bet-points in `internal_join_bets`. Counters use checked-add — tickets are
+//! value accounting, not stats.
+//!
+//! ## Caller surface
+//!
+//! All mint/breed/rebirth/stake paths require the **owner of the asset** (or
+//! the recipient, in the admin case) as `Signer`. No permissionless paths
+//! here — that's the marketplace_cpi.rs module.
+//!
+//! ## Future-AI-agent notes
+//!
+//! - Never relax the `hashbeast_collection` address binding on mint paths
+//!   without also re-auditing the marketplace assumptions (e.g.
+//!   `assert_asset_collection` in marketplace_cpi.rs reads the asset's
+//!   `UpdateAuthority::Collection`).
+//! - `HashBeastMetadata` is the only authoritative game-state mirror of the
+//!   on-chain Core asset. If you add a new field, update `LEN`, init paths,
+//!   and any state migrations. Never assume "no metadata" means "not a
+//!   HashBeast" — metadata is always present for in-flow assets.
+//! - `total_hashbeasts_minted` is used as a bonding-curve x-coordinate. Don't
+//!   reset or decrement it. Burns from rebirth do NOT decrement.
+
 use crate::errors::ErrorCode;
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::AssociatedToken;
@@ -5,20 +135,7 @@ use anchor_spl::token::Token;
 use anchor_spl::token_2022::{self, Burn, Token2022, TransferChecked};
 use anchor_spl::token_interface::{Mint as Mint2022, TokenAccount as TokenAccount2022};
 use mpl_core::ID as MPL_CORE_PROGRAM_ID;
-// # HashBeast Instructions
-//
-// HashBeasts serve three distinct roles in DegenBTC:
-// - primary-market NFTs minted from the bonding-curve-like pricing path,
-// - passive staking boosters that raise a player's home-faction staking hashpower,
-// - gameplay avatars used in round betting / mutation progression (handled partly in `user.rs`).
-//
-// Important distinction:
-// - `player_data.hashbeast_multiplier` is the passive staking multiplier affected by `stake_hashbeast`.
-// - `player_data.active_multiplier` is the gameplay multiplier used for round participation.
-//
-// This file focuses on minting, passive HashBeast staking, rebirthing (`rebirth_hashbeast`),
-// and breeding. Gameplay lock / unlock flows live elsewhere.
-//
+
 
 use crate::events::*;
 use crate::instructions::helper;
@@ -1020,6 +1137,10 @@ pub fn int_stake_hashbeast(ctx: Context<StakeHashBeast>) -> Result<()> {
         player_data.staked_hashbeasts.len() < MAX_STAKED_HASHBEASTS,
         ErrorCode::InvalidParameters
     );
+    require!(
+        ctx.accounts.hashbeast_collection.is_some(),
+        ErrorCode::InvalidAccount
+    );
 
     // Transfer NFT to custody PDA (lock it)
     msg!("🔒 Transferring NFT to custody PDA (locking)");
@@ -1366,6 +1487,10 @@ pub fn int_unstake_hashbeast(ctx: Context<UnstakeHashBeast>) -> Result<()> {
     msg!("🔓 Transferring NFT back to user (unlocking)");
     let custody_seeds = &[HASHBEAST_CUSTODY_SEED, &[ctx.bumps.hashbeast_custody_pda]];
     let signer_seeds = &[&custody_seeds[..]];
+    require!(
+        ctx.accounts.hashbeast_collection.is_some(),
+        ErrorCode::InvalidAccount
+    );
 
     crate::mpl_core_helpers::transfer_mpl_core_asset(
         &ctx.accounts.hashbeast_asset.to_account_info(),

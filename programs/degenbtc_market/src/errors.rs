@@ -30,4 +30,6 @@ pub enum MarketError {
     InvalidCollection,
     #[msg("Asset deserialization failed")]
     InvalidAsset,
+    #[msg("Listing is not stale — current owner still matches seller")]
+    ListingNotStale,
 }

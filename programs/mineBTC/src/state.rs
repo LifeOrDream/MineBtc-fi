@@ -364,6 +364,17 @@ pub const SWEEP_MAX_PCT_BPS: u16 = 500;
 pub const SWEEP_MIN_ANCHOR_LAMPORTS: u64 = 10_000_000; // 0.01 SOL
 
 // ----- Keeper rewards -----
+/// Bounty paid to a keeper that purges a stale `FloorQueue` head (a queue
+/// entry whose underlying marketplace listing has been canceled / mutated
+/// out from under us). Deliberately much lower than `KEEPER_REWARD_LAMPORTS`
+/// — high enough to compensate an honest bot's tx gas (~14k lamports) so
+/// queue cleanup stays viable, low enough that an attacker can't farm it
+/// by spamming `list_user_nft` → direct `marketplace::cancel_listing`
+/// (bypassing the wrapper that would atomic-deregister) → `sweep_floor_lowest`
+/// purge cycles. At 20k vs the ~24k-gas attack cycle cost, each spam round
+/// is net-negative for the attacker, while honest bots still break even on
+/// real cleanup work.
+pub const STALE_PURGE_KEEPER_REWARD_LAMPORTS: u64 = 20_000;
 /// Bounty paid from `inventory_sweep_vault` to caller of permissionless ix.
 pub const KEEPER_REWARD_LAMPORTS: u64 = 500_000; // 0.0005 SOL
 
@@ -715,28 +726,41 @@ impl TicketTier {
 
 /// Global HashBeast configuration used outside the primary mint sale.
 ///
-/// There is no lifetime supply cap — only the genesis sale (see
-/// `HashBeastMintConfig`) is bounded. Post-genesis, HashBeasts can mint via breeding
-/// without a hard ceiling; the breed price bonding curve makes additional
-/// supply progressively expensive.
+/// Seeds: `[b"hashbeast-config"]`. Singleton. Initialized once at deploy
+/// (admin path) and mutated only via admin ix going forward.
+///
+/// **No lifetime supply cap.** Only the genesis sale is bounded (see
+/// `HashBeastMintConfig.genesis_mint_limit`). Post-genesis, HashBeasts mint
+/// via breeding without a hard ceiling; the bonding-curve breeding cost
+/// (`compute_gene_price(breed_base_price, breed_curve_a, total_minted)`)
+/// makes additional supply progressively expensive.
+///
+/// **`hashbeast_collection` is the trust anchor** for "this asset is a
+/// canonical HashBeast" — every mint/breed Accounts struct address-pins the
+/// `hashbeast_collection` field to this pubkey, every stake/use/withdraw
+/// path resolves the same constraint. Don't add a new entry point that
+/// touches a HashBeast asset without binding the collection. See
+/// `instructions/hashbeasts.rs` module docs for the full mint-flow guard.
 #[account]
 pub struct HashBeastConfig {
     pub bump: u8,
 
-    /// HashBeast collection address (Metaplex Core)
+    /// Canonical Metaplex Core collection address for HashBeasts. Set once
+    /// at admin init; mint paths refuse any other collection.
     pub hashbeast_collection: Pubkey,
 
-    /// Lifetime count of HashBeasts ever minted. Used as the bonding-curve input
-    /// for breeding cost. Burns do not reduce this counter.
+    /// Lifetime count of HashBeasts ever minted. Monotonic bonding-curve
+    /// x-coordinate for breeding price. Burns do NOT decrement this.
     pub total_hashbeasts_minted: u64,
 
-    /// Whether breeding is currently allowed
+    /// Admin kill-switch. When false, `breed_hashbeasts` reverts.
     pub breeding_allowed: bool,
 
-    /// Base price for breeding cost bonding curve (in lamports)
+    /// Bonding-curve base price for breeding (lamports). y-intercept of the
+    /// curve `compute_gene_price(...)` returns.
     pub breed_base_price: u64,
 
-    /// Curve steepness for breeding cost
+    /// Bonding-curve steepness for breeding. Higher = supply ramps faster.
     pub breed_curve_a: u64,
 }
 
@@ -2001,20 +2025,47 @@ pub enum RebornOrigin {
     Swept = 1,
 }
 
-/// Single global inventory pool PDA. Doubles as the on-chain custody address
-/// (mpl-core asset `owner` field is set to this PDA when an asset is reborn,
-/// listed, or swept). Seeds: `[b"inventory-pool"]`.
+/// Singleton inventory pool PDA. Seeds: `[b"inventory-pool"]`.
+///
+/// **Dual role:** the PDA at this address simultaneously serves as
+///   1. the typed `Account<InventoryPool>` (this struct — holds counters
+///      and cached marketplace identifiers), and
+///   2. the on-chain custody account: every HashBeast asset the protocol
+///      acquires via `sweep_floor_lowest` or holds for the lootbox queue
+///      has its mpl-core `owner` field set to this PDA.
+///
+/// Most marketplace ix in `marketplace_cpi.rs` therefore pull this PDA
+/// twice — once as `inventory_pool` (typed view, for counter mutation) and
+/// once as `inventory_pda` (raw view, for asset transfer signer). Same
+/// pubkey, same bump. The PDA signs all asset moves out of inventory
+/// (transfer to user on lootbox claim, list/cancel CPI to the marketplace,
+/// burn CPI to mpl-core) using `[INVENTORY_POOL_SEED, bump]`.
+///
+/// Sale proceeds: when the marketplace fills one of our inventory listings,
+/// the SOL lands on this PDA as raw lamports above the rent floor.
+/// `handle_inventory_proceeds` routes that surplus 50/50 to
+/// `inventory_sweep_vault` and `sol_treasury`.
+///
+/// `marketplace_program` / `marketplace_config` are cached at init to avoid
+/// passing them as args; every CPI wrapper validates the caller-supplied
+/// account against the cached pubkey.
 #[account]
 pub struct InventoryPool {
     pub bump: u8,
-    /// Cached pubkey of the marketplace program for CPI validation.
+    /// Cached pubkey of the standalone `degenbtc_market` program. CPI
+    /// wrappers `require_keys_eq!(...)` against this.
     pub marketplace_program: Pubkey,
-    /// Cached marketplace config PDA inside the marketplace program.
+    /// Cached marketplace `MarketplaceConfig` PDA inside that program.
+    /// Also `require_keys_eq!`'d in every wrapper.
     pub marketplace_config: Pubkey,
 
-    /// Live count of NFTs in inventory custody (lootbox + listed).
-    /// Used only for the MAX_INVENTORY cap; per-status counts are
-    /// derivable by indexers from events.
+    /// Live count of NFTs in inventory custody (status: Lootbox or Listed).
+    /// Bumped on intake (sweep buy success), decremented on outflow
+    /// (`claim_lootbox_nft`, `inventory_finalize_sale`, burn paths in
+    /// `expire_program_listing` / `sweep_floor_lowest`). Capped at
+    /// `MAX_INVENTORY`. Per-status counts are NOT tracked here — indexers
+    /// reconstruct them from `LootboxQueuePush` / `InventoryAssetRelisted`
+    /// / `InventoryAssetBurned` / `InventorySaleFinalized` events.
     pub total_count: u32,
 }
 
@@ -2026,26 +2077,67 @@ impl InventoryPool {
         + 4; // total_count
 }
 
-/// One per HashBeast currently held by `inventory_pda`. Closes on Sold (verified
-/// via on-chain owner check) or Dropped (claim_lootbox_nft).
+/// One per HashBeast currently held by `inventory_pda`.
 /// Seeds: `[b"reborn-entry", asset]`.
+///
+/// **Lifecycle:**
+///
+/// ```text
+///   ┌───────────────────────────────────────────────────────────────────┐
+///   │ INTAKE (creates RebornEntry, +1 InventoryPool.total_count)        │
+///   │   sweep_floor_lowest → status = Lootbox  OR  Listed  OR  (burn,   │
+///   │                        no entry)                                   │
+///   │   rebirth_hashbeast   → status = Lootbox (no relist path)         │
+///   └───────────────────────────────────────────────────────────────────┘
+///                                  │
+///                                  ▼
+///   ┌───────────────────────────────────────────────────────────────────┐
+///   │ ACTIVE                                                             │
+///   │   Lootbox: sits in `LootboxQueue[faction_id]`; awaits loser-roll. │
+///   │   Listed:  live program-owned listing on marketplace.             │
+///   └───────────────────────────────────────────────────────────────────┘
+///                                  │
+///                ┌─────────────────┼──────────────────┐
+///                ▼                 ▼                  ▼
+///   ┌────────────────────┐ ┌────────────────┐ ┌──────────────────────┐
+///   │ claim_lootbox_nft  │ │ inventory_     │ │ expire_program_      │
+///   │ (Lootbox → user)   │ │ finalize_sale  │ │ listing              │
+///   │ closes RebornEntry │ │ (Listed sold)  │ │ (Listed unsold @ 7d) │
+///   │ -1 total_count     │ │ closes entry   │ │ cancel + cascade:    │
+///   └────────────────────┘ │ -1 total_count │ │  - relist (++strike) │
+///                          └────────────────┘ │  - lootbox push      │
+///                                             │  - burn @ MAX_EXPIRES│
+///                                             └──────────────────────┘
+/// ```
+///
+/// **`original_buy_price`** is the immutable anchor for relist markup math.
+/// Across multiple expire/relist cycles, each new list price is computed as
+/// `apply_markup(original_buy_price, markup_bps)` where `markup_bps` depends
+/// on the floor trend and `expire_count`. This keeps the protocol's effective
+/// resale "cost basis" stable even as the asset is repriced over time.
+///
+/// **Quality score** is fixed at intake from
+/// `compute_quality_score(multiplier, xp, breed_count)`. Indexers use it for
+/// "rare drop" UX.
 #[account]
 pub struct RebornEntry {
     pub bump: u8,
     pub asset: Pubkey,
     pub faction_id: u8,
-    /// 0..=10_000. Snapshot at intake.
+    /// 0..=10_000. Snapshot at intake; never updated.
     pub quality_score: u16,
     pub reborn_at: i64,
-    /// `RebornStatus` enum value.
+    /// `RebornStatus` enum value (Lootbox | Listed).
     pub status: u8,
-    /// Live listing price; 0 if not listed.
+    /// Current live listing price (lamports); 0 if status != Listed.
     pub listing_price: u64,
-    /// `RebornOrigin` enum value.
+    /// `RebornOrigin` enum value (Reborn | Swept).
     pub origin: u8,
-    /// For swept entries: price the protocol paid to acquire this asset.
-    /// Used as the immutable anchor for relist markup math across expire
-    /// cycles. Zero for reborn (queue-only) entries.
+    /// Immutable cost basis: the price the protocol paid for the asset
+    /// (sweep buy amount, or 0 for rebirth-origin entries). Used as the
+    /// base of the relist markup formula across expire cycles, so the
+    /// protocol's effective floor for resale doesn't drift downward as
+    /// strikes accumulate.
     pub original_buy_price: u64,
     /// Number of times `expire_program_listing` has fired for this entry.
     /// Each strike subtracts `RELIST_EXPIRE_PENALTY_BPS` from the markup
@@ -2070,10 +2162,39 @@ impl RebornEntry {
 // ========================================================================================
 // =========================== FLOOR QUEUE / SALE HISTORY / FLOOR HISTORY ==================
 // ========================================================================================
+//
+// These three accounts form the on-chain price oracle + buy-target index
+// for the permissionless market maker. They are all singletons (single PDA
+// each, no per-user variants) and all initialized once in
+// `init_inventory_pool` (admin path).
+//
+//   FloorQueue   — currently registered cheapest user listings, sorted
+//                  ascending by price. The `sweep_floor_lowest` ix buys
+//                  the head. Spam-resistant: capped at FLOOR_QUEUE_SIZE,
+//                  cheaper-than-worst eviction, dedup on asset.
+//
+//   SaleHistory  — ringbuffer of recent qualifying user-to-user sales
+//                  (≥5min listing age, neither party is `inventory_pda`).
+//                  Median of the qualifying window seeds the floor anchor.
+//
+//   FloorHistory — 7-day rolling ringbuffer of (timestamp, anchor_price)
+//                  snapshots. `current_anchor()` is the head; `compute_
+//                  trend_bps()` is the (clamped) head-vs-oldest delta.
+//                  Read by `breed_hashbeasts` for the 1.5× floor min,
+//                  and by `sweep_floor_lowest` for the 1.05× price ceiling.
+//
+// See `instructions/marketplace_cpi.rs` for the manipulation-resistance
+// analysis (5min listing-age qualifier × median-of-32 × ±100% clamp × 24h
+// interval = brute anchor manipulation is loss-leading).
 
 /// One entry in the on-chain sorted-floor queue. Tracks a user-listed asset
-/// (program listings are explicitly excluded). Stale entries are popped
-/// one at a time by `sweep_floor_lowest`; no privileged purge ix needed.
+/// (program-owned listings are explicitly excluded — sweep buying the
+/// protocol's own listings would be circular). Stale entries (listing was
+/// canceled directly via the marketplace, bypassing our `cancel_user_listing`
+/// wrapper that would have atomic-deregistered) are popped one at a time
+/// by `sweep_floor_lowest`; the keeper bounty for that purge is the
+/// `STALE_PURGE_KEEPER_REWARD_LAMPORTS` constant, set deliberately low to
+/// defuse list→raw-cancel→purge spam attacks. See that constant's docs.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct FloorEntry {
     pub listing: Pubkey,

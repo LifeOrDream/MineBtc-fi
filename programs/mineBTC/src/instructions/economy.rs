@@ -2037,19 +2037,19 @@ pub struct UpdateRate<'info> {
 #[derive(Accounts)]
 pub struct AddLpAndBurn<'info> {
     #[account(mut, seeds = [MINE_BTC_MINING_SEED.as_ref()], bump = dbtc_mining.bump)]
-    pub dbtc_mining: Account<'info, DegenBtcMining>,
+    pub dbtc_mining: Box<Account<'info, DegenBtcMining>>,
 
     #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump = global_config.bump)]
-    pub global_config: Account<'info, GlobalConfig>,
+    pub global_config: Box<Account<'info, GlobalConfig>>,
 
     /// Read-only: provides `current_round_id` so we can snapshot the cycle's
     /// final round when the LP op crosses the war's settle threshold.
     #[account(seeds = [GLOBAL_GAME_STATE_SEED.as_ref()], bump = global_game_state.bump)]
-    pub global_game_state: Account<'info, GlobalGameSate>,
+    pub global_game_state: Box<Account<'info, GlobalGameSate>>,
 
     /// Mut: this ix writes `cycle_end_round_id` once the lp threshold crosses.
     #[account(mut, seeds = [FACTION_WAR_CONFIG_SEED.as_ref()], bump = war_config.bump)]
-    pub war_config: Account<'info, FactionWarConfig>,
+    pub war_config: Box<Account<'info, FactionWarConfig>>,
 
     /// Authority (optional - only required when lp_token_amount > 0)
     pub authority: Option<Signer<'info>>,
@@ -2088,7 +2088,7 @@ pub struct AddLpAndBurn<'info> {
         constraint = dbtc_token_account.mint == degenbtc_mint.key() @ ErrorCode::InvalidMint,
         constraint = dbtc_token_account.owner == authority_pda.key() @ ErrorCode::Unauthorized,
     )]
-    pub dbtc_token_account: InterfaceAccount<'info, TokenAccount2022>,
+    pub dbtc_token_account: Box<InterfaceAccount<'info, TokenAccount2022>>,
 
     /// SOL token account for LP addition. **Must be the canonical WSOL ATA
     /// owned by `authority_pda`** — without this binding, a caller could pass
@@ -2104,7 +2104,7 @@ pub struct AddLpAndBurn<'info> {
         token::mint = sol_mint,
         token::authority = authority_pda,
     )]
-    pub sol_token_account: Account<'info, TokenAccount>,
+    pub sol_token_account: Box<Account<'info, TokenAccount>>,
 
     /// CHECK: MINE_BTC mint
     #[account(mut)]
@@ -2131,7 +2131,7 @@ pub struct AddLpAndBurn<'info> {
     pub buybacks_sol_vault: UncheckedAccount<'info>,
 
     #[account(mut, seeds = [BUYBACKS_SEED.as_ref()], bump)]
-    pub buybacks_account: Account<'info, BuybacksAccount>,
+    pub buybacks_account: Box<Account<'info, BuybacksAccount>>,
 
     pub system_program: Program<'info, System>,
 }
