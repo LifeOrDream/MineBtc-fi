@@ -989,11 +989,6 @@ pub struct GameSession {
     pub points_bets_by_faction_direction: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
     /// Weighted points bet placed on each faction-direction pair.
     pub wgtd_points_bets_by_faction_direction: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
-    /// Weighted points by home-faction bettors with an active gameplay hashbeast,
-    /// per faction (any direction). Folded into
-    /// `war_state.eligible_hashbeast_totals` at settle_round. HB bonus
-    /// rewards home-backing regardless of direction, so direction is not stored.
-    pub eligible_hb_wgtd_by_faction: [u64; NUM_FACTIONS],
 
     /// The winning faction ID for this round.
     pub winning_faction_id: u8,
@@ -1071,7 +1066,6 @@ impl GameSession {
         (NUM_FACTIONS * 8) + // sol_bets_by_faction
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // points_bets_by_faction_direction
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // wgtd_points_bets_by_faction_direction
-        (NUM_FACTIONS * 8) + // eligible_hb_wgtd_by_faction
         1 +     // winning_faction_id (u8)
         1 +     // winning_direction (u8)
         8 +     // dbtc_winner_pool
@@ -1698,10 +1692,13 @@ pub struct FactionWarState {
     /// Running MVP score per faction.
     pub mvp_score: [u64; NUM_FACTIONS],
 
-    /// Total weighted own-country bets per faction (any direction) from users
-    /// with an active gameplay HashBeast. Denominator for HB bonus claim share;
-    /// HB bonus rewards home-backing regardless of direction.
-    pub eligible_hashbeast_totals: [u64; NUM_FACTIONS],
+    /// Total mutation-bonus score per faction across all users this cycle.
+    /// Incremented in `apply_mutation_bonus_score` alongside per-user totals.
+    /// Denominator for HB bonus claim share — `hb_share[user] =
+    /// hb_pool[home] * user_mutation_score / faction_mutation_score[home]`.
+    /// HB lane is now purely gameplay-driven: you must have rolled at least
+    /// one successful mutation this cycle to earn HB-bonus.
+    pub faction_mutation_score: [u64; NUM_FACTIONS],
 
     /// Accumulated SOL (from `cycle_sol_split`) reserved for this faction-war
     /// cycle's SOL jackpot. Distributed to claimants at settlement.
@@ -1729,7 +1726,7 @@ impl FactionWarState {
         (NUM_FACTIONS * 8) + // gameplay_scores
         (NUM_FACTIONS * 32) + // mvp_user
         (NUM_FACTIONS * 8) + // mvp_score
-        (NUM_FACTIONS * 8) + // eligible_hashbeast_totals
+        (NUM_FACTIONS * 8) + // faction_mutation_score
         8 +     // sol_reward_pool
         8; // treasury_reward_base_amount
 
@@ -1748,7 +1745,7 @@ impl FactionWarState {
             gameplay_scores: [0u64; NUM_FACTIONS],
             mvp_user: [Pubkey::default(); NUM_FACTIONS],
             mvp_score: [0u64; NUM_FACTIONS],
-            eligible_hashbeast_totals: [0u64; NUM_FACTIONS],
+            faction_mutation_score: [0u64; NUM_FACTIONS],
             sol_reward_pool: 0,
             treasury_reward_base_amount: 0,
         }
@@ -1777,7 +1774,7 @@ impl FactionWarState {
         target.gameplay_scores = AnchorDeserialize::deserialize(buf)?;
         target.mvp_user = AnchorDeserialize::deserialize(buf)?;
         target.mvp_score = AnchorDeserialize::deserialize(buf)?;
-        target.eligible_hashbeast_totals = AnchorDeserialize::deserialize(buf)?;
+        target.faction_mutation_score = AnchorDeserialize::deserialize(buf)?;
         target.sol_reward_pool = AnchorDeserialize::deserialize(buf)?;
         target.treasury_reward_base_amount = AnchorDeserialize::deserialize(buf)?;
         Ok(())
@@ -1810,6 +1807,15 @@ pub struct FactionWarSettlement {
     /// Reward pool per faction reserved for gameplay HashBeasts backing their home country during the faction_war.
     pub hashbeast_reward_pools: [u64; NUM_FACTIONS],
 
+    /// SOL lane allocations (mirror of the dBTC lanes — same bps, same orphan
+    /// cascade). Per-user SOL payout is computed at claim time by scaling each
+    /// lane's pool by the user's dBTC share of that lane:
+    ///   user_sol_<lane> = sol_<lane>_pool * user_dbtc_<lane> / total_dbtc_<lane>
+    /// Total cycle SOL = sol_base_pool + sol_hb_pool + sol_mvp_pool ≤ FactionWarState.sol_reward_pool.
+    pub sol_base_pool: u64,
+    pub sol_hb_pool: u64,
+    pub sol_mvp_pool: u64,
+
     /// Bitmap of factions that have already claimed treasury rewards for this
     /// faction war. Bit N = 1 means faction N has claimed.
     pub treasury_claimed_bitmap: u16,
@@ -1825,6 +1831,9 @@ impl FactionWarSettlement {
         (NUM_FACTIONS * 8) + // mvp_bonus
         (NUM_FACTIONS * 8) + // base_reward_pools
         (NUM_FACTIONS * 8) + // hashbeast_reward_pools
+        8 +     // sol_base_pool
+        8 +     // sol_hb_pool
+        8 +     // sol_mvp_pool
         2; // treasury_claimed_bitmap
 
     pub fn blank() -> Self {
@@ -1837,6 +1846,9 @@ impl FactionWarSettlement {
             mvp_bonus: [0u64; NUM_FACTIONS],
             base_reward_pools: [0u64; NUM_FACTIONS],
             hashbeast_reward_pools: [0u64; NUM_FACTIONS],
+            sol_base_pool: 0,
+            sol_hb_pool: 0,
+            sol_mvp_pool: 0,
             treasury_claimed_bitmap: 0,
         }
     }
@@ -1852,6 +1864,9 @@ impl FactionWarSettlement {
         target.mvp_bonus = AnchorDeserialize::deserialize(buf)?;
         target.base_reward_pools = AnchorDeserialize::deserialize(buf)?;
         target.hashbeast_reward_pools = AnchorDeserialize::deserialize(buf)?;
+        target.sol_base_pool = AnchorDeserialize::deserialize(buf)?;
+        target.sol_hb_pool = AnchorDeserialize::deserialize(buf)?;
+        target.sol_mvp_pool = AnchorDeserialize::deserialize(buf)?;
         target.treasury_claimed_bitmap = AnchorDeserialize::deserialize(buf)?;
         Ok(())
     }
@@ -1868,10 +1883,16 @@ pub struct UserFactionWarBets {
     pub owner: Pubkey,
     /// The faction-war ID this tracks
     pub war_id: u64,
-    /// Gameplay hashbeast that became eligible for the faction_war hashbeast-reward pool.
+    /// Gameplay hashbeast that backed home country during the faction_war.
+    /// Set on the user's first home-faction bet while an HB is deployed;
+    /// validated to stay the same for subsequent home bets in the cycle.
     pub gameplay_hashbeast: Pubkey,
-    /// Whether this user had an active gameplay hashbeast backing their home country during the faction_war.
-    pub hashbeast_bonus_eligible: bool,
+
+    /// Cumulative mutation-bonus score this user contributed to their home
+    /// country during the cycle. Incremented in `apply_mutation_bonus_score`
+    /// on each successful round-claim mutation roll. Used as the HB-bonus
+    /// numerator at war claim (`hb_share = pool * mutation_score / faction_mutation_score`).
+    pub mutation_score: u64,
 
     /// Weighted bet per faction and direction during this faction_war.
     pub direction_bets: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
@@ -1885,7 +1906,7 @@ impl UserFactionWarBets {
         32 +    // owner
         8 +     // war_id
         32 +    // gameplay_hashbeast
-        1 +     // hashbeast_bonus_eligible
+        8 +     // mutation_score
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // direction_bets
         (NUM_FACTIONS * PredictionDirection::COUNT * 8); // sol_direction_bets
 
@@ -1895,7 +1916,7 @@ impl UserFactionWarBets {
             owner: Pubkey::default(),
             war_id: 0,
             gameplay_hashbeast: Pubkey::default(),
-            hashbeast_bonus_eligible: false,
+            mutation_score: 0,
             direction_bets: [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS],
             sol_direction_bets: [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS],
         }

@@ -403,6 +403,27 @@ fn pool_share_from_bps(pool: u64, bps: u16) -> Result<u64> {
     u64::try_from(share).map_err(|_| ErrorCode::ArithmeticOverflow.into())
 }
 
+/// Rank-weight curve for the MVP bonus lane. 30/20/14/10/8/6/5/4 bps for
+/// the top 8 ranks; ranks 8..active share an additional 3% equally. Curve
+/// shape inspired by ALGS / poker-tournament payouts — top-heavy but with
+/// a meaningful tail so smaller countries' MVPs still get rewarded.
+fn mvp_rank_weight_bps(rank: usize, active_factions: usize) -> u64 {
+    match rank {
+        0 => 3000,
+        1 => 2000,
+        2 => 1400,
+        3 => 1000,
+        4 => 800,
+        5 => 600,
+        6 => 500,
+        7 => 400,
+        _ => {
+            let tail_count = active_factions.saturating_sub(8).max(1) as u64;
+            300 / tail_count
+        }
+    }
+}
+
 /// Compute how the faction_war mining pool is split across factions.
 ///
 /// The total pool is first split into three lanes:
@@ -420,10 +441,14 @@ pub fn compute_base_reward_pools(
     let active_factions = war_state.faction_count as usize;
 
     let pool = war_state.dbtc_mined_this_war;
-    if pool == 0 {
+    let sol_pool = war_state.sol_reward_pool;
+    if pool == 0 && sol_pool == 0 {
         war_settlement.base_reward_pools = [0u64; NUM_FACTIONS];
         war_settlement.hashbeast_reward_pools = [0u64; NUM_FACTIONS];
         war_settlement.mvp_bonus = [0u64; NUM_FACTIONS];
+        war_settlement.sol_base_pool = 0;
+        war_settlement.sol_hb_pool = 0;
+        war_settlement.sol_mvp_pool = 0;
         return Ok(());
     }
 
@@ -434,28 +459,53 @@ pub fn compute_base_reward_pools(
         .ok_or(ErrorCode::ArithmeticOverflow)?
         .checked_sub(mvp_pool_total)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
+
+    // SOL lane split — same bps as dBTC. Pool is the SOL accumulated from
+    // cycle_sol_split across all rounds. Distribution to users is computed
+    // at claim time by scaling each lane's pool by the user's dBTC share of
+    // that lane (`user_sol_<lane> = sol_<lane>_pool * user_dbtc_<lane> /
+    // total_dbtc_<lane>`), so we only need to track lane totals here.
+    let sol_base_total = pool_share_from_bps(sol_pool, tuning.faction_war_base_reward_bps)?;
+    let sol_mvp_total = pool_share_from_bps(sol_pool, tuning.faction_war_mvp_reward_bps)?;
+    let sol_hb_total = sol_pool
+        .checked_sub(sol_base_total)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_sub(sol_mvp_total)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+
     let mut eligible_base = [false; NUM_FACTIONS];
     let mut eligible_hashbeast = [false; NUM_FACTIONS];
 
     for f in 0..active_factions {
         let winning_dir = war_settlement.resolved_directions[f] as usize;
         eligible_base[f] = war_state.faction_direction_totals[f][winning_dir] > 0;
-        // HB lane is direction-agnostic: any home-faction HB-backer qualifies.
-        eligible_hashbeast[f] = war_state.eligible_hashbeast_totals[f] > 0;
+        // HB lane is gameplay-driven: faction qualifies when at least one of
+        // its players landed a mutation roll during the cycle.
+        eligible_hashbeast[f] = war_state.faction_mutation_score[f] > 0;
     }
 
     let any_hashbeast_eligible = eligible_hashbeast.iter().take(active_factions).any(|&e| e);
 
     // Orphan-cascade: if a sub-pool has zero globally-eligible factions, fold
-    // it into the base pool instead of stranding the degenBTC in the mining
-    // vault. With no base eligibles either, those tokens stay in the vault
-    // (extremely rare — would require zero correct bets on every faction's
-    // resolved direction across the whole cycle).
+    // it into the base pool instead of stranding the rewards. Applied to both
+    // dBTC and SOL symmetrically so the lanes stay in sync.
     let mut effective_base_pool = base_pool_total;
-    if !any_hashbeast_eligible && hashbeast_pool_total > 0 {
-        effective_base_pool = effective_base_pool
-            .checked_add(hashbeast_pool_total)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let mut effective_sol_base = sol_base_total;
+    let effective_sol_hb;
+    if !any_hashbeast_eligible {
+        if hashbeast_pool_total > 0 {
+            effective_base_pool = effective_base_pool
+                .checked_add(hashbeast_pool_total)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+        }
+        if sol_hb_total > 0 {
+            effective_sol_base = effective_sol_base
+                .checked_add(sol_hb_total)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+        }
+        effective_sol_hb = 0;
+    } else {
+        effective_sol_hb = sol_hb_total;
     }
 
     compute_rank_weighted_pools_into(
@@ -476,6 +526,11 @@ pub fn compute_base_reward_pools(
     } else {
         war_settlement.hashbeast_reward_pools = [0u64; NUM_FACTIONS];
     }
+
+    war_settlement.sol_base_pool = effective_sol_base;
+    war_settlement.sol_hb_pool = effective_sol_hb;
+    war_settlement.sol_mvp_pool = sol_mvp_total;
+
     Ok(())
 }
 
@@ -700,8 +755,12 @@ pub fn finalize_war_settlement(
 
         compute_base_reward_pools(war_state, war_settlement, tuning)?;
 
-        // --- MVP Bonus: distribute 5% of mining pool rank-weighted to all faction MVPs ---
-        // #1 faction MVP: 40% of MVP pool | #2: 25% | #3: 15% | #4+: equal share of 20%
+        // --- MVP Bonus: rank-weighted across all faction MVPs ---
+        // Curve: 30/20/14/10/8/6/5/4/share-3% (ALGS-style top-heavy with a
+        // meaningful tail). With 12 factions: 3000+2000+1400+1000+800+600+500+400
+        // bps for top 8, then 300 bps shared equally across ranks 8..N-1.
+        // When fewer factions exist, the distribution loop normalizes per
+        // eligible weight, so the missing tail doesn't strand pool.
         let mvp_pool_total = pool_share_from_bps(
             war_state.dbtc_mined_this_war,
             tuning.faction_war_mvp_reward_bps,
@@ -712,17 +771,8 @@ pub fn finalize_war_settlement(
             let mut eligible_count = 0usize;
             for fid in 0..active_factions {
                 if war_state.mvp_user[fid] != Pubkey::default() {
-                    let rank = final_ranks[fid] as usize;
-                    let weight_bps = match rank {
-                        0 => 4000u64, // #1
-                        1 => 2500u64, // #2
-                        2 => 1500u64, // #3
-                        _ => {
-                            let lower_ranked_count =
-                                active_factions.saturating_sub(3).max(1) as u64;
-                            2000u64 / lower_ranked_count
-                        }
-                    };
+                    let weight_bps =
+                        mvp_rank_weight_bps(final_ranks[fid] as usize, active_factions);
                     total_weight += weight_bps as u128;
                     eligible_count += 1;
                 }
@@ -736,17 +786,8 @@ pub fn finalize_war_settlement(
                         continue;
                     }
                     remaining -= 1;
-                    let rank = final_ranks[fid] as usize;
-                    let weight_bps = match rank {
-                        0 => 4000u64,
-                        1 => 2500u64,
-                        2 => 1500u64,
-                        _ => {
-                            let lower_ranked_count =
-                                active_factions.saturating_sub(3).max(1) as u64;
-                            2000u64 / lower_ranked_count
-                        }
-                    };
+                    let weight_bps =
+                        mvp_rank_weight_bps(final_ranks[fid] as usize, active_factions);
 
                     let bonus = if remaining == 0 {
                         mvp_pool_total
@@ -944,28 +985,23 @@ pub fn claim_faction_war_rewards_internal(
             }
         }
 
-        // --- HB bonus: home-faction loyalty lane. Direction-agnostic.
-        // Numerator = user's total wgtd points on their home faction (sum
-        // across all directions). Denominator = total HB-eligible wgtd on
-        // that faction. Any HB owner who backed home shares this pool.
-        if user_faction_war_bets.hashbeast_bonus_eligible
-            && player_faction_id < active_factions
-        {
-            let hashbeast_pool =
-                war_settlement.hashbeast_reward_pools[player_faction_id];
-            let eligible_total = war_state.eligible_hashbeast_totals[player_faction_id];
-            let user_home_wgtd: u64 = user_faction_war_bets.direction_bets[player_faction_id]
-                .iter()
-                .copied()
-                .try_fold(0u64, |acc, v| acc.checked_add(v))
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-            msg!("📊 [faction_war.claim_faction_war_rewards_internal] hashbeast calc hashbeast_pool={} eligible_total={} user_home_wgtd={}",
-                hashbeast_pool, eligible_total, user_home_wgtd);
-            if hashbeast_pool > 0 && eligible_total > 0 && user_home_wgtd > 0 {
+        // --- HB bonus: pure gameplay lane.
+        // Numerator   = user's cumulative mutation_score on their home faction
+        //               (incremented each time a round-claim mutation roll lands).
+        // Denominator = country's total mutation_score across all HB players.
+        // No mutations → no HB-bonus, regardless of how much SOL was bet. The
+        // base + SOL-base lanes already pay the active-bettor case.
+        if user_faction_war_bets.mutation_score > 0 && player_faction_id < active_factions {
+            let hashbeast_pool = war_settlement.hashbeast_reward_pools[player_faction_id];
+            let faction_mutation_total = war_state.faction_mutation_score[player_faction_id];
+            let user_mutation_score = user_faction_war_bets.mutation_score;
+            msg!("📊 [faction_war.claim_faction_war_rewards_internal] hashbeast calc hashbeast_pool={} faction_mutation_total={} user_mutation_score={}",
+                hashbeast_pool, faction_mutation_total, user_mutation_score);
+            if hashbeast_pool > 0 && faction_mutation_total > 0 {
                 let bonus_u128 = (hashbeast_pool as u128)
-                    .checked_mul(user_home_wgtd as u128)
+                    .checked_mul(user_mutation_score as u128)
                     .ok_or(ErrorCode::ArithmeticOverflow)?
-                    .checked_div(eligible_total as u128)
+                    .checked_div(faction_mutation_total as u128)
                     .ok_or(ErrorCode::ArithmeticOverflow)?;
                 hashbeast_bonus_amount =
                     u64::try_from(bonus_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
@@ -1010,40 +1046,70 @@ pub fn claim_faction_war_rewards_internal(
         }
     }
 
-    // --- SOL Cycle Jackpot: proportional to base degenBTC reward share ---
-    let mut sol_reward: u64 = 0;
-    let sol_pool = war_state.sol_reward_pool;
-    msg!(
-        "💰 [faction_war.claim_faction_war_rewards_internal] sol_pool={} base_reward_amount={}",
-        sol_pool,
-        base_reward_amount
-    );
-    if sol_pool > 0 && base_reward_amount > 0 {
-        let total_base_pool = war_settlement
-            .base_reward_pools
-            .iter()
-            .take(active_factions)
-            .sum::<u64>();
-        msg!(
-            "📊 [faction_war.claim_faction_war_rewards_internal] total_base_pool={}",
-            total_base_pool
-        );
-        if total_base_pool > 0 {
-            let sol_u128 = (sol_pool as u128)
-                .checked_mul(base_reward_amount as u128)
-                .ok_or(ErrorCode::ArithmeticOverflow)?
-                .checked_div(total_base_pool as u128)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-            sol_reward =
-                u64::try_from(sol_u128).map_err(|_| error!(ErrorCode::ArithmeticOverflow))?;
-            msg!(
-                "💰 [faction_war.claim_faction_war_rewards_internal] sol_reward computed={}",
-                sol_reward
-            );
-        } else {
-            msg!("📊 [faction_war.claim_faction_war_rewards_internal] total_base_pool==0, sol_reward stays 0");
+    // --- SOL rewards: mirror the dBTC 3-lane split (base / HB / MVP).
+    // For each lane: user_sol = sol_<lane>_pool * user_dbtc_<lane> / total_dbtc_<lane>_pool.
+    // Distributing SOL by the same proportions preserves identical relative
+    // payouts to dBTC across the cohort while only paying out where dBTC was
+    // also paid (skips orphan/zero lanes naturally).
+    let scale_sol_lane = |sol_lane_pool: u64,
+                          user_dbtc_lane: u64,
+                          total_dbtc_lane: u64|
+     -> Result<u64> {
+        if sol_lane_pool == 0 || user_dbtc_lane == 0 || total_dbtc_lane == 0 {
+            return Ok(0);
         }
-    }
+        let s = (sol_lane_pool as u128)
+            .checked_mul(user_dbtc_lane as u128)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            .checked_div(total_dbtc_lane as u128)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        u64::try_from(s).map_err(|_| error!(ErrorCode::ArithmeticOverflow))
+    };
+
+    let total_dbtc_base: u64 = war_settlement
+        .base_reward_pools
+        .iter()
+        .take(active_factions)
+        .copied()
+        .try_fold(0u64, |acc, v| acc.checked_add(v))
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let total_dbtc_hb: u64 = war_settlement
+        .hashbeast_reward_pools
+        .iter()
+        .take(active_factions)
+        .copied()
+        .try_fold(0u64, |acc, v| acc.checked_add(v))
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let total_dbtc_mvp: u64 = war_settlement
+        .mvp_bonus
+        .iter()
+        .take(active_factions)
+        .copied()
+        .try_fold(0u64, |acc, v| acc.checked_add(v))
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+
+    let sol_base_share =
+        scale_sol_lane(war_settlement.sol_base_pool, base_reward_amount, total_dbtc_base)?;
+    let sol_hb_share = scale_sol_lane(
+        war_settlement.sol_hb_pool,
+        hashbeast_bonus_amount,
+        total_dbtc_hb,
+    )?;
+    let sol_mvp_share =
+        scale_sol_lane(war_settlement.sol_mvp_pool, mvp_bonus_amount, total_dbtc_mvp)?;
+
+    let sol_reward: u64 = sol_base_share
+        .checked_add(sol_hb_share)
+        .and_then(|s| s.checked_add(sol_mvp_share))
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+
+    msg!(
+        "💰 [faction_war.claim_faction_war_rewards_internal] sol shares: base={} hb={} mvp={} total={}",
+        sol_base_share,
+        sol_hb_share,
+        sol_mvp_share,
+        sol_reward
+    );
     if sol_reward > 0 {
         msg!(
             "💰 [faction_war.claim_faction_war_rewards_internal] Transferring SOL cycle reward: {} lamports ({} SOL)",
@@ -1089,13 +1155,13 @@ pub fn claim_faction_war_rewards_internal(
     }
 
     msg!(
-        "⚔️ [faction_war.claim_faction_war_rewards_internal] Player faction {}: base_reward={}, mvp_bonus={}, total_reward={}, hashbeast_bonus={}, hashbeast_eligible={}, sol_reward={}",
+        "⚔️ [faction_war.claim_faction_war_rewards_internal] Player faction {}: base_reward={}, mvp_bonus={}, total_reward={}, hashbeast_bonus={}, user_mutation_score={}, sol_reward={}",
         player_faction_id,
         base_reward_amount,
         mvp_bonus_amount,
         total_reward,
         hashbeast_bonus_amount,
-        user_faction_war_bets.hashbeast_bonus_eligible,
+        user_faction_war_bets.mutation_score,
         sol_reward
     );
 

@@ -104,7 +104,6 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
         [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
     game_session.wgtd_points_bets_by_faction_direction =
         [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
-    game_session.eligible_hb_wgtd_by_faction = [0u64; NUM_FACTIONS];
     game_session.winning_faction_id = 0;
     game_session.winning_direction = PredictionDirection::Neutral.as_index() as u8;
     game_session.dbtc_winner_pool = 0;
@@ -817,13 +816,6 @@ fn track_faction_war_round_completion(
                         .checked_add(wgtd)
                         .ok_or(ErrorCode::ArithmeticOverflow)?;
                 }
-            }
-            let hb_wgtd = game_session.eligible_hb_wgtd_by_faction[fi];
-            if hb_wgtd > 0 {
-                war_state.eligible_hashbeast_totals[fi] = war_state
-                    .eligible_hashbeast_totals[fi]
-                    .checked_add(hb_wgtd)
-                    .ok_or(ErrorCode::ArithmeticOverflow)?;
             }
             let round_volume = game_session.sol_bets_by_faction[fi];
             if round_volume > 0 {

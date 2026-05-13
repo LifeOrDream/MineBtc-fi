@@ -1250,6 +1250,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
         user_bet,
         game_session,
         &ctx.accounts.war_state.to_account_info(),
+        &ctx.accounts.user_faction_war_bets.to_account_info(),
         player_data,
         owner_key,
     )?;
@@ -1377,6 +1378,7 @@ pub fn internal_claim_autominer_rewards(
         user_bet,
         game_session,
         &ctx.accounts.war_state.to_account_info(),
+        &ctx.accounts.user_faction_war_bets.to_account_info(),
         player_data,
         owner_key,
     )?;
@@ -1834,6 +1836,7 @@ fn apply_mutation_bonus_score<'info>(
     user_bet: &UserGameBet,
     game_session: &GameSession,
     war_state_info: &AccountInfo<'info>,
+    user_faction_war_bets_info: &AccountInfo<'info>,
     player_data: &mut PlayerData,
     owner_key: Pubkey,
 ) -> Result<()> {
@@ -1847,13 +1850,26 @@ fn apply_mutation_bonus_score<'info>(
 
     let cycle_id = game_session.war_id_when_played;
     let cycle_id_bytes = cycle_id.to_le_bytes();
-    let (expected_pda, _) = Pubkey::find_program_address(
+    let (expected_war_state_pda, _) = Pubkey::find_program_address(
         &[FACTION_WAR_STATE_SEED, cycle_id_bytes.as_ref()],
         &crate::ID,
     );
     require_keys_eq!(
         war_state_info.key(),
-        expected_pda,
+        expected_war_state_pda,
+        ErrorCode::InvalidAccount
+    );
+    let (expected_user_pda, _) = Pubkey::find_program_address(
+        &[
+            USER_FACTION_WAR_BETS_SEED,
+            owner_key.as_ref(),
+            cycle_id_bytes.as_ref(),
+        ],
+        &crate::ID,
+    );
+    require_keys_eq!(
+        user_faction_war_bets_info.key(),
+        expected_user_pda,
         ErrorCode::InvalidAccount
     );
 
@@ -1901,6 +1917,12 @@ fn apply_mutation_bonus_score<'info>(
         .checked_add(bonus)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
+    // Country-level mutation pot (denominator for HB-bonus claim share).
+    war_state.faction_mutation_score[winner_idx] = war_state
+        .faction_mutation_score[winner_idx]
+        .checked_add(bonus)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+
     if player_data.current_faction_war_score_cycle_id != cycle_id {
         player_data.current_faction_war_score = 0;
         player_data.current_faction_war_score_cycle_id = cycle_id;
@@ -1916,6 +1938,18 @@ fn apply_mutation_bonus_score<'info>(
 
     let total_after = war_state.gameplay_scores[winner_idx];
     helper::store_account_data(war_state_info, war_state.as_ref())?;
+
+    // Per-user mutation pot (numerator for HB-bonus claim share). Survives the
+    // claim-vs-next-cycle race since it lives on the cycle's UserFactionWarBets
+    // PDA (closed only at faction-war claim) rather than rolling player_data.
+    let mut ufwb = helper::load_account_data::<UserFactionWarBets>(user_faction_war_bets_info)?;
+    require!(ufwb.owner == owner_key, ErrorCode::InvalidAccount);
+    require!(ufwb.war_id == cycle_id, ErrorCode::InvalidAccount);
+    ufwb.mutation_score = ufwb
+        .mutation_score
+        .checked_add(bonus)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    helper::store_account_data(user_faction_war_bets_info, &ufwb)?;
 
     emit!(crate::events::GameplayScoreAccumulated {
         war_id: cycle_id,
@@ -2301,7 +2335,7 @@ fn internal_process_bets<'info>(
         user_faction_war_bets.owner = owner_key;
         user_faction_war_bets.war_id = war_state.war_id;
         user_faction_war_bets.gameplay_hashbeast = Pubkey::default();
-        user_faction_war_bets.hashbeast_bonus_eligible = false;
+        user_faction_war_bets.mutation_score = 0;
         user_faction_war_bets.direction_bets = [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
         user_faction_war_bets.sol_direction_bets =
             [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
@@ -2724,13 +2758,16 @@ fn internal_process_bets<'info>(
                 .checked_add(net_per_bet)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-        // Hashbeast bonus layer only counts home-faction bets from users with an
-        // active gameplay hashbeast.
+        // Lock the cycle's gameplay hashbeast on the user's first home-faction
+        // bet (while they have an HB deployed). HB-bonus payout itself is no
+        // longer driven by bet stake — it's driven by mutation_score
+        // accumulated during round-claim mutation rolls (see
+        // apply_mutation_bonus_score). Tracking the HB pubkey here lets the
+        // claim path validate and attribute mutations to the right beast.
         if faction_id == player_data.faction_id
             && player_data.gameplay_hashbeast != Pubkey::default()
         {
-            if !user_faction_war_bets.hashbeast_bonus_eligible {
-                user_faction_war_bets.hashbeast_bonus_eligible = true;
+            if user_faction_war_bets.gameplay_hashbeast == Pubkey::default() {
                 user_faction_war_bets.gameplay_hashbeast = player_data.gameplay_hashbeast;
             } else {
                 require_keys_eq!(
@@ -2739,10 +2776,6 @@ fn internal_process_bets<'info>(
                     ErrorCode::InvalidAccount
                 );
             }
-            game_session.eligible_hb_wgtd_by_faction[faction_index] = game_session
-                .eligible_hb_wgtd_by_faction[faction_index]
-                .checked_add(wgtd_points_per_bet)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
         }
 
         // Record for events
@@ -3201,6 +3234,12 @@ pub struct ClaimRoundRewards<'info> {
     #[account(mut)]
     pub war_state: UncheckedAccount<'info>,
 
+    /// CHECK: Per-user, per-cycle bets PDA. Seeds validated in the handler
+    /// against `game_session.war_id_when_played` + user_wallet. Mutated only
+    /// when a mutation-bonus roll lands (increments `mutation_score`).
+    #[account(mut)]
+    pub user_faction_war_bets: UncheckedAccount<'info>,
+
     /// Country lootbox queue for the player's home faction. Read on every
     /// claim; mutated when a losing player's roll wins a slot.
     #[account(
@@ -3296,6 +3335,12 @@ pub struct ClaimAutominerRewards<'info> {
     /// only when mutation-bonus block fires.
     #[account(mut)]
     pub war_state: UncheckedAccount<'info>,
+
+    /// CHECK: Per-user, per-cycle bets PDA. Seeds validated in the handler
+    /// against `game_session.war_id_when_played` + autominer owner. Mutated
+    /// only when a mutation-bonus roll lands (increments `mutation_score`).
+    #[account(mut)]
+    pub user_faction_war_bets: UncheckedAccount<'info>,
 
     /// Country lootbox queue for the autominer owner's home faction.
     #[account(
