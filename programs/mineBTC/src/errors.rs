@@ -50,7 +50,7 @@ pub enum ErrorCode {
     #[msg("Invalid faction name: must be 1-16 characters")]
     InvalidFactionName,
 
-    #[msg("Maximum number of factions reached (15 max)")]
+    #[msg("Maximum number of factions reached (12 max)")]
     MaxFactionsReached,
 
     #[msg("Faction with this name already exists")]
@@ -74,7 +74,7 @@ pub enum ErrorCode {
     #[msg("HashBeast already at guard")]
     HashBeastAlreadyAtGuard,
 
-    #[msg("HashBeast is not incubated in this minebtc")]
+    #[msg("HashBeast is not incubated in this degenBTC program")]
     HashBeastNotAtGuard,
 
     #[msg("HashBeast limit for this tier has been reached")]
@@ -228,8 +228,11 @@ pub enum ErrorCode {
     #[msg("FactionWar rewards have already been claimed")]
     FactionWarRewardsAlreadyClaimed,
 
-    #[msg("Round is pending faction-reward finalization; settle cannot run between end_round and end_round_faction_rewards")]
+    #[msg("Round is pending faction-reward finalization; settle cannot run between end_round and settle_round")]
     RoundFinalizationPending,
+
+    #[msg("Cycle has reached its final round; war must be settled before a new round can start")]
+    CycleAwaitingSettlement,
 
     #[msg("Ticket-backed bets exceed the session cap")]
     TicketBetCapExceeded,
@@ -290,6 +293,9 @@ pub enum ErrorCode {
     #[msg("Sweep anchor is below the minimum sweep threshold (no recent volume)")]
     SweepAnchorTooLow,
 
+    #[msg("Floor anchor is stale; record a fresh floor snapshot before using floor support")]
+    FloorAnchorStale,
+
     #[msg("Floor entry data does not match the live marketplace listing")]
     StaleFloorEntry,
 
@@ -308,8 +314,17 @@ pub enum ErrorCode {
     #[msg("Floor snapshot was already recorded within the cadence window")]
     SnapshotTooSoon,
 
+    #[msg("Oracle snapshot swap output is below the minimum acceptable amount")]
+    SnapshotSwapOutputTooLow,
+
+    #[msg("Oracle snapshot price deviates too far from the recent weighted price")]
+    SnapshotPriceDeviationTooHigh,
+
     #[msg("Asset is still owned by inventory_pda — sale not actually settled")]
     AssetStillOwnedByInventory,
+
+    #[msg("Asset is still held by marketplace escrow — listing has not sold")]
+    AssetStillListed,
 
     #[msg("Listing is not present in the floor queue")]
     ListingNotInQueue,

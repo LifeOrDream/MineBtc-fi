@@ -32,10 +32,7 @@ pub mod state;
 
 use instructions::*;
 
-// TODO(deploy): replace this placeholder before mainnet/devnet build.
-// Run `solana-keygen new -o target/deploy/degenbtc_market-keypair.json` and
-// paste the resulting pubkey here.
-declare_id!("MarKEt1111111111111111111111111111111111111");
+declare_id!("4w3Bp7sTCbqsP5nThsEm6W3dRCbgwFaxvZYTrnmz5MyJ");
 
 #[macro_export]
 macro_rules! log_fn {
@@ -105,5 +102,11 @@ pub mod degenbtc_market {
     /// Buyer pays SOL (fee + proceeds), asset hops escrow → buyer, listing closes.
     pub fn buy_listing(ctx: Context<BuyListing>, max_price_lamports: u64) -> Result<()> {
         instructions::buy_listing::handler(ctx, max_price_lamports)
+    }
+
+    /// Permissionless reclaim of a stale listing whose asset owner no longer
+    /// matches the recorded seller. Closes the listing and refunds rent to caller.
+    pub fn reclaim_stale_listing(ctx: Context<ReclaimStaleListing>) -> Result<()> {
+        instructions::reclaim_stale_listing::handler(ctx)
     }
 }

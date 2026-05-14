@@ -1,258 +1,182 @@
 <p align="center">
   <a href="https://minebtc.fun">
-    <img src="./docs/images/logo.png" alt="MineBTC" width="120" />
+    <img src="./docs/images/logo.png" alt="MineBTC" width="128" />
   </a>
 </p>
 
 <h1 align="center">MineBTC</h1>
 
 <p align="center">
-  <strong>Degen country arena game on Solana.<br/>Pick your country. Bet SOL. Win claims mutate your hashbeast. Your country climbs. You earn degenBTC.</strong>
+  <strong>Casino-speed country wars for mining degenBTC on Solana.</strong><br/>
+  Pick a country, bet SOL every minute, mutate HashBeasts through claims, and fight for the LP-burn faction-war crown.
 </p>
 
 <p align="center">
   <a href="https://minebtc.fun"><img src="https://img.shields.io/badge/Launch_App-ffd700?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjIiPjxwYXRoIGQ9Ik0xOCAxM3Y2YTIgMiAwIDAgMS0yIDJINWEyIDIgMCAwIDEtMi0yVjhhMiAyIDAgMCAxIDItMmg2Ii8+PHBvbHlsaW5lIHBvaW50cz0iMTUgMyAyMSAzIDIxIDkiLz48bGluZSB4MT0iMTAiIHkxPSIxNCIgeDI9IjIxIiB5Mj0iMyIvPjwvc3ZnPg==&logoColor=black" alt="Launch App" /></a>
-  <a href="https://docs.minebtc.fun"><img src="https://img.shields.io/badge/Documentation-333?style=for-the-badge&logo=gitbook&logoColor=white" alt="Docs" /></a>
+  <a href="https://docs.minebtc.fun"><img src="https://img.shields.io/badge/Docs-111111?style=for-the-badge&logo=gitbook&logoColor=white" alt="Docs" /></a>
+  <img src="https://img.shields.io/badge/Solana-14F195?style=for-the-badge&logo=solana&logoColor=111111" alt="Solana" />
+  <img src="https://img.shields.io/badge/Anchor-512DA8?style=for-the-badge&logo=rust&logoColor=white" alt="Anchor" />
 </p>
 
 ---
 
-## The Game
-
-MineBTC is a country arena game where every bet does three things at once:
-
-1. **Enters a 60-second round raffle** for instant SOL + degenBTC rewards
-2. **Scores gameplay support for your country** on the competitive leaderboard
-3. **Sets up claim-time hashbeast mutation rolls** when that bet later wins rewards
-
-Countries compete for the top of the leaderboard. Players compete for rewards. HashBeasts evolve through gameplay. The economy self-sustains through deflationary tokenomics and permanent liquidity locks.
-
----
-
-## Two Reward Loops, One Bet
-
-### Round Loop (60 seconds)
-
-Every minute, a new round runs:
-
-1. Players place `country + direction` bets (Up / Down / Neutral)
-2. A random winning country and direction are selected via slot-hash entropy
-3. Rewards are distributed:
-
-| Pool | Share | Who Gets It |
-|------|-------|-------------|
-| **Winner pool** | 50% of degenBTC emission | Exact country+direction match (pro-rata) |
-| **Consolation pool** | 40% of degenBTC emission | Same country, wrong direction (split per direction) |
-| **Staker pool** | 5% of degenBTC emission | Everyone staking on the winning country |
-| **Motherlode** | 5% of degenBTC emission | 1/625 chance jackpot for exact winners |
-| **SOL prize pot** | Accumulated from net bets | Exact winners split proportionally |
-
-### Rebase Loop (~4 hours, tied to economy cycle)
-
-The same bets also accumulate into a longer competitive cycle called a **rebase**:
-
-1. Own-country SOL bets with an active gameplay hashbeast **score gameplay support for that country**
-2. At the end of the cycle, countries are ranked by total gameplay scores
-3. Rankings are compared to the previous cycle to determine which countries moved Up, Down, or stayed Neutral
-4. Players who correctly bet final directions earn degenBTC from the rebase mining pool
-5. Own-country correct bettors get the loyalty share and the strongest hashbeast mutation odds
-
-**Gameplay score formula:**
-```
-score = support_weight × own_country_sol_bet × hashbeast_multiplier
-        support_weight=10
-```
-
-Higher own-country bets + better gameplay hashbeasts = bigger score contribution to your country.
-
----
-
-## HashBeast NFTs: The Progression Engine
-
-HashBeasts are functional game pieces with on-chain 256-bit DNA:
-
-### Two HashBeast Roles
-
-- **Gameplay hashbeast (operator):** One hashbeast locked for active play. Earns XP from betting. Own-country bets add gameplay score, and winning reward claims can mutate it (Evolution / Power / Trait).
-- **Staked hashbeasts (passive):** Up to 3 hashbeasts boosting staking hashpower. More staked hashbeasts = higher staking APR.
-
-### How Mutations Work
-
-Mutation rolls happen when a user claims rewards from a winning round or settled rebase:
-
-```
-Base chance: 20%
-× stake_strength (eligible winning stake / highest stake on the country)
-× multiplier_penalty (1.0x hashbeast = full chance, 4.2x ~= 24% chance)
-× faction_penalty / pacing / volume controls
-× claim_boost (highest for own-country correct Up moves)
-
-Round exact wins receive stronger odds than same-country consolation wins. Rebase claims are strongest when the user backed their own country correctly, especially when that country moved Up.
-```
-
-**Mutation types:**
-- **Evolution** (~10%): Stage upgrade, guaranteed visual + power trait gains, XP resets. Rarest and most impactful.
-- **Power** (~30%): Combat trait upgrade, moderate multiplier boost.
-- **Trait** (~60%): Visual trait upgrade, small multiplier boost.
-
-**Multiplier range:** 1.0x → 4.2x. Higher multiplier = more weighted points per bet = bigger reward share. But mutation chance drops as multiplier rises, creating a weeks-long progression curve.
-
-### XP System
-
-XP accumulates from eligible claim-time mutation stake and boosts the multiplier increase when a mutation fires:
-
-```
-XP gain rate = base_rate × (1.0 / current_multiplier)
-```
-
-A fresh hashbeast gains XP fast. A maxed hashbeast gains XP slowly. This prevents whales from speed-running progression.
-
-When a mutation fires, it **consumes** the XP it used:
-- Evolution: consumes ALL XP (full reset)
-- Power/Trait: consumes the portion used for the multiplier boost
-
-### Accumulated Value
-
-Each successful reward claim can add degenBTC to the gameplay hashbeast based on the claim mutation result (1% - 6.9% of round reward, plus cycle HashBeast bonus where applicable). This accumulates on-chain and can be claimed through `rebirth_hashbeast`, which either rebirths the asset into lootbox inventory or burns it if the rebirth cap or inventory guardrails are hit.
-
----
-
-## The Economy
-
-### degenBTC Token
-
-degenBTC is a Token-2022 token with a 0.1% transfer tax. Every transfer automatically splits:
-
-| Split | Default % | Where It Goes |
-|-------|-----------|---------------|
-| **Burn** | 50% | Permanently removed from supply |
-| **Faction Treasury** | 25% | Distributed to stakers via faction-war settlement |
-| **Back to Mining Vault** | 25% | Recycled into the emission pool — no tax-driven sell pressure on the token |
-
-NFT market making is funded separately from SOL fees (3% of every `distribute_sol_fees` flow → `inventory_sweep_vault`), not from this tax.
-
-### Economy Cycle (~4 hours)
-
-The economy runs in automated loops:
-
-```
-Step 1: snapshot_price (×8, every 30 min)
-        → Swaps 10% of buyback SOL for degenBTC (price discovery)
-        → Earmarks 10% for Protocol Owned Liquidity
-
-Step 2: update_rate (after 8 snapshots)
-        → Compares weighted avg price to baseline
-        → Price up → increase emission rate (1%)
-        → Price down → decrease emission rate (3%)
-
-Step 3: add_lp_and_burn
-        → Deposits earmarked SOL + degenBTC into Raydium LP
-        → Burns ALL LP tokens (permanent liquidity lock)
-        → Triggers rebase settlement
-```
-
-The asymmetric rate adjustment (1% up / 3% down) creates structural deflationary pressure during downturns.
-
-### SOL Fee Flow
-
-```
-Player bets 1 SOL
-├─ 15% fee taken
-│   ├─ 20% of fee → staker SOL reward vault
-│   └─ 80% of fee → SOL treasury
-└─ 85% net → SOL prize pot (for round winners)
-
-distribute_sol_fees() splits the SOL treasury:
-   ├─ 80% → buybacks vault (price snapshots + POL)
-   ├─ 3%  → inventory_sweep_vault (NFT market-making fuel)
-   └─ ~17% → dev earnings (multisig)
-```
-
-### Faction Treasury (Tax Rewards to Stakers)
-
-After each rebase settles, the accumulated faction treasury is distributed to stakers:
-
-- **80% rank-weighted:** Every country gets something. Higher leaderboard rank = bigger share.
-- **20% lucky draw:** One random underdog country (rank 5+) wins the entire pot. Equal probability, keeps small factions engaged.
-
----
-
-## Staking
-
-Two staking tracks, both earning SOL + degenBTC:
-
-| Track | What You Stake | What Boosts Rewards |
-|-------|---------------|-------------------|
-| **degenBTC staking** | Lock degenBTC for configurable duration | Longer lockup = higher multiplier. Staked hashbeasts boost hashpower. |
-| **LP staking** | Lock Raydium LP tokens | Same multiplier mechanics as degenBTC staking |
-
-Stakers earn from three sources:
-1. **SOL fees** from every bet (staker share)
-2. **degenBTC emission** from round staker pools (winning faction only)
-3. **Faction treasury** from transfer tax (based on rebase leaderboard rank)
-
----
-
-## AI Integration (Planned)
-
-The game generates rich, structured on-chain data with every bet, mutation, and rebase:
-
-- Country-level directional conviction weighted by real money
-- NFT evolution histories (256-bit DNA trajectories over time)
-- Player behavior patterns (faction loyalty, bet sizing, mutation strategies)
-
-This data can later power:
-
-- **AI-generated hashbeast art** — unique visuals for each evolution stage, faction-specific styles
-- **Content generation** — mutation stories, faction propaganda, social clips
-- **Game expansion** — AI-designed mini-games, new round modes, mobile experiences
-
-The on-chain NFT marketplace is **already permissionless and self-funded** — anyone can call `sweep_floor_lowest`; the contract auto-disposes (queue / relist / burn) and pays a keeper bounty. AI is not a dependency.
-
-The game is self-contained today. AI integration adds value around the game without being a dependency for core gameplay.
-
----
-
-## Repo Map
+MineBTC is an on-chain game economy where every bet is also a prediction, every claim can move an NFT, and every economy cycle feeds back into token emissions, liquidity, country rankings, and NFT floor support.
+
+The clean one-liner:
+
+> **A Solana casino x prediction-market x creature-progression game where countries compete to mine degenBTC.**
+
+## Read This First
+
+This repo contains the contracts for the MineBTC game economy.
+
+| Doc | What it covers |
+|---|---|
+| [docs/GAMEPLAY.md](./docs/GAMEPLAY.md) | 60-second rounds, country directions, jackpots, autominers, faction-war cycles, reward claims, and mutation rolls. |
+| [docs/ECONOMY.md](./docs/ECONOMY.md) | degenBTC emissions, SOL routing, buybacks, protocol-owned liquidity, transfer tax, staking, HODL tax, and market-making funding. |
+| [docs/NFTS.md](./docs/NFTS.md) | HashBeast DNA, mutation, breeding, rebirth, lootboxes, marketplace wrapping, floor anchor, sweeps, relists, and burns. |
+
+Primary source files:
+
+| Area | Source |
+|---|---|
+| State, constants, account layouts | `programs/mineBTC/src/state.rs` |
+| 60-second rounds | `programs/mineBTC/src/instructions/game.rs` |
+| Player bets, claims, autominers, mutations | `programs/mineBTC/src/instructions/user.rs` |
+| LP-burn faction-war cycles | `programs/mineBTC/src/instructions/faction_war.rs` |
+| Macro economy, buybacks, LP burn | `programs/mineBTC/src/instructions/economy.rs` |
+| HashBeast lifecycle | `programs/mineBTC/src/instructions/hashbeasts.rs` |
+| NFT marketplace and floor support | `programs/mineBTC/src/instructions/marketplace_cpi.rs` |
+| Token transfer tax | `programs/mineBTC/src/instructions/tax.rs` |
+
+## The Protocol In One Screen
+
+| Layer | Player-facing fantasy | Contract reality |
+|---|---|---|
+| **Rounds** | One-minute country battles. | SOL bets resolve by slot-hash entropy into country + direction winners. |
+| **Faction wars** | Communities push countries up the leaderboard. | Many rounds fold into rank-weighted base, HashBeast, and MVP reward lanes. |
+| **degenBTC** | Bitcoin as a degenerate mined game token. | Fixed-supply Token-2022 asset emitted through gameplay and throttled by price snapshots. |
+| **HashBeasts** | Dynamic operators that evolve from wins. | Metaplex Core assets with game-state PDAs: DNA, XP, multiplier, breed count, rebirth count. |
+| **Market maker** | Protocol defends floor and restocks lootboxes. | Permissionless sweeps buy cheap listings, then queue, relist, or burn inventory. |
+
+## One Bet, Five Effects
+
+| Effect | What happens |
+|---|---|
+| **Minute outcome** | The bet can win the 60-second SOL + dBTC round. |
+| **Cycle prediction** | The same country/direction exposure counts toward the active faction war. |
+| **Country score** | Winning country weighted points move the leaderboard. |
+| **NFT progression** | Claiming eligible rewards can mutate the active HashBeast. |
+| **Economy routing** | SOL volume feeds stakers, treasury, buybacks, POL, and NFT market-making. |
 
 ```text
-programs/mineBTC/src/
-├── lib.rs              # Program entrypoints
-├── state.rs            # Account layouts and constants
-├── errors.rs           # Custom error codes
-├── events.rs           # Indexer-facing events
-├── genescience.rs      # HashBeast DNA, mutations, evolution, breeding
-└── instructions/
-    ├── admin.rs           # Global config, factions, fee parameters
-    ├── game.rs            # 60-second round loop, slot-hash randomness, winner selection
-    ├── user.rs            # Betting, autominers, round claims, gameplay hashbeasts, mutations
-    ├── faction_war.rs     # Mutation-driven competitive cycles, settlement, cycle claims
-    ├── stake.rs           # degenBTC and LP token staking
-    ├── hashbeasts.rs      # HashBeast NFT minting, breeding, staking, gameplay lock/unlock, rebirth
-    ├── economy.rs         # Price snapshots, emission rate adjustment, POL (LP add + burn)
-    ├── marketplace_cpi.rs # Permissionless on-chain NFT market maker, floor queue, sweep + auto-dispose
-    ├── tax.rs             # Transfer-tax harvest, faction treasury distribution
-    └── helper.rs          # Shared math and vault transfer helpers
+Player bet
+  -> 60s round pot
+  -> faction-war exposure
+  -> SOL fee router
+  -> claim-time HashBeast roll
+  -> economy cycle and NFT floor support
 ```
 
-**Documentation:**
-- [ECONOMY.md](programs/mineBTC/ECONOMY.md) — Detailed economy cycle, rebase mechanics, XP/mutation math
-- [STAKING.md](programs/mineBTC/STAKING.md) — Staking mechanics, hashpower, reward indexes
-- [CLAUDE.md](programs/mineBTC/claude.md) — Developer orientation guide and canonical terminology
+## Core Game Loop
+
+| Step | User sees | On-chain state moves |
+|---:|---|---|
+| 1 | Pick country + Up/Neutral/Down. | `UserGameBet` and round aggregate counters update. |
+| 2 | Round resolves after 60 seconds. | `end_round` locks entropy and result, then `settle_round` finalizes indexes. |
+| 3 | Claim rewards. | dBTC/SOL rewards transfer, HODL accounting syncs, HashBeast roll can fire. |
+| 4 | Country climbs or falls. | Round scores and mutation scores fold into `FactionWarState`. |
+| 5 | Cycle settles after economy LP burn. | `settle_war` pays base, HashBeast, MVP, and SOL mirror lanes. |
+| 6 | Economy adjusts. | Price snapshots update emissions; SOL buybacks add and burn LP. |
+
+## Why The Design Is Interesting
+
+MineBTC is not a normal "stake token, earn token" loop.
+
+It is a competitive distribution machine:
+
+| Traditional GameFi failure | MineBTC design response |
+|---|---|
+| Token emissions detached from real demand. | dBTC is mined through gameplay volume and adjusted by price snapshots. |
+| Static NFTs become pure speculation. | HashBeasts mutate, multiply bets, boost staking, breed, rebirth, enter lootboxes, and can be burned. |
+| Floor collapses break mint economics. | Treasury-funded market maker buys cheap inventory under floor-anchor guardrails. |
+| Passive farms favor mercenary capital. | Countries, autominers, jackpots, and MVP lanes create social competition and repeated play. |
+| Rewards become one-dimensional. | Users earn across rounds, faction wars, staking, jackpot, HODL tax, and NFT progression. |
+
+## Current Setup Values
+
+These are deployment setup values, not governance promises forever.
+
+| Parameter | Value |
+|---|---:|
+| Round duration | 60 seconds |
+| Countries | 12 |
+| degenBTC supply | 2.1B fixed supply |
+| degenBTC decimals | 6 |
+| Transfer tax | 0.1% |
+| Base round emission | 1,000 dBTC |
+| Jackpot chance | 1 / 625 |
+| Faction-war cycle | One economy LP-burn cycle |
+| Production cycle target | 8 snapshots x 30 minutes = about 4 hours |
+| Current devnet setup | 8 snapshots x 5 minutes = about 40 minutes |
+| Protocol fee on SOL bets | 15% |
+| Cycle SOL split | 5% of gross bet |
+| Treasury buyback share | 70% |
+| NFT market-making share | 3% |
+| Gameplay HODL tax | 10% |
+| Genesis HashBeast cap | 36,000 |
+| Genesis cap per country | 3,000 |
+| Base genesis mint price | 1 SOL |
+| Gameplay HashBeast multiplier cap | 4.2x |
+| Passive HashBeast staking cap | 3x |
+| Breed floor guard | At least 1.5x floor anchor |
+| Max rebirth count | 7 |
+
+## Repository Map
+
+```text
+programs/
+  mineBTC/              Main game, economy, HashBeast, staking, tax contracts
+  degenbtc_market/      Standalone HashBeast marketplace used by MineBTC
+raydium/
+  programs/cp-swap/     Local/devnet Raydium CP-Swap program
+setup_scripts/          Deployment, initialization, keeper, and devnet scripts
+tests/                  Anchor / TypeScript tests
+```
 
 ## Build And Verify
 
 ```bash
-anchor build -p minebtc
-cargo fmt --all
+cargo fmt
 cargo check -p minebtc
-cargo test -p minebtc --lib
+cargo check -p degenbtc_market
+cargo test -p minebtc
+cargo test -p degenbtc_market --lib
+anchor build
 ```
 
-## Security
+`anchor build` can emit an upstream `mpl_core::hooked::plugin::registry_records_to_plugin_list` SBF stack warning. Treat that as a mainnet-readiness item to watch, not a docs issue.
 
-See [SECURITY.md](SECURITY.md) for responsible disclosure guidance.
+## Production Mindset
 
-## Contributing
+The contracts are built as permissionless public state machines:
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow and terminology rules.
+| Permissionless action | Why it exists |
+|---|---|
+| Start/end/settle rounds | Keeps the 60-second game alive without an admin operator. |
+| Settle faction wars | Lets anyone close the cycle once the economy boundary is reached. |
+| Run economy snapshots / LP burns | Keeps emissions and POL moving. |
+| Register listings / sweep floor / expire inventory | Keeps the NFT floor queue and inventory system live. |
+| Claim lootbox NFTs for users | Lets bots deliver assets while the recipient stays fixed on-chain. |
+
+The safety posture is adversarial by default:
+
+- canonical PDA constraints for vaults, queues, metadata, and state;
+- checked arithmetic for reward indexes and pool math;
+- rent-aware native SOL transfers;
+- no privileged NFT market-maker cranker;
+- marketplace listing and collection binding before floor entries are trusted;
+- sweep limits by floor anchor, vault percentage, reserve, and stale-data windows;
+- user recipients fixed by PDA/account constraints.
+
+MineBTC is an entertainment protocol and on-chain game. It is not investment advice, financial advice, or a real-world geopolitical oracle.

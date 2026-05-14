@@ -9,6 +9,7 @@ import {
 } from "@solana/web3.js";
 import * as anchor_spl from "@solana/spl-token";
 import {
+  TOKEN_PROGRAM_ID,
   TOKEN_2022_PROGRAM_ID,
   getOrCreateAssociatedTokenAccount,
   createTransferInstruction,
@@ -39,10 +40,12 @@ export const DEGEN_BTC_MINING_SEED = "mine-btc-mining";
 
 // PDAs which hold SOL collected by the program
 export const SOL_TREASURY_SEED = "sol-treasury";
+export const HODL_POOL_SEED = "hodl-pool";
+export const AUTOMINER_CUSTODY_SEED = "autominer-custody";
 
 // DEGEN_BTC Custody PDAs: Vault Authority (signs for token account) & (vault token account custodies DEGEN_BTC tokens)
-export const DEGEN_BTC_VAULT_AUTHORITY_SEED = "minebtc-vault-authority";
-export const DEGEN_BTC_VAULT_SEED = "minebtc_vault";
+export const DEGEN_BTC_VAULT_AUTHORITY_SEED = "degenBTC-vault-authority";
+export const DEGEN_BTC_VAULT_SEED = "dbtc_vault";
 
 // PDAs which hold ModuleConfigStore / GearConfigStore state
 export const MODULE_CONFIG_STORE_SEED = "module-config-store";
@@ -62,7 +65,7 @@ export const dbtc_NFT_VAULT_SEED = "dbtc-nft-vault";
 export const LOOT_REWARDS_SEED = "loot-rewards";
 export const LOOT_SOL_VAULT_SEED = "loot-sol-vault";
 export const LOOT_DEGEN_BTC_VAULT_SEED = "loot-dbtc-vault";
-export const LOOT_DEGEN_BTC_VAULT_AUTHORITY_SEED = "loot-minebtc-vault-authority";
+export const LOOT_DEGEN_BTC_VAULT_AUTHORITY_SEED = "loot-degenBTC-vault-authority";
 export const LEVEL_STATS_SEED = "level-stats";
 export const BUYBACKS_SEED = "buybacks";
 export const BUYBACKS_SOL_VAULT_SEED = "buybacks-sol-vault";
@@ -622,6 +625,14 @@ export async function initializeMinebtcProgram(
       [Buffer.from(SOL_TREASURY_SEED)],
       program.programId
     );
+    const [hodlPoolPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from(HODL_POOL_SEED)],
+      program.programId
+    );
+    const [autominerCustodyPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from(AUTOMINER_CUSTODY_SEED)],
+      program.programId
+    );
 
     console.log(
       "\x1b[36m%s\x1b[0m",
@@ -637,6 +648,14 @@ export async function initializeMinebtcProgram(
     );
     console.log(
       "\x1b[36m%s\x1b[0m",
+      `🔑 HODL Pool PDA: ${hodlPoolPDA.toString()}`
+    );
+    console.log(
+      "\x1b[36m%s\x1b[0m",
+      `🔑 Autominer Custody PDA: ${autominerCustodyPDA.toString()}`
+    );
+    console.log(
+      "\x1b[36m%s\x1b[0m",
       `🔑 Creation Fee Recipient: ${feeRecipient.toString()}`
     );
 
@@ -645,8 +664,10 @@ export async function initializeMinebtcProgram(
       .initialize(feeRecipient)
       .accounts({
         globalConfig: globalConfigPDA,
-        mineBtcMining: mineBtcMiningPDA,
+        dbtcMining: mineBtcMiningPDA,
+        hodlPool: hodlPoolPDA,
         solTreasury: solTreasuryPDA,
+        autominerCustody: autominerCustodyPDA,
         authority: wallet.publicKey,
         systemProgram: web3.SystemProgram.programId,
       })
@@ -667,13 +688,15 @@ export async function initializeMinebtcProgram(
 
     return {
       success: true,
-      data: {
-        txid,
-        globalConfig_address: globalConfigPDA.toString(),
-        mineBtcMining_address: mineBtcMiningPDA.toString(),
-        solTreasury_address: solTreasuryPDA.toString(),
-      },
-    };
+        data: {
+          txid,
+          globalConfig_address: globalConfigPDA.toString(),
+          mineBtcMining_address: mineBtcMiningPDA.toString(),
+          solTreasury_address: solTreasuryPDA.toString(),
+          hodlPool_address: hodlPoolPDA.toString(),
+          autominerCustody_address: autominerCustodyPDA.toString(),
+        },
+      };
   } catch (error) {
     if (error.toString().includes("already in use")) {
       console.log(
@@ -696,6 +719,14 @@ export async function initializeMinebtcProgram(
         [Buffer.from(SOL_TREASURY_SEED)],
         program.programId
       );
+      const [hodlPoolPDA] = PublicKey.findProgramAddressSync(
+        [Buffer.from(HODL_POOL_SEED)],
+        program.programId
+      );
+      const [autominerCustodyPDA] = PublicKey.findProgramAddressSync(
+        [Buffer.from(AUTOMINER_CUSTODY_SEED)],
+        program.programId
+      );
 
       return {
         success: true,
@@ -703,6 +734,8 @@ export async function initializeMinebtcProgram(
           globalConfig_address: globalConfigPDA.toString(),
           mineBtcMining_address: mineBtcMiningPDA.toString(),
           solTreasury_address: solTreasuryPDA.toString(),
+          hodlPool_address: hodlPoolPDA.toString(),
+          autominerCustody_address: autominerCustodyPDA.toString(),
         },
       };
     } else {
@@ -742,14 +775,12 @@ export async function updateGlobalConfig(
       "\x1b[36m%s\x1b[0m",
       `🔑 Global Config PDA: ${globalConfigPDA}`
     );
-    console.log(
-      "\x1b[36m%s\x1b[0m",
-      `🔑 Module Config Store PDA: ${moduleConfigStorePDA}`
-    );
-    console.log(
-      "\x1b[36m%s\x1b[0m",
-      `🔑 DegenBtc Mining PDA: ${mineBtcMiningPDA}`
-    );
+    if (moduleConfigStorePDA || mineBtcMiningPDA) {
+      console.log(
+        "\x1b[33m%s\x1b[0m",
+        "⚠️ update_config no longer uses module/mining accounts; ignoring legacy parameters."
+      );
+    }
 
     if (newAuthority)
       console.log("\x1b[36m%s\x1b[0m", `   New Authority: ${newAuthority}`);
@@ -761,32 +792,27 @@ export async function updateGlobalConfig(
     if (newCreationFeeRecipient)
       console.log(
         "\x1b[36m%s\x1b[0m",
-        `   New Creation Fee Recipient: ${newCreationFeeRecipient}`
+        `   Ignored legacy creation fee recipient: ${newCreationFeeRecipient}`
       );
     if (newBaseCreationCost)
       console.log(
         "\x1b[36m%s\x1b[0m",
-        `   New Base Creation Cost: ${newBaseCreationCost}`
+        `   Ignored legacy base creation cost: ${newBaseCreationCost}`
       );
     if (newLootPercentage)
       console.log(
         "\x1b[36m%s\x1b[0m",
-        `   New Loot Percentage: ${newLootPercentage}`
+        `   Ignored legacy loot percentage: ${newLootPercentage}`
       );
 
     const updateTx = await program.methods
       .updateConfig(
         newAuthority ? new PublicKey(newAuthority) : null,
-        newFeeCollector ? new PublicKey(newFeeCollector) : null,
-        newCreationFeeRecipient ? new PublicKey(newCreationFeeRecipient) : null,
-        newLootPercentage
+        newFeeCollector ? new PublicKey(newFeeCollector) : null
       )
       .accounts({
         globalConfig: new PublicKey(globalConfigPDA),
-        moduleConfigStore: new PublicKey(moduleConfigStorePDA),
-        mineBtcMining: new PublicKey(mineBtcMiningPDA),
         authority: wallet.publicKey,
-        systemProgram: web3.SystemProgram.programId,
       })
       .transaction();
 
@@ -831,7 +857,6 @@ export async function setupMiningVault(
   vaultAuthorityPDA,
   tokenMint,
   token_program,
-  start_timestamp,
   degen_btc_per_round,
   raydium_pool_state
 ) {
@@ -857,7 +882,6 @@ export async function setupMiningVault(
       "\x1b[36m%s\x1b[0m",
       `🔑 DEGEN_BTC Token Program: ${token_program.toString()}`
     );
-    console.log("\x1b[90m%s\x1b[0m", `⏰ Start Timestamp: ${start_timestamp}`);
     console.log(
       "\x1b[90m%s\x1b[0m",
       `💰 DEGENBTC Per Slot: ${degen_btc_per_round.toString()}`
@@ -874,13 +898,12 @@ export async function setupMiningVault(
 
     const miningTx = await program.methods
       .initializeMining(
-        new BN(start_timestamp), // start_timestamp
         new BN(degen_btc_per_round), // degen_btc_per_round (tokens per slot)
         new PublicKey(raydium_pool_state) // pool_state (Raydium pool state)
       )
       .accounts({
         globalConfig: globalConfigPDA,
-        mineBtcMining: mineBtcMiningPDA,
+        dbtcMining: mineBtcMiningPDA,
         vaultAuthority: vaultAuthorityPDA,
         tokenVault: vaultPDA,
         tokenMint: tokenMint,
@@ -944,62 +967,14 @@ export async function updateModuleConfig(
   moduleConfigMaxUpgrades,
   moduleConfigMaxHashBeasts
 ) {
-  try {
-    console.log("\x1b[33m%s\x1b[0m", "📡 Updating module config...");
-    console.log(
-      "\x1b[36m%s\x1b[0m",
-      `🔑 Module Config Store: ${moduleConfigStorePDA.toString()}`
-    );
-    console.log(
-      "\x1b[36m%s\x1b[0m",
-      `🔑 Module Config Name: ${moduleConfigName}`
-    );
-
-    const configStoreTx = await program.methods
-      .updateModule(
-        moduleConfigName,
-        moduleConfigImageUrl,
-        moduleConfigMintCost,
-        moduleConfigUpgradeCost,
-        moduleConfigMaxUpgrades,
-        moduleConfigMaxHashBeasts
-      )
-      .accounts({
-        globalConfig: globalConfigPDA,
-        moduleConfigStore: moduleConfigStorePDA,
-        gearConfigStore: gearConfigStorePDA,
-        mineBtcMining: mineBtcMiningPDA,
-        authority: wallet.publicKey,
-        systemProgram: web3.SystemProgram.programId,
-      })
-      .transaction();
-
-    const configStoreTxid = await web3.sendAndConfirmTransaction(
-      connection,
-      configStoreTx,
-      [walletKeypair]
-    );
-    console.log("\x1b[32m%s\x1b[0m", `✅ Module config updated`);
-    console.log("\x1b[90m%s\x1b[0m", `🔗 Transaction ID: ${configStoreTxid}`);
-    console.log(
-      "\x1b[90m%s\x1b[0m",
-      `🔍 Explorer URL: https://explorer.solana.com/tx/${configStoreTxid}?cluster=devnet`
-    );
-
-    return {
-      success: true,
-    };
-  } catch (error) {
-    console.error(
-      "\x1b[31m%s\x1b[0m",
-      "❌ Error updating module config:",
-      error
-    );
-    return {
-      success: false,
-      error: error.toString(),
-    };
-  }
+  console.log(
+    "\x1b[33m%s\x1b[0m",
+    "⚠️ update_module was removed from the current MineBTC program."
+  );
+  return {
+    success: false,
+    error: "update_module_removed",
+  };
 }
 
 /**
@@ -1023,60 +998,14 @@ export async function updateGearConfig(
   gearConfigAvailableCount,
   gearConfigIsTradable
 ) {
-  try {
-    console.log("\x1b[33m%s\x1b[0m", "📡 Updating gear config...");
-    console.log(
-      "\x1b[36m%s\x1b[0m",
-      `🔑 Gear Config Store: ${gearConfigStorePDA.toString()}`
-    );
-    console.log(
-      "\x1b[36m%s\x1b[0m",
-      `🔑 Gear Config PDA: ${gearConfigPDA.toString()}`
-    );
-
-    const configStoreTx = await program.methods
-      .updateGear(
-        gearConfigName,
-        gearConfigImageUrl,
-        gearConfigType,
-        gearConfigCompatibleModules,
-        gearConfigInitHashpower,
-        gearConfigInitElectricity,
-        gearConfigPrice,
-        gearConfigMaxUpgrades,
-        gearConfigAvailableCount,
-        gearConfigIsTradable
-      )
-      .accounts({
-        globalConfig: globalConfigPDA,
-        gearConfigStore: gearConfigStorePDA,
-        authority: wallet.publicKey,
-        systemProgram: web3.SystemProgram.programId,
-      })
-      .transaction();
-
-    const configStoreTxid = await web3.sendAndConfirmTransaction(
-      connection,
-      configStoreTx,
-      [walletKeypair]
-    );
-    console.log("\x1b[32m%s\x1b[0m", `✅ Gear config updated`);
-    console.log("\x1b[90m%s\x1b[0m", `🔗 Transaction ID: ${configStoreTxid}`);
-    console.log(
-      "\x1b[90m%s\x1b[0m",
-      `🔍 Explorer URL: https://explorer.solana.com/tx/${configStoreTxid}?cluster=devnet`
-    );
-
-    return {
-      success: true,
-    };
-  } catch (error) {
-    console.error("\x1b[31m%s\x1b[0m", "❌ Error updating gear config:", error);
-    return {
-      success: false,
-      error: error.toString(),
-    };
-  }
+  console.log(
+    "\x1b[33m%s\x1b[0m",
+    "⚠️ update_gear was removed from the current MineBTC program."
+  );
+  return {
+    success: false,
+    error: "update_gear_removed",
+  };
 }
 
 
@@ -1334,67 +1263,18 @@ export async function updateSlotsPerHour(
   mineBtcMiningPDA,
   newSlotsPerHour
 ) {
-  try {
-    console.log(
-      "\x1b[33m%s\x1b[0m",
-      "📡 Updating slots per hour configuration..."
-    );
-    console.log(
-      "\x1b[36m%s\x1b[0m",
-      `🔑 Global Config PDA: ${globalConfigPDA}`
-    );
-    console.log(
-      "\x1b[36m%s\x1b[0m",
-      `🔑 DEGENBTC Mining PDA: ${mineBtcMiningPDA}`
-    );
-    console.log(
-      "\x1b[36m%s\x1b[0m",
-      `⏰ New slots per hour: ${newSlotsPerHour}`
-    );
-
-    const updateTx = await program.methods
-      .updateSlotsPerHour(new BN(newSlotsPerHour))
-      .accounts({
-        globalConfig: new PublicKey(globalConfigPDA),
-        mineBtcMining: new PublicKey(mineBtcMiningPDA),
-        authority: wallet.publicKey,
-      })
-      .transaction();
-
-    const updateTxid = await web3.sendAndConfirmTransaction(
-      connection,
-      updateTx,
-      [walletKeypair]
-    );
-
-    console.log(
-      "\x1b[32m%s\x1b[0m",
-      `✅ Slots per hour updated to ${newSlotsPerHour}`
-    );
-    console.log("\x1b[90m%s\x1b[0m", `🔗 Transaction ID: ${updateTxid}`);
-    console.log(
-      "\x1b[90m%s\x1b[0m",
-      `🔍 Explorer URL: https://explorer.solana.com/tx/${updateTxid}?cluster=devnet`
-    );
-
-    return {
-      success: true,
-      data: {
-        updateTxid: updateTxid,
-        newSlotsPerHour: newSlotsPerHour,
-      },
-    };
-  } catch (error) {
-    console.error(
-      "\x1b[31m%s\x1b[0m",
-      "❌ Error updating slots per hour:",
-      error
-    );
-    return {
-      success: false,
-      error: error.toString(),
-    };
-  }
+  console.log(
+    "\x1b[33m%s\x1b[0m",
+    "⚠️ update_slots_per_hour was removed from the current MineBTC program."
+  );
+  console.log(
+    "\x1b[33m%s\x1b[0m",
+    "   Use updateEmissionParams/updateGameplayTuning from 3_init_mineBTC.js for current pacing knobs."
+  );
+  return {
+    success: false,
+    error: "update_slots_per_hour_removed",
+  };
 }
 
 /**
@@ -1418,27 +1298,56 @@ export async function addFactions(
     );
     console.log("\x1b[36m%s\x1b[0m", `🏴 Factions: ${factionNames.join(", ")}`);
 
-    const addFactionsTxid = await program.methods
-      .addFactions(factionNames)
-      .accounts({
-        globalConfig: new PublicKey(globalConfigPDA),
-        moduleConfigStore: new PublicKey(moduleConfigStorePDA),
-        mineBtcMining: new PublicKey(mineBtcMiningPDA),
-        authority: wallet.publicKey,
-        systemProgram: web3.SystemProgram.programId,
-      })
-      .rpc();
+    if (moduleConfigStorePDA || mineBtcMiningPDA) {
+      console.log(
+        "\x1b[33m%s\x1b[0m",
+        "⚠️ add_faction no longer uses module/mining accounts; ignoring legacy parameters."
+      );
+    }
+
+    const globalConfigKey = new PublicKey(globalConfigPDA);
+    const globalConfig = await program.account.globalConfig.fetch(globalConfigKey);
+    let currentFactionCount = globalConfig.supportedFactions?.length || 0;
+    const txids = [];
+
+    for (const faction of factionNames) {
+      const factionName = typeof faction === "string" ? faction : faction?.name;
+      if (!factionName) {
+        throw new Error("Faction entries must be strings or objects with a name field");
+      }
+      const factionId = currentFactionCount;
+      const [factionStatePDA] = PublicKey.findProgramAddressSync(
+        [Buffer.from("faction"), Buffer.from(factionName)],
+        program.programId
+      );
+      const txid = await program.methods
+        .addFaction(factionName, factionId)
+        .accounts({
+          globalConfig: globalConfigKey,
+          factionState: factionStatePDA,
+          authority: wallet.publicKey,
+          systemProgram: web3.SystemProgram.programId,
+        })
+        .rpc();
+      txids.push({ factionName, factionId, factionState: factionStatePDA.toString(), txid });
+      currentFactionCount += 1;
+    }
 
     console.log(
       "\x1b[32m%s\x1b[0m",
       `✅ Added ${factionNames.length} factions successfully`
     );
-    console.log("\x1b[90m%s\x1b[0m", `🔗 Transaction ID: ${addFactionsTxid}`);
+    for (const tx of txids) {
+      console.log(
+        "\x1b[90m%s\x1b[0m",
+        `🔗 ${tx.factionName} (${tx.factionId}): ${tx.txid}`
+      );
+    }
 
     return {
       success: true,
       data: {
-        addFactionsTxid: addFactionsTxid,
+        txids,
         factionNames: factionNames,
       },
     };
@@ -1494,18 +1403,12 @@ export async function updateGlobalConfigHelper(
   try {
     const tx = await program.methods
       .updateConfig(
-        newAuthority,
-        newFeeCollector,
-        newCreationFeeRecipient,
-        newBaseCreationCost ? new BN(newBaseCreationCost) : null,
-        newLootPercentage
+        newAuthority ? new PublicKey(newAuthority) : null,
+        newFeeCollector ? new PublicKey(newFeeCollector) : null
       )
       .accounts({
         globalConfig: globalConfigPDA,
-        moduleConfigStore: null,
-        mineBtcMining: null,
         authority: wallet.publicKey,
-        systemProgram: SystemProgram.programId,
       })
       .rpc();
 
@@ -1526,12 +1429,15 @@ export async function toggleGameActiveHelper(
   globalConfigPDA
 ) {
   try {
+    const globalConfigBefore = await program.account.globalConfig.fetch(
+      globalConfigPDA
+    );
+    const nextPaused = !globalConfigBefore.isPaused;
     const tx = await program.methods
-      .toggleGameActive()
+      .setPause(nextPaused)
       .accounts({
         globalConfig: globalConfigPDA,
         authority: wallet.publicKey,
-        systemProgram: SystemProgram.programId,
       })
       .rpc();
 
@@ -1544,7 +1450,8 @@ export async function toggleGameActiveHelper(
       success: true,
       data: {
         txid: tx,
-        isGameActive: globalConfig.isGameActive,
+        isPaused: globalConfig.isPaused,
+        isGameActive: !globalConfig.isPaused,
       },
     };
   } catch (error) {
@@ -1565,23 +1472,24 @@ export async function getSystemStatus(
     const globalConfig = await program.account.globalConfig.fetch(
       globalConfigPDA
     );
-    const mineBtcMining = await program.account.mineBtcMining.fetch(
+    const mineBtcMining = await program.account.degenBtcMining.fetch(
       mineBtcMiningPDA
     );
 
     return {
       success: true,
       data: {
-        isGameActive: globalConfig.isGameActive,
-        baseCreationCost: globalConfig.baseCreationCost,
-        lootPercentage: globalConfig.lootPercentage,
-        totalMinebtcsCreated: globalConfig.totalMinebtcsCreated,
-        totalSolSpent: globalConfig.totalSolSpent,
-        totalActiveHashpower: mineBtcMining.totalActiveHashpower,
-        totalActiveElectricity: mineBtcMining.totalActiveElectricity,
+        isPaused: globalConfig.isPaused,
+        isGameActive: !globalConfig.isPaused,
+        authority: globalConfig.extAuthority,
+        pendingAuthority: globalConfig.pendingAuthority,
+        feeRecipient: globalConfig.feeRecipient,
+        totalPlayers: globalConfig.totalPlayers,
+        dbtcPerRound: mineBtcMining.dbtcPerRound,
         totalTokensMined: mineBtcMining.totalTokensMined,
-        currentDistRate: mineBtcMining.currentDistRate,
-        slotsForSwap: mineBtcMining.slotsForSwap,
+        totalTokensDistributed: mineBtcMining.totalTokensDistributed,
+        recentPrice: mineBtcMining.recentPrice,
+        raydiumPoolState: mineBtcMining.raydiumPoolState,
         supportedFactions: globalConfig.supportedFactions,
       },
     };

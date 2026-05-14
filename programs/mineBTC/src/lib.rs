@@ -6,7 +6,7 @@
     clippy::useless_asref
 )]
 
-// # MineBTC Program
+// # DegenBTC Program
 //
 // Degen country arena game on Solana.
 //
@@ -49,11 +49,11 @@ pub use instructions::stake::*;
 pub use instructions::tax::*;
 pub use instructions::user::*;
 pub use state::{
-    AutominerFactionPick, BetType, FactionsConfig, HashBeastConfig, HashBeastMintConfig,
-    MineBtcDistConfig, PredictionDirection, SolFeeConfig, TaxConfig, TicketTier,
+    AutominerFactionPick, BetType, DegenBtcDistConfig, FactionsConfig, HashBeastConfig,
+    HashBeastMintConfig, PredictionDirection, SolFeeConfig, TaxConfig, TicketTier,
 };
 
-declare_id!("DPfSfuStn4cU1p4G7PTcqDiWdufGg9kpJPrsnatG6SLG");
+declare_id!("3uERKkvfgkTzJ7wFZC7ymWZygEbbeXuWVAiP2zu1Y1ye");
 
 #[macro_export]
 macro_rules! log_fn {
@@ -144,10 +144,10 @@ pub mod minebtc {
         new_protocol_fee_pct: Option<u8>,
         new_buyback_pct: Option<u8>,
         new_stakers_pct: Option<u8>,
-        new_minebtc_stakers_pct: Option<u8>,
-        new_minebtc_winners_pct: Option<u8>,
-        new_minebtc_same_faction_pct: Option<u8>,
-        new_minebtc_jackpot_pct: Option<u8>,
+        new_dbtc_stakers_pct: Option<u8>,
+        new_dbtc_winners_pct: Option<u8>,
+        new_dbtc_same_faction_pct: Option<u8>,
+        new_dbtc_jackpot_pct: Option<u8>,
         new_hodl_tax_pct: Option<u8>,
         snapshot_interval: Option<u64>,
         new_cycle_sol_split_pct: Option<u8>,
@@ -159,10 +159,10 @@ pub mod minebtc {
             new_protocol_fee_pct,
             new_buyback_pct,
             new_stakers_pct,
-            new_minebtc_stakers_pct,
-            new_minebtc_winners_pct,
-            new_minebtc_same_faction_pct,
-            new_minebtc_jackpot_pct,
+            new_dbtc_stakers_pct,
+            new_dbtc_winners_pct,
+            new_dbtc_same_faction_pct,
+            new_dbtc_jackpot_pct,
             new_hodl_tax_pct,
             snapshot_interval,
             new_cycle_sol_split_pct,
@@ -238,28 +238,27 @@ pub mod minebtc {
     }
 
     // ----------------------------------------------------------------------------------------
-    // ------------ mine_btc_MINING (ADMIN) :: INITIALIZATION & UPDATES ------------
+    // ------------ degenBTC_MINING (ADMIN) :: INITIALIZATION & UPDATES ------------
     // ----------------------------------------------------------------------------------------
 
-    /// Initialize mining by setting the token vault and starting timestamp
-    /// Can only be called once when mining_start_timestamp is 0
+    /// Initialize mining by setting the token vault and emission rate.
+    /// Can only be called once. Mining start time is recorded from the on-chain clock.
     pub fn initialize_mining(
         ctx: Context<InitializeMining>,
-        start_timestamp: u64,
-        mine_btc_per_round: u64,
+        dbtc_per_round: u64,
         pool_state: Pubkey,
     ) -> Result<()> {
         crate::log_fn!("lib", "initialize_mining");
-        admin::initialize_mining_internal(ctx, start_timestamp, mine_btc_per_round, pool_state)
+        admin::initialize_mining_internal(ctx, dbtc_per_round, pool_state)
     }
 
-    /// Deposit MineBtc tokens to the mining vault (anyone can call)
+    /// Deposit degenBTC tokens to the mining vault (anyone can call)
     ///
-    /// Allows anyone to deposit MineBtc tokens into the mining vault.
+    /// Allows anyone to deposit degenBTC tokens into the mining vault.
     /// These tokens will be distributed as rewards to stakers over time.
-    pub fn deposit_mine_btc_tokens(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {
-        crate::log_fn!("lib", "deposit_mine_btc_tokens");
-        admin::deposit_mine_btc_tokens_internal(ctx, amount)
+    pub fn deposit_dbtc_tokens(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {
+        crate::log_fn!("lib", "deposit_dbtc_tokens");
+        admin::deposit_dbtc_tokens_internal(ctx, amount)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -447,21 +446,21 @@ pub mod minebtc {
     /// `distribute_sol_fees` (see `SolFeeConfig::nft_market_making_pct`).
     pub fn initialize_tax_config(
         ctx: Context<InitializeTaxConfig>,
-        faction_treasury_pct: u8,
+        treasury_pct: u8,
         burn_pct: u8,
     ) -> Result<()> {
         crate::log_fn!("lib", "initialize_tax_config");
-        tax::internal_initialize_tax_config(ctx, faction_treasury_pct, burn_pct)
+        tax::internal_initialize_tax_config(ctx, treasury_pct, burn_pct)
     }
 
     /// Update tax distribution percentages (admin only)
     pub fn update_tax_config(
         ctx: Context<UpdateTaxConfig>,
-        faction_treasury_pct: u8,
+        treasury_pct: u8,
         burn_pct: u8,
     ) -> Result<()> {
         crate::log_fn!("lib", "update_tax_config");
-        tax::internal_update_tax_config(ctx, faction_treasury_pct, burn_pct)
+        tax::internal_update_tax_config(ctx, treasury_pct, burn_pct)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -547,17 +546,14 @@ pub mod minebtc {
 
     /// STEP 2: Withdraw total tax from mint and distribute it
     /// Callable by anyone - program-controlled withdraw authority
-    pub fn crank_distribute_tax(
-        ctx: Context<CrankDistributeTax>,
-        faction_war_id: u64,
-    ) -> Result<()> {
+    pub fn crank_distribute_tax(ctx: Context<CrankDistributeTax>, war_id: u64) -> Result<()> {
         crate::log_fn!("lib", "crank_distribute_tax");
         let bumps = ctx.bumps;
         let accounts = ctx.accounts;
         tax::internal_crank_distribute_tax(
             accounts,
-            faction_war_id,
-            bumps.faction_war_state,
+            war_id,
+            bumps.war_state,
             bumps.withdraw_withheld_authority,
         )
     }
@@ -566,10 +562,10 @@ pub mod minebtc {
     /// Uses the gameplay-score leaderboard (faction_war final_ranks) -- permissionless.
     pub fn claim_faction_treasury_for_faction_war(
         ctx: Context<ClaimFactionTreasuryForFactionWar>,
-        faction_war_id: u64,
+        war_id: u64,
     ) -> Result<()> {
         crate::log_fn!("lib", "claim_faction_treasury_for_faction_war");
-        tax::internal_claim_faction_treasury_for_faction_war(ctx, faction_war_id)
+        tax::internal_claim_faction_treasury_for_faction_war(ctx, war_id)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -578,34 +574,22 @@ pub mod minebtc {
 
     /// Initialize faction_war configuration (admin only).
     /// FactionWar duration is tied to the economy cycle -- one faction_war per LP burn.
-    pub fn initialize_faction_war_config(ctx: Context<InitializeFactionWarConfig>) -> Result<()> {
-        crate::log_fn!("lib", "initialize_faction_war_config");
-        faction_war::initialize_faction_war_config_internal(ctx)
-    }
-
-    /// Update faction_war configuration (admin only)
-    pub fn update_faction_war_config(
-        ctx: Context<UpdateFactionWarConfig>,
-        is_active: Option<bool>,
-    ) -> Result<()> {
-        crate::log_fn!("lib", "update_faction_war_config");
-        faction_war::update_faction_war_config_internal(ctx, is_active)
+    pub fn initialize_war_config(ctx: Context<InitializeFactionWarConfig>) -> Result<()> {
+        crate::log_fn!("lib", "initialize_war_config");
+        faction_war::initialize_war_config_internal(ctx)
     }
 
     /// Settle faction_war: finalize gameplay-score rankings and compute reward pools.
     /// Permissionless -- anyone can call once the economy cycle's LP burn has completed.
-    pub fn settle_faction_war(ctx: Context<SettleFactionWar>) -> Result<()> {
-        crate::log_fn!("lib", "settle_faction_war");
-        faction_war::settle_faction_war_internal(ctx)
+    pub fn settle_war(ctx: Context<SettleFactionWar>) -> Result<()> {
+        crate::log_fn!("lib", "settle_war");
+        faction_war::settle_war_internal(ctx)
     }
 
-    /// User claims their faction-war rewards (closes user_faction_war_bets account).
-    pub fn claim_faction_war_rewards(
-        ctx: Context<ClaimFactionWarRewards>,
-        faction_war_id: u64,
-    ) -> Result<()> {
-        crate::log_fn!("lib", "claim_faction_war_rewards");
-        faction_war::claim_faction_war_rewards_internal(ctx, faction_war_id)
+    /// User claims their faction-war rewards (closes user_war_bets account).
+    pub fn claim_war_rewards(ctx: Context<ClaimFactionWarRewards>, war_id: u64) -> Result<()> {
+        crate::log_fn!("lib", "claim_war_rewards");
+        faction_war::claim_war_rewards_internal(ctx, war_id)
     }
 
     // ----------------------------------------------------------------------------------------
@@ -626,21 +610,24 @@ pub mod minebtc {
     }
 
     /// Finalize the round's faction-level staking/jackpot distribution and track faction-war mining.
-    pub fn end_round_faction_rewards(
-        ctx: Context<EndRoundFactionRewards>,
-        faction_war_id: u64,
-    ) -> Result<()> {
-        crate::log_fn!("lib", "end_round_faction_rewards");
-        let bumps = ctx.bumps;
-        let accounts = ctx.accounts;
-        game::int_end_round_faction_rewards(accounts, faction_war_id, bumps.faction_war_state)
+    pub fn settle_round(ctx: Context<SettleRound>, war_id: u64) -> Result<()> {
+        crate::log_fn!("lib", "settle_round");
+        game::int_settle_round(ctx.accounts, war_id)
+    }
+
+    /// Initialize a new faction war state PDA.
+    /// Must be called once per war cycle before the first round's settle_round.
+    /// Permissionless — anyone can initialize the war state for the current war ID.
+    pub fn initialize_faction_war(ctx: Context<InitializeFactionWar>, war_id: u64) -> Result<()> {
+        crate::log_fn!("lib", "initialize_faction_war");
+        faction_war::initialize_war_internal(ctx, war_id)
     }
 
     // ----------------------------------------------------------------------------------------
     // ------------ PLAYER & BETTING FUNCTIONS ------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Initialize a player account for the MineBTC country arena
+    /// Initialize a player account for the DegenBTC country arena
     pub fn initialize_player(
         ctx: Context<InitializePlayer>,
         faction_id: u8,
@@ -654,7 +641,7 @@ pub mod minebtc {
     pub fn join_bets(
         ctx: Context<JoinBets>,
         round_id: u64,
-        faction_war_id: u64,
+        war_id: u64,
         bet_types: Vec<BetType>,
         amount_per_bet: u64,
         use_ticket: Option<u8>,
@@ -665,13 +652,12 @@ pub mod minebtc {
         user::internal_join_bets(
             accounts,
             round_id,
-            faction_war_id,
+            war_id,
             bet_types,
             amount_per_bet,
             use_ticket,
             bumps.user_game_bet,
-            bumps.faction_war_state,
-            bumps.user_faction_war_bets,
+            bumps.user_war_bets,
         )
     }
 
@@ -700,7 +686,7 @@ pub mod minebtc {
     pub fn execute_autominer_bet(
         ctx: Context<ExecuteAutominerBet>,
         current_round_id: u64,
-        faction_war_id: u64,
+        war_id: u64,
     ) -> Result<()> {
         crate::log_fn!("lib", "execute_autominer_bet");
         let bumps = ctx.bumps;
@@ -708,23 +694,21 @@ pub mod minebtc {
         user::internal_execute_autominer_bet(
             accounts,
             current_round_id,
-            faction_war_id,
+            war_id,
             bumps.user_game_bet,
-            bumps.faction_war_state,
-            bumps.user_faction_war_bets,
+            bumps.user_war_bets,
             bumps.autominer_custody,
         )
     }
 
-    /// Update autominer configuration (sol_per_round, num_rounds, can_reload)
+    /// Update autominer run controls (add rounds, can_reload)
     pub fn update_autominer(
         ctx: Context<UpdateAutominer>,
-        sol_per_round: Option<u64>,
-        num_rounds: Option<u32>,
+        rounds_added: Option<u32>,
         can_reload: Option<bool>,
     ) -> Result<()> {
         crate::log_fn!("lib", "update_autominer");
-        user::internal_update_autominer(ctx, sol_per_round, num_rounds, can_reload)
+        user::internal_update_autominer(ctx, rounds_added, can_reload)
     }
 
     /// Stop autominer and refund remaining SOL
@@ -779,24 +763,24 @@ pub mod minebtc {
     // ------------ USER INSTRUCTIONS :: STAKE & UNSTAKE MINEBTC / LP TOKENs  ------------
     // ----------------------------------------------------------------------------------------
 
-    /// Stake MineBtc tokens to earn SOL and minebtc rewards
-    pub fn stake_minebtc(
+    /// Stake degenBTC tokens to earn SOL and degenBTC rewards
+    pub fn stake_degenbtc(
         ctx: Context<StakeMineBtc>,
         amount: u64,
         lockup_duration: u64,
         position_index: u8,
     ) -> Result<()> {
-        crate::log_fn!("lib", "stake_minebtc");
-        stake::int_stake_minebtc(ctx, amount, lockup_duration, position_index)
+        crate::log_fn!("lib", "stake_degenbtc");
+        stake::int_stake_degenbtc(ctx, amount, lockup_duration, position_index)
     }
 
-    /// Unstake MineBtc tokens from a position
-    pub fn unstake_minebtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> Result<()> {
-        crate::log_fn!("lib", "unstake_minebtc");
-        stake::int_unstake_minebtc(ctx, position_index)
+    /// Unstake degenBTC tokens from a position
+    pub fn unstake_degenbtc(ctx: Context<UnstakeMineBtc>, position_index: u8) -> Result<()> {
+        crate::log_fn!("lib", "unstake_degenbtc");
+        stake::int_unstake_degenbtc(ctx, position_index)
     }
 
-    /// Stake LP tokens to earn SOL and minebtc rewards
+    /// Stake LP tokens to earn SOL and degenBTC rewards
     pub fn stake_lp_tokens(
         ctx: Context<StakeLpTokens>,
         amount: u64,
@@ -813,19 +797,19 @@ pub mod minebtc {
         stake::int_unstake_lp_tokens(ctx, position_index)
     }
 
-    /// Claim staking rewards: transfers SOL directly, accumulates MineBTC to pending
+    /// Claim staking rewards: transfers SOL directly, accumulates degenBTC to pending
     pub fn claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()> {
         crate::log_fn!("lib", "claim_staking_rewards");
         stake::int_claim_staking_rewards(ctx)
     }
 
-    /// Withdraw accumulated MineBTC rewards (with HODL tax redistribution)
+    /// Withdraw accumulated degenBTC rewards (with HODL tax redistribution)
     pub fn withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()> {
         crate::log_fn!("lib", "withdraw_dbtc_rewards");
         stake::int_withdraw_dbtc_rewards(ctx)
     }
 
-    /// Claim referral rewards (SOL and MineBtc earned from referrals)
+    /// Claim referral rewards (SOL earned from referrals)
     pub fn claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<()> {
         crate::log_fn!("lib", "claim_referral_rewards");
         stake::int_claim_referral_rewards(ctx)

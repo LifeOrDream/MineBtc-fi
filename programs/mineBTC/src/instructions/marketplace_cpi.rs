@@ -1,32 +1,209 @@
-// # Marketplace CPI + Permissionless Market Making
-//
-// This module is the on-chain market maker for the program-owned HashBeast inventory.
-// The crank-gated flow is gone; everything here is either user-signed or
-// permissionless (anyone can call, with a small keeper bounty paid from
-// `inventory_sweep_vault` where applicable).
-//
-// User-signed (asset owner is signer):
-// - `list_user_nft` / `cancel_user_listing` / `update_user_listing_price`
-//   — wrap the marketplace ix and keep `FloorQueue` in sync atomically.
-// - `buy_user_listing` — wraps `degenbtc_market::buy_listing`, also records
-//   the sale into `SaleHistory` if it qualifies as a real-demand signal.
-//
-// Permissionless:
-// - `register_floor_listing` — anyone pushes an existing user listing into
-//   the sorted `FloorQueue`. Bots will register their own listings + others
-//   to stay competitive for sweep keeper rewards.
-// - `sweep_floor_lowest` — buys queue.entries[0], or purges a stale head so
-//   bots can retry, then disposes a live sweep (queue -> relist -> burn).
-// - `record_floor_snapshot` — daily snapshot using qualifying user-to-user
-//   sale median, with floor-queue median as low-volume fallback.
-// - `expire_program_listing` — 7-day TTL trigger that re-disposes a stuck
-//   inventory listing (relist with progressive discount, or burn).
-// - `handle_inventory_proceeds` — splits accrued sale proceeds 50/50 to
-//   sweep_vault and sol_treasury.
-// - `inventory_finalize_sale` — closes a sold inventory `RebornEntry`
-//   after verifying the asset's owner is no longer `inventory_pda`.
-// - `claim_lootbox_nft` — delivers a reserved loser-roll HashBeast to its
-//   recorded winner.
+//! # Marketplace CPI + Permissionless On-Chain Market Maker
+//!
+//! This module is the bridge between the `mineBTC` program and the
+//! standalone `degenbtc_market` program, **and** the on-chain market maker
+//! that defends the HashBeast floor price by buying cheap listings into a
+//! protocol-owned inventory. There is no admin crank — every path is either
+//! user-signed (the asset owner) or fully permissionless (anyone can call,
+//! with a small keeper bounty paid from `inventory_sweep_vault`).
+//!
+//! ## Why this module exists
+//!
+//! Without floor support, secondary-market panic sells could spiral the
+//! HashBeast floor below the breed price, breaking the breeding bonding
+//! curve and trapping new mints. To prevent that, the protocol earmarks a
+//! slice of every distributed SOL fee into `inventory_sweep_vault`, then
+//! lets permissionless keepers spend it on cheap floor listings. The
+//! protocol absorbs those NFTs into `inventory_pda` and disposes them via:
+//!   - dropping into a faction's `LootboxQueue` (rewards round losers), or
+//!   - relisting at a markup (resells back into the market), or
+//!   - burning (only on deep bearish trend).
+//!
+//! ## State
+//!
+//! ```text
+//!   InventoryPool        seeds [INVENTORY_POOL]
+//!                        — cached marketplace_program / marketplace_config
+//!                        — total_count (cap MAX_INVENTORY)
+//!                        — the account *itself* IS the inventory custody
+//!                          PDA (same address as `inventory_pda` in every
+//!                          struct). Sale proceeds land here as lamports.
+//!
+//!   inventory_sweep_vault   seeds [INVENTORY_SWEEP_VAULT]
+//!                           system-owned SOL vault, no data. Pays for
+//!                           sweep buys + keeper bounties.
+//!
+//!   FloorQueue           seeds [FLOOR_QUEUE]
+//!                        sorted-ascending fixed-size buffer of the
+//!                        cheapest live user listings (size FLOOR_QUEUE_SIZE)
+//!
+//!   SaleHistory          seeds [SALE_HISTORY]
+//!                        ringbuffer of last SALE_HISTORY_SIZE qualifying
+//!                        user-to-user sales (price + timestamps + parties).
+//!
+//!   FloorHistory         seeds [FLOOR_HISTORY]
+//!                        7-day rolling ringbuffer of (timestamp,
+//!                        anchor_price) snapshots. `current_anchor()` is the
+//!                        floor reference used by breed + sweep pricing.
+//!                        Snapshots are pushed at most once per 24h.
+//!
+//!   RebornEntry          seeds [REBORN_ENTRY, asset]
+//!                        one per asset currently held by inventory_pda.
+//!                        Tracks faction / quality / status (Listed |
+//!                        Lootbox) / original_buy_price / expire_count.
+//!
+//!   LootboxClaim         seeds [LOOTBOX_CLAIM, user]
+//!                        per-user reservation populated by a winning
+//!                        loser-roll. Delivery via `claim_lootbox_nft`.
+//! ```
+//!
+//! ## Money flow
+//!
+//! ```text
+//!   protocol SOL fees (economy.rs)
+//!         │
+//!         ▼ DistributeSolFees splits `nft_market_making_pct`
+//!   inventory_sweep_vault  ◀──┐
+//!         │                    │ 50% (handle_inventory_proceeds)
+//!         │ pays sweep buy ≤   │
+//!         │ min(5%×vault,      │
+//!         │     1.05×anchor)   │
+//!         ▼                    │
+//!   marketplace seller/fee     │
+//!         │                    │
+//!         ▼                    │
+//!   inventory_pda receives NFT │
+//!   inventory_pda receives sale proceeds when protocol listings sell
+//!         │                    │
+//!         │ 50% to sweep_vault │
+//!         │ 50% to sol_treasury (handle_inventory_proceeds)
+//!         └────────────────────┘
+//!
+//!   keeper bounties (out of inventory_sweep_vault):
+//!     KEEPER_REWARD_LAMPORTS         = 500k  ; real sweep / snapshot / expire
+//!     STALE_PURGE_KEEPER_REWARD…     = 20k   ; queue head cleanup only
+//! ```
+//!
+//! ## Caller surface
+//!
+//! **User-signed (asset owner is signer):**
+//! - `list_user_nft` / `cancel_user_listing` / `update_user_listing_price`
+//!   wrap the marketplace ix and keep `FloorQueue` in sync atomically.
+//! - `buy_user_listing` wraps `degenbtc_market::buy_listing`, pops the
+//!   listing from `FloorQueue` if present, and records the sale into
+//!   `SaleHistory` if it qualifies as a real-demand signal
+//!   (user-to-user, ≥5min listing age).
+//!
+//! **Permissionless (anyone can crank):**
+//! - `register_floor_listing` — pushes an existing live marketplace listing
+//!   into the sorted `FloorQueue` (deduped, address-bound to the canonical
+//!   HashBeast collection, escrow-owner checked, min-price gated). No direct
+//!   reward; bots register to keep the queue accurate so they can win sweep
+//!   races.
+//! - `sweep_floor_lowest` — buys `floor_queue.entries[0]` from
+//!   `inventory_sweep_vault`, disposes the swept asset (lootbox-push /
+//!   relist / burn), pays full `KEEPER_REWARD_LAMPORTS`. If the head is
+//!   stale (listing canceled out from under us), purges that one entry and
+//!   pays the *reduced* `STALE_PURGE_KEEPER_REWARD_LAMPORTS` — this lower
+//!   reward exists specifically to defuse a list→raw-cancel→purge spam
+//!   attack that could otherwise drain the vault via keeper bounties. See
+//!   the constant docs.
+//! - `record_floor_snapshot` — once per 24h, computes a new anchor (sale
+//!   median with queue/prior-anchor caps, or conservative queue fallback)
+//!   and pushes it to `FloorHistory`.
+//! - `expire_program_listing` — after a 7-day TTL, cancels a stuck
+//!   inventory-owned listing and re-runs the disposition cascade. After
+//!   `MAX_EXPIRES` strikes the asset is burned.
+//! - `handle_inventory_proceeds` — drains accumulated sale lamports from
+//!   inventory_pda, splitting 50/50 between sweep_vault and sol_treasury.
+//! - `inventory_finalize_sale` — closes a sold inventory `RebornEntry`
+//!   after verifying the on-chain asset owner is neither inventory_pda nor
+//!   the canonical marketplace escrow PDA.
+//! - `claim_lootbox_nft` — delivers a reserved loser-roll HashBeast to its
+//!   recorded winner. Cranker can be anyone; recipient is fixed by the
+//!   `LootboxClaim.user` address constraint on the `user` field.
+//!
+//! ## Oracle (anchor) design
+//!
+//! The "floor anchor" the protocol prices against is the head of
+//! `FloorHistory`. Snapshots:
+//!   - fire at most once per 24h (`FLOOR_SNAPSHOT_INTERVAL_SECS`),
+//!   - prefer the median of recent user-to-user sales (≥17 samples in the
+//!     last 24h, with ≥5min listing-age qualifier),
+//!   - cap sale anchors to the registered queue median if cheaper sell-side
+//!     supply exists,
+//!   - bootstrap the first anchor at the marketplace minimum even if early
+//!     sale/listing samples are higher,
+//!   - cap upward sale-driven jumps to `FLOOR_ANCHOR_MAX_UPWARD_MOVE_BPS`
+//!     per snapshot once an anchor exists,
+//!   - fall back to `FloorQueue` median only for downward moves / day-zero
+//!     bootstrap. Listing-only data can lower the anchor immediately, but
+//!     cannot raise an existing anchor.
+//!
+//! Trend is computed across all populated history slots, clamped to ±100%
+//! per 7d.
+//!
+//! **Wash-trade resistance:** the 5-min listing-age qualifier means each
+//! manipulation cycle takes ≥5min; `MIN_SALES_FOR_ANCHOR = 17` means a
+//! manipulator must own a majority of the 32-slot sale ringbuffer before the
+//! sale median is used; queue-median and previous-anchor caps stop high-price
+//! wash trades from immediately raising the vault's buy ceiling while cheaper
+//! registered supply exists. Listing-only fallback is deliberately
+//! conservative: it can only bootstrap from marketplace min price or move the
+//! anchor down.
+//!
+//! ## Disposition cascade (sweep_floor_lowest + expire_program_listing)
+//!
+//! Both flows end in the same three-way decision for what to do with an
+//! asset that's now owned by `inventory_pda`:
+//!
+//! 1. **Lootbox queue has space** → push to faction's `LootboxQueue`. The
+//!    asset becomes a reward for a future round-losing player in that
+//!    faction. `RebornEntry.status = Lootbox`.
+//! 2. **Trend < `BURN_TREND_BPS_THRESHOLD` (-30%)** → burn the asset and
+//!    close `RebornEntry`. Deep-bear deflationary lever.
+//! 3. **Otherwise** → relist at `apply_markup(buy_price, markup_bps)` where
+//!    `markup_bps = compute_relist_markup_bps(trend, expire_count)`. Each
+//!    expire strike chips the markup down; final price is clamped at the
+//!    marketplace minimum so bearish discounts cannot create unlistable
+//!    program inventory. `RebornEntry.status = Listed`.
+//!
+//! ## Key invariants
+//!
+//! - `inventory_pool.total_count` ≤ `MAX_INVENTORY` (200). Enforced on every
+//!   intake path.
+//! - `inventory_sweep_vault` lamports always ≥ `MIN_SWEEP_RESERVE_LAMPORTS`
+//!   after any payout (the floor inside `pay_keeper`).
+//! - Per-sweep cost ≤ `min(vault × 5%, anchor × 1.05)`.
+//! - Sweep/relist decisions require a fresh floor anchor
+//!   (`FLOOR_ANCHOR_MAX_AGE_SECS`) before spending against trend/anchor data.
+//! - `FloorQueue` is sorted ascending by price; `insert_floor_entry` enforces.
+//! - No duplicate assets in `FloorQueue` (rejected at insert).
+//! - Queue entries are accepted only while the underlying listing account is
+//!   canonical and the asset is still owned by the marketplace escrow PDA.
+//! - All program-owned NFT moves use the `inventory_pool` PDA seeds; no other
+//!   PDA can authorize a transfer from inventory.
+//! - Claim recipient is always seed-bound — `claim_lootbox_nft` enforces
+//!   `user.key() == lootbox_claim.user` via `address = …` constraint.
+//!
+//! ## Future-AI-agent notes
+//!
+//! - **Never** add a permissionless path that pays from
+//!   `inventory_sweep_vault` without:
+//!   1. Rate-limiting how often a single attacker can invoke it.
+//!   2. Tying the payout to bounded value (not just "anyone can call").
+//!   3. Reviewing the attack-vector analogue of the list→raw-cancel→purge
+//!      drain that motivated `STALE_PURGE_KEEPER_REWARD_LAMPORTS`.
+//! - The `caller: Signer<'info>` field on permissionless ix is there so the
+//!   tx has a fee-payer and a stable identity for keeper rewards. It is NOT
+//!   an authority check — never assume the caller has any privilege.
+//! - `inventory_pool` and `inventory_pda` share the same address; the
+//!   former is the typed `Account<InventoryPool>` view, the latter the raw
+//!   custody view. Both seed-pinned. Keep them mutually consistent in every
+//!   Accounts struct that uses both.
+//! - The `raw_*` helpers (raw_floor_entry / raw_record_sale etc.) deserialize
+//!   in-place to keep the validator stack small. If you change any state-struct
+//!   field offsets, update the corresponding `*_OFFSET` constants here.
 
 use anchor_lang::prelude::*;
 use anchor_lang::system_program::{self as sys_prog, Transfer};
@@ -102,6 +279,34 @@ fn assert_listing_pda(listing: Pubkey, marketplace_config: Pubkey, asset: Pubkey
     );
     require_keys_eq!(listing, expected_listing, ErrorCode::InvalidAccount);
     Ok(())
+}
+
+fn assert_marketplace_escrow_pda(
+    escrow: Pubkey,
+    marketplace_config: Pubkey,
+    asset: Pubkey,
+) -> Result<()> {
+    let (expected_escrow, _) = Pubkey::find_program_address(
+        &[
+            degenbtc_market::state::ESCROW_SEED,
+            marketplace_config.as_ref(),
+            asset.as_ref(),
+        ],
+        &degenbtc_market::ID,
+    );
+    require_keys_eq!(escrow, expected_escrow, ErrorCode::InvalidAccount);
+    Ok(())
+}
+
+fn read_marketplace_listing(info: &AccountInfo) -> Result<degenbtc_market::state::Listing> {
+    require!(
+        info.owner == &degenbtc_market::ID,
+        ErrorCode::InvalidAccount
+    );
+    require!(info.lamports() > 0, ErrorCode::InvalidAccount);
+    let data = info.try_borrow_data()?;
+    let mut slice: &[u8] = &data;
+    degenbtc_market::state::Listing::try_deserialize(&mut slice).map_err(Into::into)
 }
 
 fn read_marketplace_config_collection(config_info: &AccountInfo) -> Result<Pubkey> {
@@ -310,6 +515,17 @@ fn raw_floor_queue_head(queue_info: &AccountInfo<'_>) -> Result<FloorEntry> {
     read_raw_floor_entry(&data, 0)
 }
 
+fn raw_floor_queue_median_entry(queue_info: &AccountInfo<'_>) -> Result<(FloorEntry, u32)> {
+    require_raw_account::<FloorQueue>(queue_info, FloorQueue::LEN)?;
+    let data = queue_info.try_borrow_data()?;
+    let count = read_u8_at(&data, FLOOR_QUEUE_COUNT_OFFSET)? as usize;
+    require!(count <= FLOOR_QUEUE_SIZE, ErrorCode::InvalidAccount);
+    if count == 0 {
+        return Ok((FloorEntry::default(), 0));
+    }
+    Ok((read_raw_floor_entry(&data, count / 2)?, count as u32))
+}
+
 fn raw_remove_floor_entry_at(queue_info: &AccountInfo<'_>, idx: u8) -> Result<()> {
     require_raw_account::<FloorQueue>(queue_info, FloorQueue::LEN)?;
     let mut data = queue_info.try_borrow_mut_data()?;
@@ -329,15 +545,8 @@ fn raw_remove_floor_entry_at(queue_info: &AccountInfo<'_>, idx: u8) -> Result<()
 }
 
 fn raw_floor_queue_median(queue_info: &AccountInfo<'_>) -> Result<(u64, u32)> {
-    require_raw_account::<FloorQueue>(queue_info, FloorQueue::LEN)?;
-    let data = queue_info.try_borrow_data()?;
-    let count = read_u8_at(&data, FLOOR_QUEUE_COUNT_OFFSET)? as usize;
-    require!(count <= FLOOR_QUEUE_SIZE, ErrorCode::InvalidAccount);
-    if count == 0 {
-        return Ok((0, 0));
-    }
-    let entry = read_raw_floor_entry(&data, count / 2)?;
-    Ok((entry.price, count as u32))
+    let (entry, count) = raw_floor_queue_median_entry(queue_info)?;
+    Ok((entry.price, count))
 }
 
 fn raw_sale_entry_offset(idx: usize) -> Result<usize> {
@@ -377,6 +586,8 @@ fn raw_record_sale(sales_info: &AccountInfo<'_>, entry: SaleEntry) -> Result<()>
 fn raw_compute_snapshot_anchor(
     sales_info: &AccountInfo<'_>,
     queue_info: &AccountInfo<'_>,
+    previous_anchor: u64,
+    marketplace_min_price: u64,
     now: i64,
 ) -> Result<(u64, u8, u32)> {
     require_raw_account::<SaleHistory>(sales_info, SaleHistory::LEN)?;
@@ -402,13 +613,67 @@ fn raw_compute_snapshot_anchor(
     }
     drop(sales_data);
 
+    let (queue_median, queue_count) = raw_floor_queue_median(queue_info)?;
+
     if n >= MIN_SALES_FOR_ANCHOR {
         prices[..n].sort_unstable();
-        return Ok((prices[n / 2], 0, n as u32));
+        let mut anchor = prices[n / 2];
+        let mut source = 0u8; // sale median
+
+        // If live registered listings are cheaper than the sale median, cap
+        // the anchor to the listing median. This prevents a wash-sale burst
+        // from raising the vault buy ceiling while cheaper sell-side supply
+        // exists in the queue.
+        if queue_median > 0 && queue_median < anchor {
+            anchor = queue_median;
+            source = 2; // sale median capped by queue median
+        }
+
+        // Day-zero anchor bootstrap is conservative for all sources, not
+        // just queue fallback. Without prior history, even a 17-sale burst
+        // could be collusive; start at the marketplace minimum and let
+        // later qualified sales walk the anchor up through the daily cap.
+        if previous_anchor == 0 && anchor > marketplace_min_price {
+            anchor = marketplace_min_price;
+            source = 3; // first snapshot capped to min price
+        } else if previous_anchor > 0 {
+            // If there is already an anchor, never allow a single snapshot to
+            // raise it by more than the configured daily move cap.
+            let capped = previous_anchor.saturating_add(
+                ((previous_anchor as u128 * FLOOR_ANCHOR_MAX_UPWARD_MOVE_BPS as u128) / 10_000)
+                    as u64,
+            );
+            if anchor > capped {
+                anchor = capped;
+                source = 4; // capped by prior anchor
+            }
+        }
+
+        return Ok((anchor, source, n as u32));
     }
 
-    let (queue_median, queue_count) = raw_floor_queue_median(queue_info)?;
-    Ok((queue_median, 1, queue_count))
+    if queue_median == 0 {
+        return Ok((0, 1, queue_count));
+    }
+
+    // Thin-volume fallback is intentionally one-way:
+    // - it may lower the anchor immediately if listings are cheaper,
+    // - it may bootstrap from the marketplace min price on day zero,
+    // - it may NOT raise an existing anchor from listings alone.
+    // Upward moves require enough qualified sales.
+    let (anchor, source) = if previous_anchor > 0 {
+        if queue_median > previous_anchor {
+            (previous_anchor, 4) // listing-only upward move capped to previous anchor
+        } else {
+            (queue_median, 1) // queue median
+        }
+    } else if queue_median > marketplace_min_price {
+        (marketplace_min_price, 3) // initial queue fallback capped to min price
+    } else {
+        (queue_median, 1)
+    };
+
+    Ok((anchor, source, queue_count))
 }
 
 fn raw_floor_snapshot_offset(idx: usize) -> Result<usize> {
@@ -459,6 +724,15 @@ fn raw_floor_history_current_anchor(history_info: &AccountInfo<'_>) -> Result<u6
     Ok(read_raw_floor_snapshot(&data, head)?.anchor_price)
 }
 
+fn require_fresh_floor_anchor(history_info: &AccountInfo<'_>, now: i64) -> Result<()> {
+    let last_snapshot_at = raw_floor_history_last_snapshot_at(history_info)?;
+    require!(
+        last_snapshot_at > 0 && now.saturating_sub(last_snapshot_at) <= FLOOR_ANCHOR_MAX_AGE_SECS,
+        ErrorCode::FloorAnchorStale
+    );
+    Ok(())
+}
+
 fn raw_floor_history_compute_trend_bps(history_info: &AccountInfo<'_>) -> Result<i32> {
     require_raw_account::<FloorHistory>(history_info, FloorHistory::LEN)?;
     let data = history_info.try_borrow_data()?;
@@ -482,28 +756,6 @@ fn raw_floor_history_compute_trend_bps(history_info: &AccountInfo<'_>) -> Result
     }
     let bps = ((newest - oldest) * 10_000) / oldest;
     Ok(bps.clamp(-10_000, 10_000) as i32)
-}
-
-/// Pre-fund inventory_pda from sweep_vault by `lamports`. The vault PDA signs
-/// via its seeds.
-fn fund_inventory_from_sweep_vault<'info>(
-    sweep_vault: &AccountInfo<'info>,
-    inventory_pda: &AccountInfo<'info>,
-    system_program: &AccountInfo<'info>,
-    sweep_bump: u8,
-    lamports: u64,
-) -> Result<()> {
-    let seeds_inner: &[&[u8]] = &[INVENTORY_SWEEP_VAULT_SEED, &[sweep_bump]];
-    let signers: &[&[&[u8]]] = &[seeds_inner];
-    let cpi_ctx = CpiContext::new_with_signer(
-        system_program.to_account_info(),
-        Transfer {
-            from: sweep_vault.to_account_info(),
-            to: inventory_pda.to_account_info(),
-        },
-        signers,
-    );
-    sys_prog::transfer(cpi_ctx, lamports)
 }
 
 /// Pay `lamports` keeper bounty out of sweep_vault.
@@ -545,6 +797,40 @@ fn read_asset_owner(asset: &AccountInfo) -> Result<Pubkey> {
     Ok(asset_data.owner)
 }
 
+fn assert_live_floor_entry(
+    entry: FloorEntry,
+    listing_info: &AccountInfo<'_>,
+    asset_info: &AccountInfo<'_>,
+    escrow_info: &AccountInfo<'_>,
+    marketplace_config: Pubkey,
+    inventory_key: Pubkey,
+    collection: Pubkey,
+) -> Result<()> {
+    require_keys_eq!(listing_info.key(), entry.listing, ErrorCode::InvalidAccount);
+    require_keys_eq!(asset_info.key(), entry.asset, ErrorCode::InvalidAccount);
+    assert_listing_pda(entry.listing, marketplace_config, entry.asset)?;
+    assert_marketplace_escrow_pda(escrow_info.key(), marketplace_config, entry.asset)?;
+
+    let listing = read_marketplace_listing(listing_info)?;
+    require_keys_eq!(listing.asset, entry.asset, ErrorCode::StaleFloorEntry);
+    require_keys_eq!(listing.seller, entry.seller, ErrorCode::StaleFloorEntry);
+    require!(
+        listing.price_lamports == entry.price,
+        ErrorCode::StaleFloorEntry
+    );
+    require!(
+        listing.seller != inventory_key,
+        ErrorCode::ProgramListingNotAllowed
+    );
+    require_keys_eq!(
+        read_asset_owner(asset_info)?,
+        escrow_info.key(),
+        ErrorCode::StaleFloorEntry
+    );
+    assert_asset_collection(asset_info, collection)?;
+    Ok(())
+}
+
 // ========================================================================================
 // ============================== list_user_nft ===========================================
 // ========================================================================================
@@ -565,6 +851,10 @@ pub fn internal_list_user_nft(ctx: Context<ListUserNft>, price_lamports: u64) ->
         ctx.accounts.inventory_pool.marketplace_config,
         ErrorCode::InvalidMarketplaceConfig
     );
+    assert_marketplace_config(
+        &ctx.accounts.marketplace_config.to_account_info(),
+        ctx.accounts.inventory_pool.marketplace_config,
+    )?;
 
     // Caller must not be inventory_pda — that path is internal-only.
     require!(
@@ -575,6 +865,7 @@ pub fn internal_list_user_nft(ctx: Context<ListUserNft>, price_lamports: u64) ->
     let cpi_ctx = CpiContext::new(
         ctx.accounts.marketplace_program.to_account_info(),
         degenbtc_market::cpi::accounts::ListNft {
+            payer: ctx.accounts.seller.to_account_info(),
             seller: ctx.accounts.seller.to_account_info(),
             marketplace_config: ctx.accounts.marketplace_config.to_account_info(),
             listing: ctx.accounts.marketplace_listing.to_account_info(),
@@ -597,6 +888,31 @@ pub fn internal_list_user_nft(ctx: Context<ListUserNft>, price_lamports: u64) ->
     };
 
     let queue = &mut ctx.accounts.floor_queue;
+    let full_before_replace = (queue.entries_count as usize) >= FLOOR_QUEUE_SIZE;
+    let previous_worst_price = if full_before_replace {
+        Some(queue.entries[FLOOR_QUEUE_SIZE - 1].price)
+    } else {
+        None
+    };
+    let mut replaced_existing = false;
+    if let Some(idx) = find_floor_entry_by_asset(queue, entry.asset) {
+        replaced_existing = true;
+        let old_listing = queue.entries[idx as usize].listing;
+        remove_floor_entry_at(queue, idx);
+        emit!(FloorEntryRemoved {
+            listing: old_listing,
+            asset: entry.asset,
+            queue_index: idx,
+            reason: 2, // relist / price refresh
+            timestamp: now,
+        });
+    }
+    if replaced_existing
+        && previous_worst_price.is_some_and(|worst_price| entry.price >= worst_price)
+    {
+        msg!("ℹ️  Re-listed asset no longer beats the tracked queue; dropping floor entry");
+        return Ok(());
+    }
     let inserted = insert_floor_entry(queue, entry);
 
     // Floor-queue insertion is best-effort — if the queue is full and the
@@ -688,11 +1004,16 @@ pub fn internal_cancel_user_listing(ctx: Context<CancelUserListing>) -> Result<(
         ctx.accounts.inventory_pool.marketplace_config,
         ErrorCode::InvalidMarketplaceConfig
     );
+    assert_marketplace_config(
+        &ctx.accounts.marketplace_config.to_account_info(),
+        ctx.accounts.inventory_pool.marketplace_config,
+    )?;
     let asset_key = ctx.accounts.hashbeast_asset.key();
 
     let cpi_ctx = CpiContext::new(
         ctx.accounts.marketplace_program.to_account_info(),
         degenbtc_market::cpi::accounts::CancelListing {
+            payer: ctx.accounts.seller.to_account_info(),
             seller: ctx.accounts.seller.to_account_info(),
             marketplace_config: ctx.accounts.marketplace_config.to_account_info(),
             listing: ctx.accounts.marketplace_listing.to_account_info(),
@@ -789,9 +1110,28 @@ pub fn internal_update_user_listing_price(
         ctx.accounts.inventory_pool.marketplace_config,
         ErrorCode::InvalidMarketplaceConfig
     );
-    let asset_key = ctx.accounts.hashbeast_asset.key();
+    assert_marketplace_config(
+        &ctx.accounts.marketplace_config.to_account_info(),
+        ctx.accounts.inventory_pool.marketplace_config,
+    )?;
+    let collection = read_marketplace_config_collection(&ctx.accounts.marketplace_config)?;
+
     let listing_key = ctx.accounts.marketplace_listing.key();
     let seller_key = ctx.accounts.seller.key();
+    let listing = read_marketplace_listing(&ctx.accounts.marketplace_listing.to_account_info())?;
+    let asset_key = listing.asset;
+    require_keys_eq!(listing.seller, seller_key, ErrorCode::InvalidAccount);
+    require_keys_eq!(
+        ctx.accounts.hashbeast_asset.key(),
+        asset_key,
+        ErrorCode::InvalidAccount
+    );
+    assert_listing_pda(
+        listing_key,
+        ctx.accounts.marketplace_config.key(),
+        asset_key,
+    )?;
+    assert_asset_collection(&ctx.accounts.hashbeast_asset.to_account_info(), collection)?;
 
     let cpi_ctx = CpiContext::new(
         ctx.accounts.marketplace_program.to_account_info(),
@@ -805,9 +1145,15 @@ pub fn internal_update_user_listing_price(
 
     let now = Clock::get()?.unix_timestamp;
     let queue = &mut ctx.accounts.floor_queue;
+    let full_before_replace = (queue.entries_count as usize) >= FLOOR_QUEUE_SIZE;
+    let previous_worst_price = if full_before_replace {
+        Some(queue.entries[FLOOR_QUEUE_SIZE - 1].price)
+    } else {
+        None
+    };
 
     // Pop existing entry (if any) and re-insert at the new sort position.
-    if let Some(idx) = find_floor_entry_by_asset(queue, asset_key) {
+    let replaced_existing = if let Some(idx) = find_floor_entry_by_asset(queue, asset_key) {
         remove_floor_entry_at(queue, idx);
         emit!(FloorEntryRemoved {
             listing: listing_key,
@@ -816,6 +1162,15 @@ pub fn internal_update_user_listing_price(
             reason: 2, // price-update
             timestamp: now,
         });
+        true
+    } else {
+        false
+    };
+    if replaced_existing
+        && previous_worst_price.is_some_and(|worst_price| new_price_lamports >= worst_price)
+    {
+        msg!("ℹ️  Updated listing no longer beats the tracked queue; dropping floor entry");
+        return Ok(());
     }
     let entry = FloorEntry {
         listing: listing_key,
@@ -864,7 +1219,9 @@ pub struct UpdateUserListingPrice<'info> {
     #[account(mut)]
     pub marketplace_listing: UncheckedAccount<'info>,
 
-    /// CHECK: mpl-core asset (used as queue lookup key only).
+    /// CHECK: mpl-core asset referenced by the marketplace listing. The
+    /// handler reads the listing first and requires listing.asset == this key
+    /// before using it as the queue lookup key.
     pub hashbeast_asset: UncheckedAccount<'info>,
 
     /// CHECK: standalone marketplace program.
@@ -896,6 +1253,10 @@ pub fn internal_buy_user_listing(
         ctx.accounts.inventory_pool.marketplace_config,
         ErrorCode::InvalidMarketplaceConfig
     );
+    assert_marketplace_config(
+        &ctx.accounts.marketplace_config.to_account_info(),
+        ctx.accounts.inventory_pool.marketplace_config,
+    )?;
 
     // Capture listing fields BEFORE the CPI closes the account.
     let (listing_price, listed_at, listing_seller, listing_asset) = {
@@ -924,6 +1285,18 @@ pub fn internal_buy_user_listing(
         ctx.accounts.hashbeast_asset.key(),
         ErrorCode::InvalidAccount
     );
+    assert_listing_pda(
+        ctx.accounts.marketplace_listing.key(),
+        ctx.accounts.marketplace_config.key(),
+        listing_asset,
+    )?;
+    assert_marketplace_escrow_pda(
+        ctx.accounts.marketplace_escrow.key(),
+        ctx.accounts.marketplace_config.key(),
+        listing_asset,
+    )?;
+    let collection = read_marketplace_config_collection(&ctx.accounts.marketplace_config)?;
+    assert_asset_collection(&ctx.accounts.hashbeast_asset.to_account_info(), collection)?;
     require!(
         listing_price <= max_price_lamports,
         ErrorCode::ListingPriceExceedsMax
@@ -932,6 +1305,7 @@ pub fn internal_buy_user_listing(
     let cpi_ctx = CpiContext::new(
         ctx.accounts.marketplace_program.to_account_info(),
         degenbtc_market::cpi::accounts::BuyListing {
+            payer: ctx.accounts.buyer.to_account_info(),
             buyer: ctx.accounts.buyer.to_account_info(),
             seller: ctx.accounts.seller.to_account_info(),
             marketplace_config: ctx.accounts.marketplace_config.to_account_info(),
@@ -1091,6 +1465,16 @@ pub fn internal_register_floor_listing(ctx: Context<RegisterFloorListing>) -> Re
         ctx.accounts.marketplace_config.key(),
         asset_key,
     )?;
+    assert_marketplace_escrow_pda(
+        ctx.accounts.marketplace_escrow.key(),
+        ctx.accounts.marketplace_config.key(),
+        asset_key,
+    )?;
+    require_keys_eq!(
+        read_asset_owner(&ctx.accounts.hashbeast_asset.to_account_info())?,
+        ctx.accounts.marketplace_escrow.key(),
+        ErrorCode::StaleFloorEntry
+    );
 
     let inventory_key = ctx.accounts.inventory_pool.key();
     require!(
@@ -1158,6 +1542,11 @@ pub struct RegisterFloorListing<'info> {
     /// CHECK: mpl-core HashBeast asset referenced by the listing.
     pub hashbeast_asset: UncheckedAccount<'info>,
 
+    /// CHECK: Marketplace escrow PDA for `hashbeast_asset`. Registration only
+    /// accepts listings whose asset is still escrow-owned, so stale raw
+    /// listing accounts cannot enter the floor queue.
+    pub marketplace_escrow: UncheckedAccount<'info>,
+
     #[account(
         seeds = [HASHBEAST_METADATA_SEED, hashbeast_asset.key().as_ref()],
         bump = hashbeast_metadata.bump,
@@ -1182,10 +1571,48 @@ pub fn internal_record_floor_snapshot(ctx: Context<RecordFloorSnapshot>) -> Resu
             >= FLOOR_SNAPSHOT_INTERVAL_SECS,
         ErrorCode::SnapshotTooSoon
     );
+    assert_marketplace_config(
+        &ctx.accounts.marketplace_config.to_account_info(),
+        ctx.accounts.inventory_pool.marketplace_config,
+    )?;
+    let marketplace_min_price =
+        read_marketplace_min_price(&ctx.accounts.marketplace_config.to_account_info())?;
+    let previous_anchor = raw_floor_history_current_anchor(&floor_history_info)?;
+    let (median_entry, queue_count) =
+        raw_floor_queue_median_entry(&ctx.accounts.floor_queue.to_account_info())?;
+    if queue_count > 0 {
+        let listing = ctx
+            .accounts
+            .queue_median_listing
+            .as_ref()
+            .ok_or(ErrorCode::InvalidAccount)?;
+        let asset = ctx
+            .accounts
+            .queue_median_asset
+            .as_ref()
+            .ok_or(ErrorCode::InvalidAccount)?;
+        let escrow = ctx
+            .accounts
+            .queue_median_escrow
+            .as_ref()
+            .ok_or(ErrorCode::InvalidAccount)?;
+        let collection = read_marketplace_config_collection(&ctx.accounts.marketplace_config)?;
+        assert_live_floor_entry(
+            median_entry,
+            &listing.to_account_info(),
+            &asset.to_account_info(),
+            &escrow.to_account_info(),
+            ctx.accounts.marketplace_config.key(),
+            ctx.accounts.inventory_pool.key(),
+            collection,
+        )?;
+    }
 
     let (anchor, source, samples) = raw_compute_snapshot_anchor(
         &ctx.accounts.sale_history.to_account_info(),
         &ctx.accounts.floor_queue.to_account_info(),
+        previous_anchor,
+        marketplace_min_price,
         now,
     )?;
     require!(samples > 0, ErrorCode::NoLiveFloorEntries);
@@ -1234,6 +1661,21 @@ pub struct RecordFloorSnapshot<'info> {
     /// CHECK: Seed-checked; read in-place to keep the validator stack small.
     pub sale_history: UncheckedAccount<'info>,
 
+    /// CHECK: marketplace_config PDA. Address and owner are checked against
+    /// InventoryPool so the first thin-volume snapshot can cap itself at the
+    /// canonical marketplace minimum price.
+    pub marketplace_config: UncheckedAccount<'info>,
+
+    /// CHECK: Optional live-check account for the current floor queue median.
+    /// Required when FloorQueue has at least one entry.
+    pub queue_median_listing: Option<UncheckedAccount<'info>>,
+
+    /// CHECK: Optional mpl-core asset for the current floor queue median.
+    pub queue_median_asset: Option<UncheckedAccount<'info>>,
+
+    /// CHECK: Optional marketplace escrow PDA for the current floor queue median.
+    pub queue_median_escrow: Option<UncheckedAccount<'info>>,
+
     #[account(mut, seeds = [FLOOR_HISTORY_SEED], bump)]
     /// CHECK: Seed-checked; read/written in-place to keep the validator stack small.
     pub floor_history: UncheckedAccount<'info>,
@@ -1259,7 +1701,7 @@ pub struct RecordFloorSnapshot<'info> {
 ///   - lootbox queue has space → push (RebornEntry::Lootbox)
 ///   - trend below burn threshold → burn (no RebornEntry)
 ///   - else → relist at formula price (RebornEntry::Listed)
-/// Pays a keeper bounty out of `inventory_sweep_vault`.
+///     Pays a keeper bounty out of `inventory_sweep_vault`.
 pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()> {
     crate::log_fn!("marketplace_cpi", "internal_sweep_floor_lowest");
 
@@ -1273,6 +1715,10 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
         ctx.accounts.inventory_pool.marketplace_config,
         ErrorCode::InvalidMarketplaceConfig
     );
+    assert_marketplace_config(
+        &ctx.accounts.marketplace_config.to_account_info(),
+        ctx.accounts.inventory_pool.marketplace_config,
+    )?;
 
     // Validate caller-provided listing matches queue.entries[0]. A stale head is
     // purged and the caller can retry the sweep against the next head.
@@ -1292,6 +1738,21 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
             );
             return err!(ErrorCode::StaleFloorEntry);
         }
+        require_keys_eq!(
+            ctx.accounts.hashbeast_asset.key(),
+            head.asset,
+            ErrorCode::InvalidAccount
+        );
+        require_keys_eq!(
+            ctx.accounts.seller.key(),
+            head.seller,
+            ErrorCode::InvalidAccount
+        );
+        assert_marketplace_escrow_pda(
+            ctx.accounts.marketplace_escrow.key(),
+            ctx.accounts.marketplace_config.key(),
+            head.asset,
+        )?;
 
         // Liveness check: read live listing.
         let info = ctx.accounts.marketplace_listing.to_account_info();
@@ -1312,6 +1773,12 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
                 }
                 Err(_) => stale = true,
             }
+            if !stale {
+                match read_asset_owner(&ctx.accounts.hashbeast_asset.to_account_info()) {
+                    Ok(owner) if owner == ctx.accounts.marketplace_escrow.key() => {}
+                    _ => stale = true,
+                }
+            }
         }
 
         if stale {
@@ -1330,12 +1797,17 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
     };
 
     let Some(chosen_entry) = maybe_chosen_entry else {
+        // Stale-head purge: pay a *reduced* keeper bounty so the cleanup is
+        // still economically viable for honest bots (covers ~14k tx gas) but
+        // can't be farmed via list → raw-cancel → purge cycles, which would
+        // otherwise turn the cleanup path into a vault drain. See the docs
+        // on `STALE_PURGE_KEEPER_REWARD_LAMPORTS` for full attack math.
         pay_keeper(
             &ctx.accounts.inventory_sweep_vault.to_account_info(),
             &ctx.accounts.caller.to_account_info(),
             &ctx.accounts.system_program.to_account_info(),
             ctx.bumps.inventory_sweep_vault,
-            KEEPER_REWARD_LAMPORTS,
+            STALE_PURGE_KEEPER_REWARD_LAMPORTS,
         )?;
         return Ok(());
     };
@@ -1349,14 +1821,23 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
         ctx.accounts.hashbeast_asset.key(),
         ErrorCode::InvalidAccount
     );
+    // Defense-in-depth: caller must pass the correct seller account.
+    require_keys_eq!(
+        ctx.accounts.seller.key(),
+        chosen_entry.seller,
+        ErrorCode::InvalidAccount
+    );
     assert_listing_pda(
         chosen_entry.listing,
         ctx.accounts.marketplace_config.key(),
         chosen_entry.asset,
     )?;
+    let marketplace_min_price =
+        read_marketplace_min_price(&ctx.accounts.marketplace_config.to_account_info())?;
 
     // Anchor for price ceiling.
     let floor_history_info = ctx.accounts.floor_history.to_account_info();
+    require_fresh_floor_anchor(&floor_history_info, Clock::get()?.unix_timestamp)?;
     let trend_bps = raw_floor_history_compute_trend_bps(&floor_history_info)?;
     let anchor = raw_floor_history_current_anchor(&floor_history_info)?;
     require!(
@@ -1372,36 +1853,46 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
         ErrorCode::FloorPriceTooHigh
     );
 
-    // Vault reserve + per-tx cap.
+    let queue_has_space = (ctx.accounts.lootbox_queue.filled_count as usize) < LOOTBOX_QUEUE_SIZE;
+    let will_relist_after_sweep = !queue_has_space && trend_bps >= BURN_TREND_BPS_THRESHOLD;
+    let relist_rent = if will_relist_after_sweep {
+        Rent::get()?.minimum_balance(degenbtc_market::state::Listing::LEN)
+    } else {
+        0
+    };
+
+    // Vault reserve + per-tx cap. If this sweep will immediately relist the
+    // acquired asset, the sweep vault also pays listing rent in the downstream
+    // CPI, so include it in the solvency check.
     let vault_lamports = ctx.accounts.inventory_sweep_vault.lamports();
     let needed = chosen_entry
         .price
         .checked_add(MIN_SWEEP_RESERVE_LAMPORTS)
         .ok_or(ErrorCode::ArithmeticOverflow)?
         .checked_add(KEEPER_REWARD_LAMPORTS)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_add(relist_rent)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     require!(vault_lamports >= needed, ErrorCode::SweepVaultBelowReserve);
 
     let tx_cap = ((vault_lamports as u128 * SWEEP_MAX_PCT_BPS as u128) / 10_000u128) as u64;
     require!(chosen_entry.price <= tx_cap, ErrorCode::SweepTxCapExceeded);
 
-    // Pre-fund inventory_pda with the buy amount.
-    fund_inventory_from_sweep_vault(
-        &ctx.accounts.inventory_sweep_vault.to_account_info(),
-        &ctx.accounts.inventory_pda.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
-        ctx.bumps.inventory_sweep_vault,
-        chosen_entry.price,
-    )?;
-
-    // CPI buy_listing as inventory_pda.
+    // CPI buy_listing with the system-owned sweep vault as SOL payer and
+    // inventory_pda as NFT recipient. Do not pre-fund inventory_pda: it is a
+    // program-owned data account and cannot pay via System Program transfer.
     let pool_bump = ctx.accounts.inventory_pool.bump;
     let inventory_seeds_inner: &[&[u8]] = &[INVENTORY_POOL_SEED, &[pool_bump]];
-    let signers: &[&[&[u8]]] = &[inventory_seeds_inner];
+    let sweep_bump = ctx.bumps.inventory_sweep_vault;
+    let sweep_seeds_inner: &[&[u8]] = &[INVENTORY_SWEEP_VAULT_SEED, &[sweep_bump]];
+    let inventory_signers: &[&[&[u8]]] = &[inventory_seeds_inner];
+    let sweep_signers: &[&[&[u8]]] = &[sweep_seeds_inner];
+    let inventory_and_sweep_signers: &[&[&[u8]]] = &[inventory_seeds_inner, sweep_seeds_inner];
     {
         let cpi_ctx = CpiContext::new_with_signer(
             ctx.accounts.marketplace_program.to_account_info(),
             degenbtc_market::cpi::accounts::BuyListing {
+                payer: ctx.accounts.inventory_sweep_vault.to_account_info(),
                 buyer: ctx.accounts.inventory_pda.to_account_info(),
                 seller: ctx.accounts.seller.to_account_info(),
                 marketplace_config: ctx.accounts.marketplace_config.to_account_info(),
@@ -1413,7 +1904,7 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
                 mpl_core_program: ctx.accounts.mpl_core_program.to_account_info(),
                 system_program: ctx.accounts.system_program.to_account_info(),
             },
-            signers,
+            sweep_signers,
         );
         degenbtc_market::cpi::buy_listing(cpi_ctx, chosen_entry.price)?;
     }
@@ -1424,9 +1915,6 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
     let asset_key = ctx.accounts.hashbeast_asset.key();
     let faction_id = ctx.accounts.hashbeast_metadata.faction_id;
     let now = Clock::get()?.unix_timestamp;
-
-    // Disposition cascade.
-    let queue_has_space = (ctx.accounts.lootbox_queue.filled_count as usize) < LOOTBOX_QUEUE_SIZE;
 
     if queue_has_space {
         // Path A: push to lootbox queue. Init RebornEntry as Lootbox.
@@ -1455,7 +1943,7 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
             original_buy_price: chosen_entry.price,
             expire_count: 0,
         };
-        crate::instructions::helper::init_pda_account_if_needed::<RebornEntry>(
+        let was_created = crate::instructions::helper::init_pda_account_if_needed::<RebornEntry>(
             &ctx.accounts.caller.to_account_info(),
             &entry_info,
             &ctx.accounts.system_program.to_account_info(),
@@ -1463,6 +1951,9 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
             RebornEntry::LEN,
             &blank,
         )?;
+        // A pre-existing RebornEntry means stale state (e.g. finalize_sale not
+        // called after a previous sale). Refuse to overwrite — force cleanup first.
+        require!(was_created, ErrorCode::InvalidState);
 
         let depth_after = {
             let lootbox = &mut ctx.accounts.lootbox_queue;
@@ -1496,7 +1987,7 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
             &ctx.accounts.caller.to_account_info(),
             &ctx.accounts.inventory_pda.to_account_info(),
             &ctx.accounts.mpl_core_program.to_account_info(),
-            Some(signers),
+            Some(inventory_signers),
         )?;
         emit!(InventoryAssetBurned {
             asset: asset_key,
@@ -1508,7 +1999,7 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
     } else {
         // Path C: relist at formula markup. Init RebornEntry as Listed.
         let markup_bps = compute_relist_markup_bps(trend_bps, 0);
-        let new_price = apply_markup(chosen_entry.price, markup_bps);
+        let new_price = apply_markup(chosen_entry.price, markup_bps).max(marketplace_min_price);
 
         let quality_score = compute_quality_score(
             ctx.accounts.hashbeast_metadata.multiplier,
@@ -1535,7 +2026,7 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
             original_buy_price: chosen_entry.price,
             expire_count: 0,
         };
-        crate::instructions::helper::init_pda_account_if_needed::<RebornEntry>(
+        let was_created = crate::instructions::helper::init_pda_account_if_needed::<RebornEntry>(
             &ctx.accounts.caller.to_account_info(),
             &entry_info,
             &ctx.accounts.system_program.to_account_info(),
@@ -1543,12 +2034,14 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
             RebornEntry::LEN,
             &blank,
         )?;
+        require!(was_created, ErrorCode::InvalidState);
 
         // CPI list_nft as inventory_pda. The just-closed listing PDA is the
         // same address as the new listing PDA (same seeds), so re-init is OK.
         let cpi_ctx = CpiContext::new_with_signer(
             ctx.accounts.marketplace_program.to_account_info(),
             degenbtc_market::cpi::accounts::ListNft {
+                payer: ctx.accounts.inventory_sweep_vault.to_account_info(),
                 seller: ctx.accounts.inventory_pda.to_account_info(),
                 marketplace_config: ctx.accounts.marketplace_config.to_account_info(),
                 listing: ctx.accounts.marketplace_listing.to_account_info(),
@@ -1558,7 +2051,7 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
                 mpl_core_program: ctx.accounts.mpl_core_program.to_account_info(),
                 system_program: ctx.accounts.system_program.to_account_info(),
             },
-            signers,
+            inventory_and_sweep_signers,
         );
         degenbtc_market::cpi::list_nft(cpi_ctx, new_price)?;
 
@@ -1724,6 +2217,10 @@ pub fn internal_expire_program_listing(ctx: Context<ExpireProgramListing>) -> Re
         ctx.accounts.inventory_pool.marketplace_config,
         ErrorCode::InvalidMarketplaceConfig
     );
+    assert_marketplace_config(
+        &ctx.accounts.marketplace_config.to_account_info(),
+        ctx.accounts.inventory_pool.marketplace_config,
+    )?;
 
     let asset_key = ctx.accounts.hashbeast_asset.key();
     let inventory_key = ctx.accounts.inventory_pool.key();
@@ -1772,21 +2269,71 @@ pub fn internal_expire_program_listing(ctx: Context<ExpireProgramListing>) -> Re
         ctx.accounts.marketplace_config.key(),
         asset_key,
     )?;
+    assert_marketplace_escrow_pda(
+        ctx.accounts.marketplace_escrow.key(),
+        ctx.accounts.marketplace_config.key(),
+        asset_key,
+    )?;
+    require_keys_eq!(
+        read_asset_owner(&ctx.accounts.hashbeast_asset.to_account_info())?,
+        ctx.accounts.marketplace_escrow.key(),
+        ErrorCode::StaleFloorEntry
+    );
     require!(
         listing_age >= EXPIRE_GRACE_SECS,
         ErrorCode::ListingNotYetExpirable
     );
 
     let previous_price = entry.listing_price;
+    let marketplace_min_price =
+        read_marketplace_min_price(&ctx.accounts.marketplace_config.to_account_info())?;
+    let planned_expire_count = entry.expire_count.saturating_add(1);
+    let queue_has_space = (ctx.accounts.lootbox_queue.filled_count as usize) < LOOTBOX_QUEUE_SIZE;
+    let trend_bps = ctx.accounts.floor_history.compute_trend_bps();
+    if !queue_has_space && planned_expire_count < MAX_EXPIRES {
+        require!(
+            ctx.accounts.floor_history.current_anchor() >= SWEEP_MIN_ANCHOR_LAMPORTS,
+            ErrorCode::SweepAnchorTooLow
+        );
+        require!(
+            ctx.accounts.floor_history.last_snapshot_at > 0
+                && Clock::get()?
+                    .unix_timestamp
+                    .saturating_sub(ctx.accounts.floor_history.last_snapshot_at)
+                    <= FLOOR_ANCHOR_MAX_AGE_SECS,
+            ErrorCode::FloorAnchorStale
+        );
+    }
+    let will_relist_after_expire = !queue_has_space
+        && planned_expire_count < MAX_EXPIRES
+        && trend_bps >= BURN_TREND_BPS_THRESHOLD;
+    if will_relist_after_expire {
+        let relist_rent = Rent::get()?.minimum_balance(degenbtc_market::state::Listing::LEN);
+        let needed = relist_rent
+            .checked_add(MIN_SWEEP_RESERVE_LAMPORTS)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            .checked_add(KEEPER_REWARD_LAMPORTS)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        require!(
+            ctx.accounts.inventory_sweep_vault.lamports() >= needed,
+            ErrorCode::SweepVaultBelowReserve
+        );
+    }
     let pool_bump = ctx.accounts.inventory_pool.bump;
     let inventory_seeds_inner: &[&[u8]] = &[INVENTORY_POOL_SEED, &[pool_bump]];
-    let signers: &[&[&[u8]]] = &[inventory_seeds_inner];
+    let sweep_bump = ctx.bumps.inventory_sweep_vault;
+    let sweep_seeds_inner: &[&[u8]] = &[INVENTORY_SWEEP_VAULT_SEED, &[sweep_bump]];
+    let inventory_signers: &[&[&[u8]]] = &[inventory_seeds_inner];
+    let inventory_and_sweep_signers: &[&[&[u8]]] = &[inventory_seeds_inner, sweep_seeds_inner];
 
-    // Cancel the existing listing — asset returns to inventory_pda.
+    // Cancel the existing listing — asset returns to inventory_pda. The
+    // inventory PDA authorizes the asset, while the system-owned sweep vault
+    // pays any mpl-core reallocation rent.
     {
         let cpi_ctx = CpiContext::new_with_signer(
             ctx.accounts.marketplace_program.to_account_info(),
             degenbtc_market::cpi::accounts::CancelListing {
+                payer: ctx.accounts.inventory_sweep_vault.to_account_info(),
                 seller: ctx.accounts.inventory_pda.to_account_info(),
                 marketplace_config: ctx.accounts.marketplace_config.to_account_info(),
                 listing: ctx.accounts.marketplace_listing.to_account_info(),
@@ -1796,7 +2343,7 @@ pub fn internal_expire_program_listing(ctx: Context<ExpireProgramListing>) -> Re
                 mpl_core_program: ctx.accounts.mpl_core_program.to_account_info(),
                 system_program: ctx.accounts.system_program.to_account_info(),
             },
-            signers,
+            inventory_and_sweep_signers,
         );
         degenbtc_market::cpi::cancel_listing(cpi_ctx)?;
     }
@@ -1810,8 +2357,6 @@ pub fn internal_expire_program_listing(ctx: Context<ExpireProgramListing>) -> Re
     let now = Clock::get()?.unix_timestamp;
     let _ = stored_bump; // bump captured for symmetry; verified by Anchor seeds
 
-    let trend_bps = ctx.accounts.floor_history.compute_trend_bps();
-
     emit!(ProgramListingExpired {
         asset: asset_key,
         previous_list_price: previous_price,
@@ -1821,7 +2366,6 @@ pub fn internal_expire_program_listing(ctx: Context<ExpireProgramListing>) -> Re
     });
 
     let force_burn = expire_count_after >= MAX_EXPIRES;
-    let queue_has_space = (ctx.accounts.lootbox_queue.filled_count as usize) < LOOTBOX_QUEUE_SIZE;
 
     // Helper: persist mutated entry back to its account data.
     fn persist_entry(entry_info: &AccountInfo, entry: &RebornEntry) -> Result<()> {
@@ -1851,7 +2395,7 @@ pub fn internal_expire_program_listing(ctx: Context<ExpireProgramListing>) -> Re
             &ctx.accounts.caller.to_account_info(),
             &ctx.accounts.inventory_pda.to_account_info(),
             &ctx.accounts.mpl_core_program.to_account_info(),
-            Some(signers),
+            Some(inventory_signers),
         )?;
         ctx.accounts.inventory_pool.total_count = ctx
             .accounts
@@ -1896,7 +2440,7 @@ pub fn internal_expire_program_listing(ctx: Context<ExpireProgramListing>) -> Re
             &ctx.accounts.caller.to_account_info(),
             &ctx.accounts.inventory_pda.to_account_info(),
             &ctx.accounts.mpl_core_program.to_account_info(),
-            Some(signers),
+            Some(inventory_signers),
         )?;
         ctx.accounts.inventory_pool.total_count = ctx
             .accounts
@@ -1915,11 +2459,12 @@ pub fn internal_expire_program_listing(ctx: Context<ExpireProgramListing>) -> Re
     } else {
         // Relist at progressively-discounted markup.
         let markup_bps = compute_relist_markup_bps(trend_bps, expire_count_after);
-        let new_price = apply_markup(original_buy_price, markup_bps);
+        let new_price = apply_markup(original_buy_price, markup_bps).max(marketplace_min_price);
 
         let cpi_ctx = CpiContext::new_with_signer(
             ctx.accounts.marketplace_program.to_account_info(),
             degenbtc_market::cpi::accounts::ListNft {
+                payer: ctx.accounts.inventory_sweep_vault.to_account_info(),
                 seller: ctx.accounts.inventory_pda.to_account_info(),
                 marketplace_config: ctx.accounts.marketplace_config.to_account_info(),
                 listing: ctx.accounts.marketplace_listing.to_account_info(),
@@ -1929,7 +2474,7 @@ pub fn internal_expire_program_listing(ctx: Context<ExpireProgramListing>) -> Re
                 mpl_core_program: ctx.accounts.mpl_core_program.to_account_info(),
                 system_program: ctx.accounts.system_program.to_account_info(),
             },
-            signers,
+            inventory_and_sweep_signers,
         );
         degenbtc_market::cpi::list_nft(cpi_ctx, new_price)?;
 
@@ -2066,31 +2611,36 @@ pub fn internal_handle_inventory_proceeds(ctx: Context<HandleInventoryProceeds>)
         .checked_sub(to_sweep)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-    let pool_bump = ctx.accounts.inventory_pool.bump;
-    let inventory_seeds_inner: &[&[u8]] = &[INVENTORY_POOL_SEED, &[pool_bump]];
-    let signers: &[&[&[u8]]] = &[inventory_seeds_inner];
-
+    // inventory_pda is the program-owned InventoryPool data account. The
+    // System Program cannot debit it like a wallet, so route proceeds by
+    // directly moving lamports while preserving rent exemption.
+    {
+        let mut inventory_lamports = pool_info.lamports.borrow_mut();
+        **inventory_lamports = inventory_lamports
+            .checked_sub(available)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+    }
     if to_sweep > 0 {
-        let cpi_ctx = CpiContext::new_with_signer(
-            ctx.accounts.system_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.inventory_pda.to_account_info(),
-                to: ctx.accounts.inventory_sweep_vault.to_account_info(),
-            },
-            signers,
-        );
-        sys_prog::transfer(cpi_ctx, to_sweep)?;
+        let sweep_lamports = ctx.accounts.inventory_sweep_vault.lamports();
+        **ctx
+            .accounts
+            .inventory_sweep_vault
+            .to_account_info()
+            .lamports
+            .borrow_mut() = sweep_lamports
+            .checked_add(to_sweep)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
     if to_protocol > 0 {
-        let cpi_ctx = CpiContext::new_with_signer(
-            ctx.accounts.system_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.inventory_pda.to_account_info(),
-                to: ctx.accounts.sol_treasury.to_account_info(),
-            },
-            signers,
-        );
-        sys_prog::transfer(cpi_ctx, to_protocol)?;
+        let treasury_lamports = ctx.accounts.sol_treasury.lamports();
+        **ctx
+            .accounts
+            .sol_treasury
+            .to_account_info()
+            .lamports
+            .borrow_mut() = treasury_lamports
+            .checked_add(to_protocol)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
 
     emit!(InventoryProceedsRouted {
@@ -2160,11 +2710,20 @@ pub fn internal_inventory_finalize_sale(ctx: Context<InventoryFinalizeSale>) -> 
     );
 
     let inventory_key = ctx.accounts.inventory_pool.key();
+    let (expected_escrow, _) = Pubkey::find_program_address(
+        &[
+            degenbtc_market::state::ESCROW_SEED,
+            ctx.accounts.inventory_pool.marketplace_config.as_ref(),
+            ctx.accounts.reborn_entry.asset.as_ref(),
+        ],
+        &degenbtc_market::ID,
+    );
     let owner = read_asset_owner(&ctx.accounts.hashbeast_asset.to_account_info())?;
     require!(
         owner != inventory_key,
         ErrorCode::AssetStillOwnedByInventory
     );
+    require!(owner != expected_escrow, ErrorCode::AssetStillListed);
 
     let asset = ctx.accounts.reborn_entry.asset;
 
@@ -2235,6 +2794,25 @@ pub fn internal_claim_lootbox_nft(ctx: Context<ClaimLootboxNft>) -> Result<()> {
         ErrorCode::InvalidRebornStatus
     );
     require_keys_eq!(entry.asset, asset_key, ErrorCode::InvalidAccount);
+    // The asset's intake faction (recorded on `RebornEntry`) must match the
+    // winner's faction recorded at loser-roll time. This is invariant under
+    // current flow — each lootbox_queue PDA is keyed by faction, and the
+    // loser-roll only ever pops from the player's home queue. Asserting it
+    // here makes the invariant explicit so a future cross-faction reroll
+    // path can't quietly route an asset to the wrong indexer bucket.
+    require!(
+        entry.faction_id == claim.faction_id,
+        ErrorCode::InvalidFactionId
+    );
+    require!(
+        ctx.accounts.hashbeast_collection.is_some(),
+        ErrorCode::InvalidAccount
+    );
+    require_keys_eq!(
+        read_asset_owner(&ctx.accounts.hashbeast_asset.to_account_info())?,
+        ctx.accounts.inventory_pda.key(),
+        ErrorCode::AssetNotInInventory
+    );
 
     let faction_id = claim.faction_id;
 
@@ -2349,8 +2927,20 @@ pub struct ClaimLootboxNft<'info> {
     )]
     pub hashbeast_metadata: Account<'info, HashBeastMetadata>,
 
-    /// CHECK: HashBeast collection (required by mpl-core on transfer).
-    #[account(mut)]
+    /// Read-only config that pins the canonical HashBeast collection.
+    #[account(
+        seeds = [HASHBEAST_CONFIG_SEED.as_ref()],
+        bump = hashbeast_config.bump,
+    )]
+    pub hashbeast_config: Box<Account<'info, HashBeastConfig>>,
+
+    /// CHECK: HashBeast collection (required by mpl-core on transfer). The
+    /// Option wrapper is only for mpl-core builder compatibility; handler
+    /// requires Some and Anchor address-checks it against HashBeastConfig.
+    #[account(
+        mut,
+        address = hashbeast_config.hashbeast_collection @ ErrorCode::InvalidAccount,
+    )]
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     /// CHECK: Metaplex Core program.

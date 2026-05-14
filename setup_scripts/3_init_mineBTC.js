@@ -6,6 +6,7 @@ import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import * as anchor_spl from "@solana/spl-token";
 import fs from "fs";
 import path from "path";
+import { setIdlAddress } from "./raydium_id_sync.js";
 
 // Get the current file's directory
 const __dirname = decodeURIComponent(new URL(".", import.meta.url).pathname);
@@ -53,8 +54,6 @@ const ID_MineBTC_PROGRAM = deploymentFile.MINE_BTC_PROGRAM_ID
   : null;
 
 // Mining configuration
-const MINING_START_TIMESTAMP =
-  config.mining.start_timestamp || Math.floor(Date.now() / 1000);
 const MINING_DEGEN_BTC_PER_SLOT = new BN(config.mining.degen_btc_per_round);
 
 // Keep these explicit in setup so fresh deployments don't silently depend on
@@ -76,13 +75,11 @@ const GAMEPLAY_TUNING_CONFIG = {
   maxEvolutionStageUnlocked:
     config.gameplay_tuning?.max_evolution_stage_unlocked ?? 0,
   factionWarBaseRewardBps:
-    config.gameplay_tuning?.faction_war_base_reward_bps ?? 7000,
-  factionWarLoyaltyRewardBps:
-    config.gameplay_tuning?.faction_war_loyalty_reward_bps ?? 2000,
+    config.gameplay_tuning?.war_base_reward_bps ?? 7500,
   factionWarMvpRewardBps:
-    config.gameplay_tuning?.faction_war_mvp_reward_bps ?? 500,
+    config.gameplay_tuning?.war_mvp_reward_bps ?? 500,
   factionWarHashBeastRewardBps:
-    config.gameplay_tuning?.faction_war_hashbeast_reward_bps ?? 500,
+    config.gameplay_tuning?.war_hashbeast_reward_bps ?? 2000,
   baseMutationChanceBps:
     config.gameplay_tuning?.base_mutation_chance_bps ?? 2000,
   mutationChanceFloorBps:
@@ -94,10 +91,6 @@ const GAMEPLAY_TUNING_CONFIG = {
   extraVolumeThresholdPerMutationLamports:
     config.gameplay_tuning?.extra_volume_threshold_per_mutation_lamports ??
     85000000,
-  globalMutationPressureDecayBps:
-    config.gameplay_tuning?.global_mutation_pressure_decay_bps ?? 7500,
-  globalMutationPressurePerMutationBps:
-    config.gameplay_tuning?.global_mutation_pressure_per_mutation_bps ?? 2500,
   targetMutationsPerCycle:
     config.gameplay_tuning?.target_mutations_per_cycle ?? 12,
   targetRoundsPerCycle:
@@ -108,7 +101,7 @@ const GAMEPLAY_TUNING_CONFIG = {
 
 const LIVE_FEE_CONFIG = {
   newProtocolFeePct: 15,
-  newBuybackPct: 80,
+  newBuybackPct: 70,
   newStakersPct: 10,
   newMinebtcStakersPct: 3,
   newMinebtcWinnersPct: 50,
@@ -123,13 +116,20 @@ const LIVE_FEE_CONFIG = {
   newNftMarketMakingPct: 3,
 };
 
+const DEGENBTC_MARKET_PROGRAM_ID = deploymentFile.DEGENBTC_MARKET_PROGRAM_ID
+  ? new PublicKey(deploymentFile.DEGENBTC_MARKET_PROGRAM_ID)
+  : null;
+
 // Load MineBTC Program IDL
-const IDL_MineBTC = JSON.parse(
+const rawMinebtcIdl = JSON.parse(
   fs.readFileSync(
     path.resolve(__dirname, config.deployment.paths.minebtc_idl),
     "utf-8"
   )
 );
+const IDL_MineBTC = ID_MineBTC_PROGRAM
+  ? setIdlAddress(rawMinebtcIdl, ID_MineBTC_PROGRAM)
+  : rawMinebtcIdl;
 
 // Load DegenBTC Marketplace IDL (optional — only required once the marketplace
 // is being initialized; init steps below skip themselves if the IDL is absent
@@ -138,18 +138,17 @@ let IDL_DegenBtcMarket = null;
 try {
   const marketIdlPath = config.deployment.paths.degenbtc_market_idl;
   if (marketIdlPath) {
-    IDL_DegenBtcMarket = JSON.parse(
+    const rawMarketIdl = JSON.parse(
       fs.readFileSync(path.resolve(__dirname, marketIdlPath), "utf-8"),
     );
+    IDL_DegenBtcMarket = DEGENBTC_MARKET_PROGRAM_ID
+      ? setIdlAddress(rawMarketIdl, DEGENBTC_MARKET_PROGRAM_ID)
+      : rawMarketIdl;
   }
 } catch (e) {
   // Defer the warning to when the marketplace init step actually runs.
   IDL_DegenBtcMarket = null;
 }
-
-const DEGENBTC_MARKET_PROGRAM_ID = deploymentFile.DEGENBTC_MARKET_PROGRAM_ID
-  ? new PublicKey(deploymentFile.DEGENBTC_MARKET_PROGRAM_ID)
-  : null;
 
 const MARKETPLACE_CONFIG = {
   feeBps: config.marketplace?.fee_bps ?? 300,
@@ -281,11 +280,10 @@ async function validateInitializationConfig() {
 
   const gameplayRewardTotal =
     GAMEPLAY_TUNING_CONFIG.factionWarBaseRewardBps +
-    GAMEPLAY_TUNING_CONFIG.factionWarLoyaltyRewardBps +
     GAMEPLAY_TUNING_CONFIG.factionWarMvpRewardBps +
     GAMEPLAY_TUNING_CONFIG.factionWarHashBeastRewardBps;
   if (gameplayRewardTotal !== 10_000) {
-    throw new Error(`Faction-war reward bps (base+loyalty+mvp+hashbeast) must equal 10000, got ${gameplayRewardTotal}`);
+    throw new Error(`Faction-war reward bps (base+mvp+hashbeast) must equal 10000, got ${gameplayRewardTotal}`);
   }
 
   if (config.hashpower.base_multiplier !== 100 || config.hashpower.max_multiplier !== 300) {
@@ -446,7 +444,7 @@ async function main() {
     // Instruction: initialize(fee_recipient: Pubkey)
     // Creates 5 PDAs in one tx:
     //   - GlobalConfig     [seeds: "global-config"]           — stores authority, fee config, factions
-    //   - MineBtcMining    [seeds: "mine-btc-mining"]         — mining emission state
+    //   - DegenBtcMining    [seeds: "mine-btc-mining"]         — mining emission state
     //   - HodlPool [seeds: "hodl-pool"]       — HODL pool — pending degenBTC claims pool with HODL tax redistribution
     //   - SOL Treasury     [seeds: "sol-treasury"]            — 0-byte system PDA for protocol SOL
     //   - Autominer Custody[seeds: "autominer-custody"]       — 0-byte system PDA for autominer SOL
@@ -483,36 +481,38 @@ async function main() {
     //   new_protocol_fee_pct: Option<u8>,            — % of SOL bets taken as protocol fee
     //   new_buyback_pct: Option<u8>,                 — % of treasury SOL used for buybacks + POL
     //   new_stakers_pct: Option<u8>,                 — % of protocol fee redirected to staker rewards vault
-    //   new_minebtc_stakers_pct: Option<u8>,         — % of mined MineBTC going to stakers
-    //   new_minebtc_winners_pct: Option<u8>,         — % of mined MineBTC going to round winners
-    //   new_minebtc_same_faction_pct: Option<u8>,    — per-losing-direction % of mined MineBTC going to winning-country non-exact bettors
-    //   new_minebtc_jackpot_pct: Option<u8>,      — % of mined MineBTC going to global jackpot pot
+    //   new_dbtc_stakers_pct: Option<u8>,         — % of mined MineBTC going to stakers
+    //   new_dbtc_winners_pct: Option<u8>,         — % of mined MineBTC going to round winners
+    //   new_dbtc_same_faction_pct: Option<u8>,    — per-losing-direction % of mined MineBTC going to winning-country non-exact bettors
+    //   new_dbtc_jackpot_pct: Option<u8>,      — % of mined MineBTC going to global jackpot pot
     //   new_hodl_tax_pct: Option<u8>,                — % HODL tax charged on degenBTC withdrawal (paper hands → diamond hands)
     //   snapshot_interval: Option<u64>,              — min seconds between price snapshots
     // )
-    // Accounts: globalConfig, mineBtcMining, authority, systemProgram
+    // Accounts: globalConfig, authority
     await updateFees(minebtcProgram, LIVE_FEE_CONFIG);
 
+    console.log("\n✅ First 5 init functions completed. Continuing with remaining init functions...");
+
     // 5. Initialize Mining System (Token Vault + Mining Parameters)
-    // Instruction: initialize_mining(start_timestamp: u64, mine_btc_per_round: u64, pool_state: Pubkey)
+    // Instruction: initialize_mining(dbtc_per_round: u64, pool_state: Pubkey)
     // Sets up the mining emission vault:
-    //   - VaultAuthority [seeds: "minebtc-vault-authority"] — signer-only PDA
-    //   - TokenVault     [seeds: "minebtc_vault", mine_btc_mining.key()] — Token-2022 vault for MineBTC
-    // Stores start_timestamp, emission rate, and Raydium pool state in MineBtcMining
-    // Accounts: globalConfig, mineBtcMining, vaultAuthority, tokenVault, tokenMint, tokenProgram(T22), authority, systemProgram, rent
+    //   - VaultAuthority [seeds: "degenBTC-vault-authority"] — signer-only PDA
+    //   - TokenVault     [seeds: "dbtc_vault", dbtc_mining.key()] — Token-2022 vault for MineBTC
+    // Stores emission rate and Raydium pool state in DegenBtcMining
+    // Accounts: globalConfig, dbtcMining, vaultAuthority, tokenVault, tokenMint, tokenProgram(T22), authority, systemProgram, rent
     await initializeMiningSystem(minebtcProgram);
 
     // 5.1. Update emission controller params
     // Instruction: update_emission_params(price_change_threshold, emission_increase_pct, emission_decrease_pct)
-    // Stores explicit live-cycle rate adjustment settings on MineBtcMining so
+    // Stores explicit live-cycle rate adjustment settings on DegenBtcMining so
     // fresh deployments don't silently rely on compile-time defaults.
-    // Accounts: mineBtcMining, globalConfig, authority, systemProgram
+    // Accounts: dbtcMining, globalConfig, authority, systemProgram
     await updateEmissionParams(minebtcProgram, EMISSION_CONFIG);
 
     // 6. Deposit Mining Tokens
-    // Instruction: deposit_mine_btc_tokens(amount: u64)
+    // Instruction: deposit_dbtc_tokens(amount: u64)
     // Transfers MineBTC from depositor's Token-2022 ATA to the mining vault
-    // Accounts: depositor, depositorTokenAccount, minebtcTokenVault, mineBtcMining, tokenMint, tokenProgram(T22)
+    // Accounts: depositor, depositorTokenAccount, dbtcTokenVault, dbtcMining, tokenMint, tokenProgram(T22)
     await depositMiningTokens(minebtcProgram);
 
     // 7. Initialize Hashpower Config
@@ -525,11 +525,11 @@ async function main() {
     // 8. Initialize Custodian Accounts (DBTC and Liquidity custodians)
     // Instruction: initialize_custodian_accounts() — no args
     // Creates 4 PDAs:
-    //   - minebtcCustodian           [seeds: "minebtc-custodian"]           — Token-2022 account for staked MineBTC
-    //   - minebtcCustodianAuthority  [seeds: "minebtc-custodian-authority"] — signer PDA for MineBTC custodian
+    //   - minebtcCustodian           [seeds: "degenBTC-custodian"]           — Token-2022 account for staked dBTC
+    //   - minebtcCustodianAuthority  [seeds: "degenBTC-custodian-authority"] — signer PDA for dBTC custodian
     //   - liquidityCustodian         [seeds: "lp-custodian"]                — SPL Token account for staked LP tokens
     //   - liquidityCustodianAuthority[seeds: "lp-custodian-authority"]      — signer PDA for LP custodian
-    // Accounts: globalConfig, minebtcMint, minebtcCustodian, minebtcCustodianAuthority,
+    // Accounts: globalConfig, degenbtcMint, minebtcCustodian, minebtcCustodianAuthority,
     //           lpMint, liquidityCustodian, liquidityCustodianAuthority, authority,
     //           systemProgram, token2022Program, tokenProgram, rent
     await initializeCustodianAccounts(minebtcProgram);
@@ -553,6 +553,11 @@ async function main() {
     // Accounts: hashbeastMintConfig, globalConfig, authority, systemProgram
     await initializeHashBeastMintConfig(minebtcProgram);
 
+    // 9c. Enable HashBeast minting (default is inactive after init)
+    // Instruction: switch_hashbeast_mining() — toggles is_active to true
+    // Accounts: hashbeastMintConfig, globalConfig, authority
+    await enableHashBeastMining(minebtcProgram);
+
     // 10. Create HashBeast Collection (Metaplex Core)
     // Instruction: create_hashbeast_collection(name: String, uri: String)
     // Creates a Metaplex Core NFT collection with PDA as update authority
@@ -574,13 +579,13 @@ async function main() {
     await configureTicketTiers(minebtcProgram);
 
     // 13. Initialize Tax Config (for tax distribution)
-    // Instruction: initialize_tax_config(faction_treasury_pct: u8, burn_pct: u8)
+    // Instruction: initialize_tax_config(treasury_pct: u8, burn_pct: u8)
     // Creates TaxConfig PDA [seeds: "tax-config"] and the two surviving vaults:
     //   - WithdrawWithheldAuthority [seeds: "withdraw-withheld-authority"] — 0-byte signer PDA
     //   - FactionTreasuryVault      [seeds: "faction-treasury-vault"]      — Token-2022 vault
     // (NFT floor sweep vault + sale SOL vault were removed; NFT market making is
     // now SOL-funded via SolFeeConfig::nft_market_making_pct.)
-    // Accounts: globalConfig, taxConfig, minebtcMint, withdrawWithheldAuthority,
+    // Accounts: globalConfig, taxConfig, degenbtcMint, withdrawWithheldAuthority,
     //           factionTreasuryVault, authority, tokenProgram2022, systemProgram
     await initializeTaxConfig(minebtcProgram);
 
@@ -622,24 +627,22 @@ async function main() {
     // return;
 
     // NOTE: Cranker bot whitelist was removed when keepers became fully
-    // permissionless. start_round / end_round / settle_faction_war / claim crank
+    // permissionless. start_round / end_round / settle_war / claim crank
     // instructions are callable by any wallet — the protocol only pays the
     // (capped) keeper compensation to the caller that lands the tx first.
 
     // 17. Initialize Faction War Config (mutation-driven competitive cycles)
-    // Instruction: initialize_faction_war_config() — no args
+    // Instruction: initialize_war_config() — no args
     // Creates FactionWarConfig PDA [seeds: "faction-war-config"] with
-    // current_faction_war_id=1, is_active=true, faction_war_settle_cycle=0
-    // (auto-set on first bet), and identity
-    // start ranks [0..NUM_FACTIONS). Faction-war cycles auto-start on first bet and
-    // auto-settle when the economy-cycle LP burn completes.
-    // Accounts: factionWarConfig, globalConfig, authority, systemProgram
+    // current_war_id=1, settle_at_lp_op_count=0, and identity
+    // start ranks [0..NUM_FACTIONS). Each cycle's FactionWarState is then
+    // initialized by a keeper before that cycle's round settlements are folded in.
+    // Accounts: warConfig, globalConfig, authority, systemProgram
     await initializeFactionWarConfig(minebtcProgram);
 
-    // 18. Update Faction War Config
-    // Instruction: update_faction_war_config(is_active)
-    // Keeps the faction-war engine explicitly enabled / disabled per deployment config.
-    // Accounts: factionWarConfig, globalConfig, authority
+    // 18. Legacy faction-war active toggle
+    // The old update_war_config(is_active) instruction was removed. Cycles are
+    // live once war_config exists; this no-op keeps older runbooks readable.
     await updateFactionWarConfig(minebtcProgram, FACTION_WAR_CONFIG);
 
     // 19. Update unified gameplay tuning
@@ -647,10 +650,10 @@ async function main() {
     // Sets the live mutation engine + cycle reward split in one payload:
     //   - enable RPG progression
     //   - evolution unlock stage
-    //   - cycle reward split (base / loyalty / hashbeast)
+    //   - cycle reward split (base / MVP / hashbeast)
     //   - mutation chance bounds
     //   - volume gates
-    //   - global cooldown / pacing controls
+    //   - pacing controls
     // Accounts: globalConfig, authority
     await updateGameplayTuning(minebtcProgram, GAMEPLAY_TUNING_CONFIG);
 
@@ -757,7 +760,7 @@ async function initializeMinebtcProgram(minebtcProgram) {
             .initialize(FEE_RECIPIENT_MULTISIG)
             .accounts({
                 globalConfig: globalConfigPDA,
-        mineBtcMining: mineBtcMiningPDA,
+        dbtcMining: mineBtcMiningPDA,
         hodlPool: hodlPoolPDA,
                 solTreasury: solTreasuryPDA,
         autominerCustody: autominerCustodyPDA,
@@ -1176,12 +1179,12 @@ async function initializeMiningSystem(minebtcProgram) {
     }
 
     const [vaultPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("minebtc_vault"), mineBtcMiningPDA.toBuffer()],
+    [Buffer.from("dbtc_vault"), mineBtcMiningPDA.toBuffer()],
     minebtcProgram.programId
     );
 
     const [vaultAuthorityPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("minebtc-vault-authority")],
+    [Buffer.from("degenBTC-vault-authority")],
     minebtcProgram.programId
     );
 
@@ -1190,7 +1193,6 @@ async function initializeMiningSystem(minebtcProgram) {
     COLOR_INFO,
     `🔑 Vault Authority PDA: ${vaultAuthorityPDA.toString()}`
   );
-    console.log(COLOR_INFO, `⏰ Start Timestamp: ${MINING_START_TIMESTAMP}`);
   console.log(
     COLOR_INFO,
     `💰 DegenBtc Per Slot: ${MINING_DEGEN_BTC_PER_SLOT.toString()}`
@@ -1200,13 +1202,12 @@ async function initializeMiningSystem(minebtcProgram) {
     try {
     const tx = await minebtcProgram.methods
             .initializeMining(
-                new BN(MINING_START_TIMESTAMP),
                 MINING_DEGEN_BTC_PER_SLOT,
                 new PublicKey(raydiumPoolState)
             )
             .accounts({
                 globalConfig: globalConfigPDA,
-        mineBtcMining: mineBtcMiningPDA,
+        dbtcMining: mineBtcMiningPDA,
                 vaultAuthority: vaultAuthorityPDA,
                 tokenVault: vaultPDA,
         tokenMint: DEGENBTC_TOKEN_MINT,
@@ -1223,7 +1224,6 @@ async function initializeMiningSystem(minebtcProgram) {
         deploymentFile.mining_vault_initialized = {
             vault_address: vaultPDA.toString(),
             vault_authority: vaultAuthorityPDA.toString(),
-            start_timestamp: MINING_START_TIMESTAMP,
             degen_btc_per_round: MINING_DEGEN_BTC_PER_SLOT.toString(),
             tx_signature: tx,
       timestamp: new Date().toISOString(),
@@ -1235,10 +1235,9 @@ async function initializeMiningSystem(minebtcProgram) {
             deploymentFile.mining_vault_initialized = {
                 vault_address: vaultPDA.toString(),
                 vault_authority: vaultAuthorityPDA.toString(),
-                start_timestamp: MINING_START_TIMESTAMP,
                 degen_btc_per_round: MINING_DEGEN_BTC_PER_SLOT.toString(),
             };
-            saveDeploymentData();
+            saveDeploymentData()
         } else {
             throw error;
         }
@@ -1297,12 +1296,12 @@ async function depositMiningTokens(minebtcProgram) {
 
     try {
     const tx = await minebtcProgram.methods
-      .depositMineBtcTokens(depositAmount)
+      .depositDbtcTokens(depositAmount)
             .accounts({
                 depositor: wallet.publicKey,
                 depositorTokenAccount: userTokenAccount,
-                minebtcTokenVault: vaultPDA,
-        mineBtcMining: mineBtcMiningPDA,
+                dbtcTokenVault: vaultPDA,
+        dbtcMining: mineBtcMiningPDA,
         tokenMint: DEGENBTC_TOKEN_MINT,
                 tokenProgram: anchor_spl.TOKEN_2022_PROGRAM_ID,
             })
@@ -1433,12 +1432,12 @@ async function initializeCustodianAccounts(minebtcProgram) {
 
   // Derive DBTC custodian PDAs
   const [minebtcCustodianPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("minebtc-custodian")],
+    [Buffer.from("degenBTC-custodian")],
     minebtcProgram.programId
   );
 
   const [minebtcCustodianAuthorityPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("minebtc-custodian-authority")],
+    [Buffer.from("degenBTC-custodian-authority")],
     minebtcProgram.programId
   );
 
@@ -1477,7 +1476,7 @@ async function initializeCustodianAccounts(minebtcProgram) {
       .initializeCustodianAccounts()
       .accounts({
         globalConfig: globalConfigPDA,
-        minebtcMint: minebtcMint,
+        degenbtcMint: minebtcMint,
         minebtcCustodian: minebtcCustodianPDA,
         minebtcCustodianAuthority: minebtcCustodianAuthorityPDA,
         lpMint: lpMint,
@@ -1634,7 +1633,7 @@ async function setRaydiumPoolState(minebtcProgram) {
                 globalConfig: globalConfigPDA,
         solRewardsVault: solRewardsVaultPDA,
         solPrizePotVault: solPrizePotVaultPDA,
-        factionWarSolVault: factionWarSolVaultPDA,
+        warSolVault: factionWarSolVaultPDA,
                 authority: wallet.publicKey,
                 systemProgram: SystemProgram.programId,
             })
@@ -1653,7 +1652,7 @@ async function setRaydiumPoolState(minebtcProgram) {
             tx_signature: tx,
       timestamp: new Date().toISOString(),
         };
-    deploymentFile.faction_war_sol_vault_pda = factionWarSolVaultPDA.toString();
+    deploymentFile.war_sol_vault_pda = factionWarSolVaultPDA.toString();
         saveDeploymentData();
     } catch (error) {
     console.error(COLOR_ERROR, "❌ Failed to set Raydium pool state:", error);
@@ -1689,7 +1688,7 @@ async function initializeHashBeastConfig(minebtcProgram) {
 
     try {
     const tx = await minebtcProgram.methods
-      .initializeHashBeastConfig()
+      .initializeHashbeastConfig()
             .accounts({
                 hashbeastsConfig: hashbeastsConfigPDA,
                 globalConfig: globalConfigPDA,
@@ -1830,7 +1829,7 @@ async function initializeHashBeastMintConfig(minebtcProgram) {
 
   try {
     const tx = await minebtcProgram.methods
-      .initializeHashBeastMintConfig(
+      .initializeHashbeastMintConfig(
         new BN(basePrice),
         new BN(curveA),
         new BN(genesisMintLimit),
@@ -1866,6 +1865,51 @@ async function initializeHashBeastMintConfig(minebtcProgram) {
       saveDeploymentData();
     } else {
       console.error(COLOR_ERROR, "❌ Failed to initialize HashBeastMintConfig:", error);
+      throw error;
+    }
+  }
+}
+
+async function enableHashBeastMining(minebtcProgram) {
+  if (deploymentFile.hashbeast_mining_enabled) {
+    console.log(COLOR_INFO, "ℹ️ HashBeast mining already enabled");
+    return;
+  }
+
+  console.log(COLOR_PENDING, "🔄 Enabling HashBeast mining...");
+  try {
+    const provider = minebtcProgram.provider;
+    const authority = provider.wallet.publicKey;
+
+    const [globalConfigPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from("global-config")],
+      MINE_BTC_PROGRAM_ID
+    );
+    const [hashbeastMintConfigPDA] = PublicKey.findProgramAddressSync(
+      [Buffer.from("hashbeast-mint-config")],
+      MINE_BTC_PROGRAM_ID
+    );
+
+    const tx = await minebtcProgram.methods
+      .switchHashbeastMining()
+      .accounts({
+        hashbeastMintConfig: hashbeastMintConfigPDA,
+        globalConfig: globalConfigPDA,
+        authority: authority,
+      })
+      .rpc();
+
+    console.log(COLOR_SUCCESS, `✅ HashBeast mining enabled! Tx: ${tx}`);
+    deploymentFile.hashbeast_mining_enabled = true;
+    saveDeploymentData();
+    return tx;
+  } catch (error) {
+    if (error.toString().includes("already active")) {
+      console.log(COLOR_INFO, "ℹ️ HashBeast mining already active");
+      deploymentFile.hashbeast_mining_enabled = true;
+      saveDeploymentData();
+    } else {
+      console.error(COLOR_ERROR, "❌ Failed to enable HashBeast mining:", error);
       throw error;
     }
   }
@@ -1922,7 +1966,7 @@ async function createHashBeastCollection(minebtcProgram) {
 
     try {
     const tx = await minebtcProgram.methods
-            .createHashBeastCollection(
+            .createHashbeastCollection(
                 config.hashbeasts.collection_name,
                 config.hashbeasts.collection_uri
             )
@@ -2042,7 +2086,7 @@ async function initializeHashBeastRoyalties(minebtcProgram) {
 
     try {
     const tx = await minebtcProgram.methods
-      .initHashBeastRoyalties(basisPoints, creators)
+      .initHashbeastRoyalties(basisPoints, creators)
             .accounts({
                 authority: walletKeypair.publicKey,
                 globalConfig: globalConfigPDA,
@@ -2178,7 +2222,7 @@ async function initializeTaxConfig(minebtcProgram) {
     // Get config values. Tax now only splits faction_treasury + burn (the
     // residual flows back to the mining vault). NFT market making is funded
     // from SOL via `distribute_sol_fees` → `inventory_sweep_vault`.
-    const factionTreasuryPct = config.tax.faction_treasury_pct;
+    const factionTreasuryPct = config.tax.treasury_pct;
     const burnPct = config.tax.burnt_pct;
 
     if (factionTreasuryPct + burnPct > 100) {
@@ -2198,7 +2242,7 @@ async function initializeTaxConfig(minebtcProgram) {
             .accounts({
                 globalConfig: globalConfigPDA,
                 taxConfig: taxConfigPDA,
-                minebtcMint: DEGENBTC_TOKEN_MINT,
+                degenbtcMint: DEGENBTC_TOKEN_MINT,
                 withdrawWithheldAuthority: withdrawWithheldAuthorityPDA,
                 factionTreasuryVault: factionTreasuryVaultPDA,
                 authority: wallet.publicKey,
@@ -2214,7 +2258,7 @@ async function initializeTaxConfig(minebtcProgram) {
             tax_config_pda: taxConfigPDA.toString(),
             withdraw_withheld_authority: withdrawWithheldAuthorityPDA.toString(),
             faction_treasury_vault: factionTreasuryVaultPDA.toString(),
-            faction_treasury_pct: factionTreasuryPct,
+            treasury_pct: factionTreasuryPct,
             burn_pct: burnPct,
             tx_signature: tx,
       timestamp: new Date().toISOString(),
@@ -2520,12 +2564,6 @@ async function updateConfig(minebtcProgram, options = {}) {
       return;
     }
 
-    // Derive DegenBtcMining PDA (optional account)
-    const [mineBtcMiningPDA] = PublicKey.findProgramAddressSync(
-      [Buffer.from("mine-btc-mining")],
-      minebtcProgram.programId
-    );
-
     console.log(
       COLOR_INFO,
       `   Global Config PDA: ${globalConfigPDA.toString()}`
@@ -2538,9 +2576,7 @@ async function updateConfig(minebtcProgram, options = {}) {
       .updateConfig(newAuthority, newFeeRecipient)
       .accounts({
         globalConfig: globalConfigPDA,
-        mineBtcMining: mineBtcMiningPDA,
         authority: wallet.publicKey,
-        systemProgram: SystemProgram.programId,
       })
       .rpc();
 
@@ -2655,11 +2691,6 @@ async function updateFees(minebtcProgram, feeConfig) {
     const globalConfigPDA = new PublicKey(
       deploymentFile.minebtc_program_initialized.globalConfig_address
     );
-    const [mineBtcMiningPDA] = PublicKey.findProgramAddressSync(
-      [Buffer.from("mine-btc-mining")],
-      minebtcProgram.programId
-    );
-
     // Get current config
     const globalConfig = await minebtcProgram.account.globalConfig.fetch(
       globalConfigPDA
@@ -2682,23 +2713,23 @@ async function updateFees(minebtcProgram, feeConfig) {
     console.log(COLOR_INFO, "   Current DegenBtc dist config:");
     console.log(
       COLOR_INFO,
-      `     Stakers: ${globalConfig.minebtcDistConfig.minebtcStakersPct}%`
+      `     Stakers: ${globalConfig.dbtcDistConfig.dbtcStakersPct}%`
     );
     console.log(
       COLOR_INFO,
-      `     Winners: ${globalConfig.minebtcDistConfig.minebtcWinnersPct}%`
+      `     Winners: ${globalConfig.dbtcDistConfig.dbtcWinnersPct}%`
     );
     console.log(
       COLOR_INFO,
-      `     Same-faction: ${globalConfig.minebtcDistConfig.minebtcSameFactionPct}%`
+      `     Same-faction: ${globalConfig.dbtcDistConfig.dbtcSameFactionPct}%`
     );
     console.log(
       COLOR_INFO,
-      `     Jackpot: ${globalConfig.minebtcDistConfig.minebtcJackpotPct}%`
+      `     Jackpot: ${globalConfig.dbtcDistConfig.dbtcJackpotPct}%`
     );
     console.log(
       COLOR_INFO,
-      `     HODL tax: ${globalConfig.minebtcDistConfig.hodlTaxPct}%`
+      `     HODL tax: ${globalConfig.dbtcDistConfig.hodlTaxPct}%`
     );
     console.log(
       COLOR_INFO,
@@ -2735,16 +2766,16 @@ async function updateFees(minebtcProgram, feeConfig) {
     ) {
       const minebtcStakersPct =
         feeParams.newMinebtcStakersPct ??
-        globalConfig.minebtcDistConfig.minebtcStakersPct;
+        globalConfig.dbtcDistConfig.dbtcStakersPct;
       const minebtcWinnersPct =
         feeParams.newMinebtcWinnersPct ??
-        globalConfig.minebtcDistConfig.minebtcWinnersPct;
+        globalConfig.dbtcDistConfig.dbtcWinnersPct;
       const minebtcSameFactionPct =
         feeParams.newMinebtcSameFactionPct ??
-        globalConfig.minebtcDistConfig.minebtcSameFactionPct;
+        globalConfig.dbtcDistConfig.dbtcSameFactionPct;
       const minebtcJackpotPct =
         feeParams.newMinebtcJackpotPct ??
-        globalConfig.minebtcDistConfig.minebtcJackpotPct;
+        globalConfig.dbtcDistConfig.dbtcJackpotPct;
 
       const losingDirectionCount = 2; // Up / Neutral / Down => 2 losing directions
       const minebtcTotal =
@@ -2816,10 +2847,6 @@ async function updateFees(minebtcProgram, feeConfig) {
       COLOR_INFO,
       `   Global Config PDA: ${globalConfigPDA.toString()}`
     );
-    console.log(
-      COLOR_INFO,
-      `   MineBTC Mining PDA: ${mineBtcMiningPDA.toString()}`
-    );
     console.log(COLOR_INFO, `   Authority: ${wallet.publicKey.toString()}`);
 
     // Build and send transaction
@@ -2839,9 +2866,7 @@ async function updateFees(minebtcProgram, feeConfig) {
       )
       .accounts({
         globalConfig: globalConfigPDA,
-        mineBtcMining: mineBtcMiningPDA,
         authority: wallet.publicKey,
-        systemProgram: SystemProgram.programId,
       })
       .rpc();
 
@@ -2891,7 +2916,7 @@ async function updateEmissionParams(minebtcProgram, emissionConfig) {
     minebtcProgram.programId
   );
 
-  const mineBtcMining = await minebtcProgram.account.mineBtcMining.fetch(
+  const mineBtcMining = await minebtcProgram.account.degenBtcMining.fetch(
     mineBtcMiningPDA
   );
 
@@ -2939,7 +2964,7 @@ async function updateEmissionParams(minebtcProgram, emissionConfig) {
       target.emissionDecreasePct
     )
     .accounts({
-      mineBtcMining: mineBtcMiningPDA,
+      dbtcMining: mineBtcMiningPDA,
       globalConfig: globalConfigPDA,
       authority: wallet.publicKey,
       systemProgram: SystemProgram.programId,
@@ -2962,58 +2987,20 @@ async function updateEmissionParams(minebtcProgram, emissionConfig) {
 async function updateFactionWarConfig(minebtcProgram, factionWarConfig) {
   console.log(
     COLOR_STEP,
-    "\n================ [ UPDATING FACTION WAR CONFIG ] ================"
+    "\n================ [ FACTION WAR CONFIG TOGGLE ] ================"
   );
 
-  if (!deploymentFile.minebtc_program_initialized) {
+  if (factionWarConfig?.isActive === false) {
     console.log(
       COLOR_WARNING,
-      "⚠️ MineBTC program not initialized. Skipping faction war config update..."
+      "⚠️ config.faction_war.is_active=false is ignored: the on-chain active toggle was removed. Use set_pause for global launch pause."
     );
-    return;
+  } else {
+    console.log(
+      COLOR_INFO,
+      "ℹ️ No-op: faction-war cycles are enabled once war_config is initialized."
+    );
   }
-
-  const [factionWarConfigPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("faction-war-config")],
-    minebtcProgram.programId
-  );
-  const globalConfigPDA = new PublicKey(
-    deploymentFile.minebtc_program_initialized.globalConfig_address
-  );
-
-  const current = await minebtcProgram.account.factionWarConfig.fetch(
-    factionWarConfigPDA
-  );
-  const targetIsActive = factionWarConfig.isActive;
-
-  console.log(COLOR_INFO, "   Current faction war config:");
-  console.log(COLOR_INFO, `     Active: ${current.isActive}`);
-  console.log(COLOR_INFO, `     Current ID: ${current.currentFactionWarId.toString()}`);
-  console.log(COLOR_INFO, `   Target active: ${targetIsActive}`);
-
-  if (current.isActive === targetIsActive) {
-    console.log(COLOR_INFO, "ℹ️ Faction war config already matches config. Skipping...");
-    return;
-  }
-
-  const tx = await minebtcProgram.methods
-    .updateFactionWarConfig(targetIsActive)
-    .accounts({
-      factionWarConfig: factionWarConfigPDA,
-      globalConfig: globalConfigPDA,
-      authority: wallet.publicKey,
-    })
-    .rpc();
-
-  console.log(COLOR_SUCCESS, "✅ Faction war config updated successfully!");
-  console.log(COLOR_DIM, `   Transaction: ${tx}`);
-
-  deploymentFile.faction_war_config_updated = {
-    is_active: targetIsActive,
-    tx_signature: tx,
-    timestamp: new Date().toISOString(),
-  };
-  saveDeploymentData();
 }
 
 async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
@@ -3039,38 +3026,32 @@ async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
   const current = globalConfig.gameplayTuning;
 
   const target = {
-    enable_rpg_progression: gameplayTuningConfig.enableRpgProgression,
-    max_evolution_stage_unlocked: gameplayTuningConfig.maxEvolutionStageUnlocked,
-    faction_war_base_reward_bps: gameplayTuningConfig.factionWarBaseRewardBps,
-    faction_war_loyalty_reward_bps: gameplayTuningConfig.factionWarLoyaltyRewardBps,
-    faction_war_mvp_reward_bps: gameplayTuningConfig.factionWarMvpRewardBps,
-    faction_war_hashbeast_reward_bps: gameplayTuningConfig.factionWarHashBeastRewardBps,
-    base_mutation_chance_bps: gameplayTuningConfig.baseMutationChanceBps,
-    mutation_chance_floor_bps: gameplayTuningConfig.mutationChanceFloorBps,
-    mutation_chance_cap_bps: gameplayTuningConfig.mutationChanceCapBps,
-    faction_volume_threshold_lamports: new BN(
+    rpgProgression: gameplayTuningConfig.enableRpgProgression,
+    maxEvolutionStageUnlocked: gameplayTuningConfig.maxEvolutionStageUnlocked,
+    warBaseRewardBps: gameplayTuningConfig.factionWarBaseRewardBps,
+    warMvpRewardBps: gameplayTuningConfig.factionWarMvpRewardBps,
+    warHashbeastRewardBps: gameplayTuningConfig.factionWarHashBeastRewardBps,
+    baseMutationChanceBps: gameplayTuningConfig.baseMutationChanceBps,
+    mutationChanceFloorBps: gameplayTuningConfig.mutationChanceFloorBps,
+    mutationChanceCapBps: gameplayTuningConfig.mutationChanceCapBps,
+    factionVolumeThresholdLamports: new BN(
       gameplayTuningConfig.factionVolumeThresholdLamports
     ),
-    extra_volume_threshold_per_mutation_lamports: new BN(
+    extraVolumeThresholdPerMutationLamports: new BN(
       gameplayTuningConfig.extraVolumeThresholdPerMutationLamports
     ),
-    global_mutation_pressure_decay_bps:
-      gameplayTuningConfig.globalMutationPressureDecayBps,
-    global_mutation_pressure_per_mutation_bps:
-      gameplayTuningConfig.globalMutationPressurePerMutationBps,
-    target_mutations_per_cycle: gameplayTuningConfig.targetMutationsPerCycle,
-    target_rounds_per_cycle: gameplayTuningConfig.targetRoundsPerCycle,
-    pacing_max_adjustment_bps: gameplayTuningConfig.pacingMaxAdjustmentBps,
+    targetMutationsPerCycle: gameplayTuningConfig.targetMutationsPerCycle,
+    targetRoundsPerCycle: gameplayTuningConfig.targetRoundsPerCycle,
+    pacingMaxAdjustmentBps: gameplayTuningConfig.pacingMaxAdjustmentBps,
   };
 
   const rewardSplit =
-    target.faction_war_base_reward_bps +
-    target.faction_war_loyalty_reward_bps +
-    target.faction_war_mvp_reward_bps +
-    target.faction_war_hashbeast_reward_bps;
+    target.warBaseRewardBps +
+    target.warMvpRewardBps +
+    target.warHashbeastRewardBps;
   if (rewardSplit !== 10000) {
     throw new Error(
-      `Invalid gameplay reward split: base + loyalty + mvp + hashbeast must equal 10000 bps, got ${rewardSplit}.`
+      `Invalid gameplay reward split: base + mvp + hashbeast must equal 10000 bps, got ${rewardSplit}.`
     );
   }
 
@@ -3082,7 +3063,7 @@ async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
   );
   console.log(
     COLOR_INFO,
-    `     Rewards bps base/loyalty/mvp/hashbeast: ${current.factionWarBaseRewardBps}/${current.factionWarLoyaltyRewardBps}/${current.factionWarMvpRewardBps}/${current.factionWarHashBeastRewardBps}`
+    `     Rewards bps base/mvp/hashbeast: ${current.warBaseRewardBps}/${current.warMvpRewardBps}/${current.warHashbeastRewardBps}`
   );
   console.log(
     COLOR_INFO,
@@ -3094,57 +3075,48 @@ async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
   );
 
   console.log(COLOR_INFO, "   Target gameplay tuning:");
-  console.log(COLOR_INFO, `     RPG progression: ${target.enable_rpg_progression}`);
+  console.log(COLOR_INFO, `     RPG progression: ${target.rpgProgression}`);
   console.log(
     COLOR_INFO,
-    `     Evolution stage unlocked: ${target.max_evolution_stage_unlocked}`
+    `     Evolution stage unlocked: ${target.maxEvolutionStageUnlocked}`
   );
   console.log(
     COLOR_INFO,
-    `     Rewards bps base/loyalty/mvp/hashbeast: ${target.faction_war_base_reward_bps}/${target.faction_war_loyalty_reward_bps}/${target.faction_war_mvp_reward_bps}/${target.faction_war_hashbeast_reward_bps}`
+    `     Rewards bps base/mvp/hashbeast: ${target.warBaseRewardBps}/${target.warMvpRewardBps}/${target.warHashbeastRewardBps}`
   );
   console.log(
     COLOR_INFO,
-    `     Mutation chance bps base/floor/cap: ${target.base_mutation_chance_bps}/${target.mutation_chance_floor_bps}/${target.mutation_chance_cap_bps}`
+    `     Mutation chance bps base/floor/cap: ${target.baseMutationChanceBps}/${target.mutationChanceFloorBps}/${target.mutationChanceCapBps}`
   );
   console.log(
     COLOR_INFO,
-    `     Volume thresholds: first=${target.faction_volume_threshold_lamports.toString()} lamports, extra=${target.extra_volume_threshold_per_mutation_lamports.toString()} lamports`
+    `     Volume thresholds: first=${target.factionVolumeThresholdLamports.toString()} lamports, extra=${target.extraVolumeThresholdPerMutationLamports.toString()} lamports`
   );
   console.log(
     COLOR_INFO,
-    `     Pressure decay/step: ${target.global_mutation_pressure_decay_bps}/${target.global_mutation_pressure_per_mutation_bps} bps`
-  );
-  console.log(
-    COLOR_INFO,
-    `     Target mutations/rounds: ${target.target_mutations_per_cycle}/${target.target_rounds_per_cycle}`
+    `     Target mutations/rounds: ${target.targetMutationsPerCycle}/${target.targetRoundsPerCycle}`
   );
 
   const alreadyMatches =
-    current.rpgProgression === target.enable_rpg_progression &&
-    current.maxEvolutionStageUnlocked === target.max_evolution_stage_unlocked &&
-    current.factionWarBaseRewardBps === target.faction_war_base_reward_bps &&
-    current.factionWarLoyaltyRewardBps === target.faction_war_loyalty_reward_bps &&
-    current.factionWarMvpRewardBps === target.faction_war_mvp_reward_bps &&
-    current.factionWarHashBeastRewardBps === target.faction_war_hashbeast_reward_bps &&
-    current.baseMutationChanceBps === target.base_mutation_chance_bps &&
-    current.mutationChanceFloorBps === target.mutation_chance_floor_bps &&
-    current.mutationChanceCapBps === target.mutation_chance_cap_bps &&
+    current.rpgProgression === target.rpgProgression &&
+    current.maxEvolutionStageUnlocked === target.maxEvolutionStageUnlocked &&
+    current.warBaseRewardBps === target.warBaseRewardBps &&
+    current.warMvpRewardBps === target.warMvpRewardBps &&
+    current.warHashbeastRewardBps === target.warHashbeastRewardBps &&
+    current.baseMutationChanceBps === target.baseMutationChanceBps &&
+    current.mutationChanceFloorBps === target.mutationChanceFloorBps &&
+    current.mutationChanceCapBps === target.mutationChanceCapBps &&
     valueEquals(
       current.factionVolumeThresholdLamports,
-      target.faction_volume_threshold_lamports
+      target.factionVolumeThresholdLamports
     ) &&
     valueEquals(
       current.extraVolumeThresholdPerMutationLamports,
-      target.extra_volume_threshold_per_mutation_lamports
+      target.extraVolumeThresholdPerMutationLamports
     ) &&
-    current.globalMutationPressureDecayBps ===
-      target.global_mutation_pressure_decay_bps &&
-    current.globalMutationPressurePerMutationBps ===
-      target.global_mutation_pressure_per_mutation_bps &&
-    current.targetMutationsPerCycle === target.target_mutations_per_cycle &&
-    current.targetRoundsPerCycle === target.target_rounds_per_cycle &&
-    current.pacingMaxAdjustmentBps === target.pacing_max_adjustment_bps;
+    current.targetMutationsPerCycle === target.targetMutationsPerCycle &&
+    current.targetRoundsPerCycle === target.targetRoundsPerCycle &&
+    current.pacingMaxAdjustmentBps === target.pacingMaxAdjustmentBps;
 
   if (alreadyMatches) {
     console.log(COLOR_INFO, "ℹ️ Gameplay tuning already matches config. Skipping...");
@@ -3174,7 +3146,7 @@ async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
 // permissionless keepers. No on-chain whitelist step is required anymore.
 
 async function initializeFactionWarConfig(minebtcProgram) {
-  if (deploymentFile.faction_war_config_initialized) {
+  if (deploymentFile.war_config_initialized) {
     console.log(
       COLOR_INFO,
       "ℹ️ Faction war config already initialized. Skipping..."
@@ -3205,13 +3177,13 @@ async function initializeFactionWarConfig(minebtcProgram) {
     console.log(COLOR_INFO, `🔑 Global Config PDA: ${globalConfigPda.toBase58()}`);
     console.log(
       COLOR_INFO,
-      `🔄 Faction wars auto-start on first bet and auto-settle on LP burn completion`
+      `🔄 Faction wars are keeper-initialized per cycle and settle after LP burn completion`
     );
 
     const tx = await minebtcProgram.methods
-      .initializeFactionWarConfig()
+      .initializeWarConfig()
       .accounts({
-        factionWarConfig: factionWarConfigPda,
+        warConfig: factionWarConfigPda,
         globalConfig: globalConfigPda,
         authority: wallet.publicKey,
         systemProgram: SystemProgram.programId,
@@ -3225,9 +3197,9 @@ async function initializeFactionWarConfig(minebtcProgram) {
       `🔍 Explorer: https://explorer.solana.com/tx/${tx}?cluster=${CLUSTER}`
     );
 
-    deploymentFile.faction_war_config_initialized = {
-      faction_war_config_pda: factionWarConfigPda.toBase58(),
-      starting_faction_war_id: 1,
+    deploymentFile.war_config_initialized = {
+      war_config_pda: factionWarConfigPda.toBase58(),
+      starting_war_id: 1,
       tx_signature: tx,
       timestamp: new Date().toISOString(),
     };
@@ -3238,7 +3210,7 @@ async function initializeFactionWarConfig(minebtcProgram) {
         COLOR_INFO,
         "ℹ️ Faction war config already exists on-chain. Skipping..."
       );
-      deploymentFile.faction_war_config_initialized = {
+      deploymentFile.war_config_initialized = {
         status: "already_exists",
         timestamp: new Date().toISOString(),
       };
@@ -3305,11 +3277,7 @@ async function initializeDegenBtcMarketplace(minebtcProgram) {
   // pattern used by the rest of the program (admin can rotate via
   // update_marketplace_config later).
 
-  const marketProgram = new Program(
-    IDL_DegenBtcMarket,
-    DEGENBTC_MARKET_PROGRAM_ID,
-    provider,
-  );
+  const marketProgram = new Program(IDL_DegenBtcMarket, provider);
 
   const [marketplaceConfigPda, marketplaceConfigBump] =
     PublicKey.findProgramAddressSync(
@@ -3433,13 +3401,6 @@ async function initializeInventoryPool(minebtcProgram) {
       [Buffer.from("inventory-sweep-vault")],
       minebtcProgram.programId,
     );
-    return;
-  }
-
-  console.log(
-    COLOR_STEP,
-    "\n=================== [ INITIALIZING INVENTORY POOL ] ===================",
-  );
 
   const marketplaceProgramId = new PublicKey(
     deploymentFile.degenbtc_marketplace_initialized.program_id,
@@ -3690,6 +3651,12 @@ function printCompletionSummary() {
   );
   console.log(
     COLOR_INFO,
+    `  • HashBeast Mining: ${
+      deploymentFile.hashbeast_mining_enabled ? "✅" : "❌"
+    }`
+  );
+  console.log(
+    COLOR_INFO,
     `  • HashBeast Royalties: ${
       deploymentFile.hashbeast_royalties_initialized ? "✅" : "❌"
     }`
@@ -3717,7 +3684,7 @@ function printCompletionSummary() {
   console.log(
     COLOR_INFO,
     `  • Faction War Config: ${
-      deploymentFile.faction_war_config_initialized ? "✅" : "❌"
+      deploymentFile.war_config_initialized ? "✅" : "❌"
     }`
   );
   console.log(

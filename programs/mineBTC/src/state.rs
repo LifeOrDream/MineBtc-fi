@@ -1,6 +1,6 @@
 // # State Definitions
 //
-// This module defines all the account structures and constants used in the MineBTC program.
+// This module defines all the account structures and constants used in the degenBTC program.
 //
 // ## Key Accounts
 //
@@ -9,7 +9,7 @@
 // - `FactionState`: Stores statistics and reward pools for each faction.
 // - `PlayerData`: Stores user-specific data, including stats, balances, and staking positions.
 // - `GameSession`: Represents a single game round, tracking bets and outcomes.
-// - `MineBtcMining`: Manages the mining emission and distribution logic.
+// - `DegenBtcMining`: Manages the mining emission and distribution logic.
 // - `HashBeastConfig`: Collection, total minted count, and breeding state for HashBeasts.
 // - `HashBeastMintConfig`: Mint-only genesis sale curve, ticket tiers, and per-faction caps.
 // - `TaxConfig`: Configuration for the tax and burn system.
@@ -17,8 +17,8 @@
 
 use anchor_lang::prelude::*;
 
-pub const MINEBTC_DECIMALS: u8 = 6;
-pub const MINEBTC_BASE_UNITS: u64 = 1_000_000;
+pub const DBTC_DECIMALS: u8 = 6;
+pub const DBTC_BASE_UNITS: u64 = 1_000_000;
 
 pub const BASE_MULTIPLIER: u32 = 1000; // 1.0x
 pub const GAMEPLAY_MAX_MULTIPLIER: u16 = 4200; // Maximum gameplay HashBeast multiplier (4.2x)
@@ -55,7 +55,7 @@ pub const STORY_EVENT_ORIGIN_FACTION_WAR: u8 = 1;
 /// - `MUTATION_BONUS`: per-user kick added when their round-claim mutation
 ///   roll succeeds. Computed as
 ///   `user_wgtd_points_on_winner × active_multiplier / BASE_MULTIPLIER × mutation_weight`.
-///   Also accrues to the user's `current_faction_war_score` for MVP tracking.
+///   Also accrues to the user's `current_war_score` for MVP tracking.
 pub const GAMEPLAY_SCORE_SOURCE_ROUND_WIN: u8 = 0;
 pub const GAMEPLAY_SCORE_SOURCE_MUTATION_BONUS: u8 = 1;
 ///
@@ -71,22 +71,21 @@ pub const PERCENTAGE_DENOMINATOR_U8: u8 = PERCENTAGE_DENOMINATOR as u8;
 pub const PERCENTAGE_DENOMINATOR_U16: u16 = PERCENTAGE_DENOMINATOR as u16;
 pub const M_HUNDRED: u64 = PERCENTAGE_DENOMINATOR;
 pub const BASIS_POINTS_DENOMINATOR: u64 = 10_000;
-pub const CLAIMABLE_MINEBTC_SOURCE_ROUND: u8 = 0;
-pub const CLAIMABLE_MINEBTC_SOURCE_FACTION_WAR: u8 = 1;
-pub const CLAIMABLE_MINEBTC_SOURCE_STAKING_DEGENBTC: u8 = 2;
-pub const CLAIMABLE_MINEBTC_SOURCE_STAKING_LP: u8 = 3;
-pub const CLAIMABLE_MINEBTC_SOURCE_REFINING_SYNC: u8 = 4;
+pub const CLAIMABLE_DBTC_SOURCE_ROUND: u8 = 0;
+pub const CLAIMABLE_DBTC_SOURCE_FACTION_WAR: u8 = 1;
+// Source values 2 and 3 were retired when passive staking dBTC moved out of
+// the HODL-tax claimable flow.
+pub const CLAIMABLE_DBTC_SOURCE_REFINING_SYNC: u8 = 4;
 
 // ========== GAMEPLAY TUNING DEFAULTS ========== //
 
 /// Faction-war mining pool split:
 /// - base rewards: anyone who predicted a country's final direction correctly
-/// - loyalty bonus: only users backing their own country correctly
+/// - mvp rewards: top contributor per faction
 /// - hashbeast bonus: gameplay HashBeasts backing the resolved home-country outcome
-pub const DEFAULT_FACTION_WAR_BASE_REWARD_BPS: u16 = 6500;
-pub const DEFAULT_FACTION_WAR_LOYALTY_REWARD_BPS: u16 = 2000;
+pub const DEFAULT_FACTION_WAR_BASE_REWARD_BPS: u16 = 7500;
 pub const DEFAULT_FACTION_WAR_MVP_REWARD_BPS: u16 = 500;
-pub const DEFAULT_FACTION_WAR_HASHBEAST_REWARD_BPS: u16 = 1000;
+pub const DEFAULT_FACTION_WAR_HASHBEAST_REWARD_BPS: u16 = 2000;
 
 /// Story-event pacing defaults stored in `GameplayTuningConfig`.
 pub const DEFAULT_BASE_MUTATION_CHANCE_BPS: u16 = MAX_BASE_CHANCE as u16; // 20%
@@ -98,7 +97,7 @@ pub const DEFAULT_TARGET_MUTATIONS_PER_CYCLE: u16 = 12;
 pub const DEFAULT_TARGET_ROUNDS_PER_CYCLE: u16 = 240;
 pub const DEFAULT_PACING_MAX_ADJUSTMENT_BPS: u16 = 4000; // +/-40%
 pub const FACTION_WAR_RANK_WEIGHT_BPS: [u16; NUM_FACTIONS] = [
-    1500, 1200, 1000, 900, 800, 700, 700, 600, 600, 500, 500, 400, 300, 200, 100,
+    1500, 1200, 1000, 900, 800, 700, 700, 600, 600, 500, 400, 300,
 ];
 
 // ========== DEFAULT CONFIG VALUES ========== //
@@ -106,12 +105,24 @@ pub const FACTION_WAR_RANK_WEIGHT_BPS: [u16; NUM_FACTIONS] = [
 
 /// SOL fee taken from each bet as a whole percent of the bet amount.
 pub const DEFAULT_PROTOCOL_FEE_PCT: u8 = 15;
+/// Minimum protocol fee percentage. Referral cuts (up to 1% of gross via
+/// `REFERRAL_FEE_BPS_SAME_FACTION = 100 bps`) are deducted **from** the
+/// per-bet protocol fee in `internal_process_bets`. If `protocol_fee_pct`
+/// were ever set below the max referral cut, that subtraction would
+/// underflow and DOS every referred user's bet. We pin the floor at 1
+/// (which equals the 1% same-faction referral cap) to keep referred flows
+/// solvent regardless of admin config drift.
+pub const MIN_PROTOCOL_FEE_PCT: u8 = 1;
 /// Percent of accumulated protocol SOL used for buybacks / POL during economy cycle.
-pub const DEFAULT_BUYBACK_PCT: u8 = 80;
+pub const DEFAULT_BUYBACK_PCT: u8 = 70;
 /// Percent of per-bet SOL fee routed to the staker reward vault.
 pub const DEFAULT_STAKERS_PCT: u8 = 20;
 /// Fixed referral fee: 1% of gross bet / mint / breed price goes to referrer.
 pub const REFERRAL_FEE_PCT: u8 = 1;
+/// Referral fee basis points for cross-faction recruits (different country from referrer)
+pub const REFERRAL_FEE_BPS_CROSS_FACTION: u16 = 50; // 0.5%
+/// Referral fee basis points for same-faction recruits (same country as referrer)
+pub const REFERRAL_FEE_BPS_SAME_FACTION: u16 = 100; // 1.0%
 /// Default cycle SOL split: 5% of user bet reserved for faction-war jackpot.
 pub const DEFAULT_CYCLE_SOL_SPLIT_PCT: u8 = 5;
 /// Default share of `distribute_sol_fees` SOL routed to `inventory_sweep_vault`
@@ -119,13 +130,13 @@ pub const DEFAULT_CYCLE_SOL_SPLIT_PCT: u8 = 5;
 pub const DEFAULT_NFT_MARKET_MAKING_PCT: u8 = 3;
 
 /// degenBTC share of round emission sent to faction stakers.
-pub const DEFAULT_MINEBTC_STAKERS_PCT: u8 = 5;
+pub const DEFAULT_DBTC_STAKERS_PCT: u8 = 5;
 /// degenBTC share of round emission sent to exact country+direction winners.
-pub const DEFAULT_MINEBTC_WINNERS_PCT: u8 = 50;
+pub const DEFAULT_DBTC_WINNERS_PCT: u8 = 50;
 /// degenBTC share of round emission sent to each non-winning direction on the winning faction.
-pub const DEFAULT_MINEBTC_SAME_FACTION_PCT: u8 = 20;
+pub const DEFAULT_DBTC_SAME_FACTION_PCT: u8 = 20;
 /// degenBTC share of round emission added to the global jackpot.
-pub const DEFAULT_MINEBTC_JACKPOT_PCT: u8 = 5;
+pub const DEFAULT_DBTC_JACKPOT_PCT: u8 = 5;
 /// Percent fee taken when claiming staking rewards (redistributed to other stakers).
 pub const DEFAULT_HODL_TAX_PCT: u8 = 5;
 
@@ -141,7 +152,7 @@ pub const DEFAULT_EMISSION_DECREASE_PCT: u64 = 3; // 3%
 
 /// Faction-war cycle reward multiplier bounds.
 /// Stored as basis points: 1_000 = 0.1x, 10_000 = 1x, 30_000 = 3x.
-/// These are hard protocol caps for `total_degenbtc_mined_in_faction_war * multiplier`.
+/// These are hard protocol caps for `total_dbtc_mined_in_rounds * multiplier`.
 pub const MIN_FACTION_WAR_MINING_MULTIPLIER_BPS: u16 = 1_000;
 pub const MAX_FACTION_WAR_MINING_MULTIPLIER_BPS: u16 = 30_000;
 
@@ -165,8 +176,8 @@ pub const DISCRIMINATOR_SIZE: usize = 8;
 
 pub const JACKPOT_CHANCE: u64 = 625; // 1 in 625 chance (0.16%)
 
-pub const MAX_FACTIONS: usize = 15; // Up to 15 factions for the raffle
-pub const NUM_FACTIONS: usize = 15; // Same as MAX_FACTIONS, used for array sizes
+pub const MAX_FACTIONS: usize = 12; // Up to 12 factions for the raffle
+pub const NUM_FACTIONS: usize = 12; // Same as MAX_FACTIONS, used for array sizes
 pub const MAX_FACTION_NAME_LENGTH: usize = 16; // Maximum length of faction name
 
 /// Conservative upper-bound slot estimate used to schedule round entropy at round start.
@@ -179,7 +190,7 @@ pub const ROUND_PRIMARY_ENTROPY_DELAY_SLOTS: u64 = 8;
 
 // ----- [SEEDS] -----
 
-// PDAs which hold GlobalConfig / MineBtcMining state
+// PDAs which hold GlobalConfig / DegenBtcMining state
 pub const GLOBAL_CONFIG_SEED: &[u8] = b"global-config";
 pub const HASHPOWER_CONFIG_SEED: &[u8] = b"hashpower-config";
 pub const MINE_BTC_MINING_SEED: &[u8] = b"mine-btc-mining";
@@ -189,8 +200,8 @@ pub const HODL_POOL_SEED: &[u8] = b"hodl-pool";
 pub const SOL_TREASURY_SEED: &[u8] = b"sol-treasury";
 
 // DEGEN_BTC Custody PDAs: Vault Authority (signs for token account) & (vault token account custodies DEGEN_BTC tokens)
-pub const MINE_BTC_VAULT_AUTHORITY_SEED: &[u8] = b"minebtc-vault-authority";
-pub const MINE_BTC_VAULT_SEED: &[u8] = b"minebtc_vault";
+pub const DEGEN_BTC_VAULT_AUTHORITY_SEED: &[u8] = b"degenBTC-vault-authority";
+pub const DEGEN_BTC_VAULT_SEED: &[u8] = b"dbtc_vault";
 
 pub const REFERRAL_REWARDS_SEED: &[u8] = b"referral-rewards";
 pub const COLLECTION_AUTHORITY_SEED: &[u8] = b"collection_authority";
@@ -212,8 +223,8 @@ pub const PLAYER_DATA_SEED: &[u8] = b"player";
 pub const STAKED_POSITION_SEED: &[u8] = b"staked-position";
 pub const LP_STAKED_POSITION_SEED: &[u8] = b"lp-staked-position";
 
-pub const MINEBTC_CUSTODIAN_SEED: &[u8] = b"minebtc-custodian";
-pub const MINEBTC_CUSTODIAN_AUTHORITY_SEED: &[u8] = b"minebtc-custodian-authority";
+pub const DEGENBTC_CUSTODIAN_SEED: &[u8] = b"degenBTC-custodian";
+pub const DEGENBTC_CUSTODIAN_AUTHORITY_SEED: &[u8] = b"degenBTC-custodian-authority";
 pub const LIQUIDITY_CUSTODIAN_SEED: &[u8] = b"lp-custodian";
 pub const LIQUIDITY_CUSTODIAN_AUTHORITY_SEED: &[u8] = b"lp-custodian-authority";
 
@@ -229,8 +240,9 @@ pub const HASHBEAST_MINT_CONFIG_SEED: &[u8] = b"hashbeast-mint-config";
 
 // PDAs for Faction War system
 pub const FACTION_WAR_CONFIG_SEED: &[u8] = b"faction-war-config";
-pub const FACTION_WAR_STATE_SEED: &[u8] = b"faction-war"; // Seed: [b"faction-war", faction_war_id_u64]
-pub const USER_FACTION_WAR_BETS_SEED: &[u8] = b"user-faction-war"; // Seed: [b"user-faction-war", user_pubkey, faction_war_id_u64]
+pub const FACTION_WAR_STATE_SEED: &[u8] = b"faction-war"; // Seed: [b"faction-war", war_id_u64]
+pub const FACTION_WAR_SETTLEMENT_SEED: &[u8] = b"faction-war-settlement"; // Seed: [b"faction-war-settlement", war_id_u64]
+pub const USER_FACTION_WAR_BETS_SEED: &[u8] = b"user-faction-war"; // Seed: [b"user-faction-war", user_pubkey, war_id_u64]
 pub const FACTION_WAR_SOL_VAULT_SEED: &[u8] = b"faction-war-sol-vault";
 
 // PDAs for Tax system
@@ -269,6 +281,13 @@ pub const MAX_XP_FOR_QUALITY: u32 = 100_000;
 /// Breeding price floor: total breed cost must be at least 1.5x the current
 /// marketplace floor anchor.
 pub const BREED_FLOOR_MULTIPLIER_BPS: u64 = 15_000;
+/// Maximum age (in seconds) of the most recent floor snapshot at which the
+/// breed-floor guard is still trusted. Snapshots are pushed every
+/// `FLOOR_SNAPSHOT_INTERVAL_SECS` (24h), so allowing 48h gives a one-period
+/// grace window. If the floor pipeline stalls beyond this, breeding is
+/// blocked rather than letting it price against a stale anchor and undercut
+/// the "always above floor" invariant.
+pub const BREED_FLOOR_MAX_AGE_SECS: i64 = 48 * 60 * 60;
 /// Breed payment split: half SOL, half dbTC by SOL value.
 pub const BREED_SOL_SHARE_BPS: u64 = 5_000;
 /// SOL breeding fees split: 25% of the SOL leg to fee_recipient, 75% to the
@@ -282,10 +301,14 @@ pub const BREED_DBTC_BURN_BPS: u64 = 5_000;
 /// queue first; if full, reborn assets are burned. Sweep buys also fill
 /// the queue first; if full, the swept asset gets relisted at a markup
 /// (or burned in deep bear). No "Pending" stranded path.
-pub const LOOTBOX_QUEUE_SIZE: usize = 5;
+pub const LOOTBOX_QUEUE_SIZE: usize = 10;
 
 /// Per-claim drop chance keyed by current `LootboxQueue.filled_count`.
-pub const CHANCE_BPS_BY_QUEUE_DEPTH: [u16; LOOTBOX_QUEUE_SIZE + 1] = [0, 100, 440, 990, 1760, 2750];
+/// Conservative fixed schedule in basis points. Full depth is still only 1.50%
+/// per losing claim, so a full queue creates excitement without guaranteeing
+/// a drain race.
+pub const CHANCE_BPS_BY_QUEUE_DEPTH: [u16; LOOTBOX_QUEUE_SIZE + 1] =
+    [0, 3, 8, 15, 25, 40, 58, 78, 100, 125, 150];
 
 /// Inventory proceeds split: 50% sweep reserve, 50% protocol pipeline.
 pub const INVENTORY_SWEEP_RESERVE_BPS: u16 = 5000;
@@ -303,14 +326,25 @@ pub const SALE_QUALIFY_MIN_LISTING_AGE_SECS: i64 = 5 * 60;
 /// Window for "recent qualifying sales" when computing a snapshot anchor.
 pub const SALE_RECENT_WINDOW_SECS: i64 = 24 * 60 * 60;
 /// Minimum count of qualifying sales required before sale-median anchors;
-/// below this, snapshot falls back to floor-queue median.
-pub const MIN_SALES_FOR_ANCHOR: usize = 3;
+/// below this, snapshot falls back to the registered floor queue. Set above
+/// half the ringbuffer so a manipulator must control a true majority of the
+/// recent sale samples before the median can move upward.
+pub const MIN_SALES_FOR_ANCHOR: usize = 17;
 
 // ----- Floor history tunables -----
 /// 7-day rolling snapshot ringbuffer.
 pub const FLOOR_HISTORY_SIZE: usize = 7;
 /// Minimum seconds between snapshots (24h).
 pub const FLOOR_SNAPSHOT_INTERVAL_SECS: i64 = 24 * 60 * 60;
+/// Maximum age at which sweep/relist logic is allowed to trust the current
+/// floor anchor. If snapshot cranking stalls beyond this, floor support stops
+/// buying or repricing rather than spending against stale data.
+pub const FLOOR_ANCHOR_MAX_AGE_SECS: i64 = 48 * 60 * 60;
+/// Maximum upward move per snapshot when a previous anchor exists. Downward
+/// moves are uncapped so panic-listing data can immediately make sweeps more
+/// conservative; upward moves are capped to stop thin wash-trade bursts from
+/// rapidly raising the vault's buy ceiling.
+pub const FLOOR_ANCHOR_MAX_UPWARD_MOVE_BPS: u16 = 2_500;
 
 // ----- Markup formula constants -----
 /// Baseline markup applied to relists in flat market.
@@ -343,6 +377,17 @@ pub const SWEEP_MAX_PCT_BPS: u16 = 500;
 pub const SWEEP_MIN_ANCHOR_LAMPORTS: u64 = 10_000_000; // 0.01 SOL
 
 // ----- Keeper rewards -----
+/// Bounty paid to a keeper that purges a stale `FloorQueue` head (a queue
+/// entry whose underlying marketplace listing has been canceled / mutated
+/// out from under us). Deliberately much lower than `KEEPER_REWARD_LAMPORTS`
+/// — high enough to compensate an honest bot's tx gas (~14k lamports) so
+/// queue cleanup stays viable, low enough that an attacker can't farm it
+/// by spamming `list_user_nft` → direct `marketplace::cancel_listing`
+/// (bypassing the wrapper that would atomic-deregister) → `sweep_floor_lowest`
+/// purge cycles. At 20k vs the ~24k-gas attack cycle cost, each spam round
+/// is net-negative for the attacker, while honest bots still break even on
+/// real cleanup work.
+pub const STALE_PURGE_KEEPER_REWARD_LAMPORTS: u64 = 20_000;
 /// Bounty paid from `inventory_sweep_vault` to caller of permissionless ix.
 pub const KEEPER_REWARD_LAMPORTS: u64 = 500_000; // 0.0005 SOL
 
@@ -367,14 +412,14 @@ pub struct GlobalConfig {
     pub pda_sol_treasury: Pubkey,
 
     /// List of supported factions (e.g., "USA", "China", "Russia")
-    /// Maximum 15 factions, each with max 16 characters
+    /// Maximum 12 factions, each with max 16 characters
     pub supported_factions: Vec<String>,
 
     /// SOL fee distribution configuration
     pub sol_fee_config: SolFeeConfig,
 
-    /// MineBtc distribution configuration
-    pub minebtc_dist_config: MineBtcDistConfig,
+    /// degenBTC distribution configuration
+    pub dbtc_dist_config: DegenBtcDistConfig,
 
     /// Authorized Raydium pool state address (security: prevents using malicious pools)
     pub raydium_pool_state: Pubkey,
@@ -422,25 +467,25 @@ impl SolFeeConfig {
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
-pub struct MineBtcDistConfig {
-    /// Whole-percent share of MineBtc emission that goes to stakers. `100` = 100%.
-    pub minebtc_stakers_pct: u8,
-    /// Whole-percent share of MineBtc emission that goes to winning faction bettors. `100` = 100%.
-    pub minebtc_winners_pct: u8,
-    /// Whole-percent share of MineBtc emission that goes to each non-winning
+pub struct DegenBtcDistConfig {
+    /// Whole-percent share of degenBTC emission that goes to stakers. `100` = 100%.
+    pub dbtc_stakers_pct: u8,
+    /// Whole-percent share of degenBTC emission that goes to winning faction bettors. `100` = 100%.
+    pub dbtc_winners_pct: u8,
+    /// Whole-percent share of degenBTC emission that goes to each non-winning
     /// direction on the winning faction. With 3 total directions, up to two
     /// losing directions may each receive this share if they have bettors.
-    pub minebtc_same_faction_pct: u8,
-    /// Whole-percent share of MineBtc emission that goes to the global jackpot. `100` = 100%.
-    pub minebtc_jackpot_pct: u8,
+    pub dbtc_same_faction_pct: u8,
+    /// Whole-percent share of degenBTC emission that goes to the global jackpot. `100` = 100%.
+    pub dbtc_jackpot_pct: u8,
     /// Whole-percent HODL tax charged on degenBTC reward withdrawal.
     /// `100` = 100%. Paid by paper hands; redistributed to remaining diamond
     /// hands via `HodlPool::hodl_tax_index` (closed loop — no vault drain).
     pub hodl_tax_pct: u8,
 }
 
-impl MineBtcDistConfig {
-    pub const LEN: usize = 1 + 1 + 1 + 1 + 1; // minebtc_stakers_pct + minebtc_winners_pct + minebtc_same_faction_pct + minebtc_jackpot_pct + hodl_tax_pct
+impl DegenBtcDistConfig {
+    pub const LEN: usize = 1 + 1 + 1 + 1 + 1; // dbtc_stakers_pct + dbtc_winners_pct + dbtc_same_faction_pct + dbtc_jackpot_pct + hodl_tax_pct
 }
 
 impl GlobalConfig {
@@ -451,7 +496,7 @@ impl GlobalConfig {
         32 +                    // fee_recipient
         32 +                    // pda_sol_treasury
         SolFeeConfig::LEN +     // sol_fee_config
-        MineBtcDistConfig::LEN + // minebtc_dist_config
+        DegenBtcDistConfig::LEN + // dbtc_dist_config
         32 +                    // raydium_pool_state
         8 +                     // snapshot_interval
         GameplayTuningConfig::LEN + // gameplay_tuning
@@ -471,10 +516,9 @@ pub struct GameplayTuningConfig {
     pub max_evolution_stage_unlocked: u8,
 
     /// Faction-war mining pool split in basis points. Must sum to 10_000.
-    pub faction_war_base_reward_bps: u16,
-    pub faction_war_loyalty_reward_bps: u16,
-    pub faction_war_mvp_reward_bps: u16,
-    pub faction_war_hashbeast_reward_bps: u16,
+    pub war_base_reward_bps: u16,
+    pub war_mvp_reward_bps: u16,
+    pub war_hashbeast_reward_bps: u16,
 
     /// Baseline mutation chance before runtime factors.
     pub base_mutation_chance_bps: u16,
@@ -499,10 +543,9 @@ pub struct GameplayTuningConfig {
 impl GameplayTuningConfig {
     pub const LEN: usize = 1 + // rpg_progression
         1 + // max_evolution_stage_unlocked
-        2 + // faction_war_base_reward_bps
-        2 + // faction_war_loyalty_reward_bps
-        2 + // faction_war_mvp_reward_bps
-        2 + // faction_war_hashbeast_reward_bps
+        2 + // war_base_reward_bps
+        2 + // war_mvp_reward_bps
+        2 + // war_hashbeast_reward_bps
         2 + // base_mutation_chance_bps
         2 + // mutation_chance_floor_bps
         2 + // mutation_chance_cap_bps
@@ -515,19 +558,17 @@ impl GameplayTuningConfig {
     pub fn is_uninitialized(&self) -> bool {
         !self.rpg_progression
             && self.max_evolution_stage_unlocked == 0
-            && self.faction_war_base_reward_bps == 0
-            && self.faction_war_loyalty_reward_bps == 0
-            && self.faction_war_mvp_reward_bps == 0
-            && self.faction_war_hashbeast_reward_bps == 0
+            && self.war_base_reward_bps == 0
+            && self.war_mvp_reward_bps == 0
+            && self.war_hashbeast_reward_bps == 0
     }
 
     pub fn apply_defaults(&mut self) {
         self.rpg_progression = false;
         self.max_evolution_stage_unlocked = 0;
-        self.faction_war_base_reward_bps = DEFAULT_FACTION_WAR_BASE_REWARD_BPS;
-        self.faction_war_loyalty_reward_bps = DEFAULT_FACTION_WAR_LOYALTY_REWARD_BPS;
-        self.faction_war_mvp_reward_bps = DEFAULT_FACTION_WAR_MVP_REWARD_BPS;
-        self.faction_war_hashbeast_reward_bps = DEFAULT_FACTION_WAR_HASHBEAST_REWARD_BPS;
+        self.war_base_reward_bps = DEFAULT_FACTION_WAR_BASE_REWARD_BPS;
+        self.war_mvp_reward_bps = DEFAULT_FACTION_WAR_MVP_REWARD_BPS;
+        self.war_hashbeast_reward_bps = DEFAULT_FACTION_WAR_HASHBEAST_REWARD_BPS;
         self.base_mutation_chance_bps = DEFAULT_BASE_MUTATION_CHANCE_BPS;
         self.mutation_chance_floor_bps = DEFAULT_MUTATION_CHANCE_FLOOR_BPS;
         self.mutation_chance_cap_bps = DEFAULT_MUTATION_CHANCE_CAP_BPS;
@@ -576,13 +617,11 @@ impl ProtocolOwnedLiquidity {
 
 /// HashBeast-BTC Mining status and parameters
 #[account]
-pub struct MineBtcMining {
+pub struct DegenBtcMining {
     /// Token vault that holds all pre-minted tokens
-    pub minebtc_token_vault: Pubkey,
-    /// Timestamp of the mining start
-    pub mining_start_timestamp: u64,
-    /// MineBtc mined per slot (original base rate)
-    pub mine_btc_per_round: u64,
+    pub dbtc_token_vault: Pubkey,
+    /// degenBTC mined per slot (original base rate)
+    pub dbtc_per_round: u64,
 
     /// Total tokens mined so far
     pub total_tokens_mined: u64,
@@ -623,14 +662,13 @@ pub struct MineBtcMining {
     pub lp_operation_pending: bool,
 }
 
-impl MineBtcMining {
-    // discriminator + minebtc_token_vault + mining_start_timestamp + mine_btc_per_round + total_tokens_mined + bump + vault_auth_bump +
+impl DegenBtcMining {
+    // discriminator + dbtc_token_vault + mining_start_timestamp + dbtc_per_round + total_tokens_mined + bump + vault_auth_bump +
     // raydium_pool_state + last_rate_update + price_history (vec) + recent_price + track_price + pol_stats + lp_token_price_in_sol
     pub const MAX_PRICE_HISTORY_ENTRIES: usize = 8; // 4-hour cycle (8 × 30min snapshots)
     pub const LEN: usize = DISCRIMINATOR_SIZE
-        + 32                    // minebtc_token_vault
-        + 8                     // mining_start_timestamp
-        + 8                     // mine_btc_per_round
+        + 32                    // dbtc_token_vault
+        + 8                     // dbtc_per_round
         + 8                     // total_tokens_mined
         + 8                     // total_tokens_distributed
         + 1                     // bump
@@ -701,28 +739,41 @@ impl TicketTier {
 
 /// Global HashBeast configuration used outside the primary mint sale.
 ///
-/// There is no lifetime supply cap — only the genesis sale (see
-/// `HashBeastMintConfig`) is bounded. Post-genesis, HashBeasts can mint via breeding
-/// without a hard ceiling; the breed price bonding curve makes additional
-/// supply progressively expensive.
+/// Seeds: `[b"hashbeast-config"]`. Singleton. Initialized once at deploy
+/// (admin path) and mutated only via admin ix going forward.
+///
+/// **No lifetime supply cap.** Only the genesis sale is bounded (see
+/// `HashBeastMintConfig.genesis_mint_limit`). Post-genesis, HashBeasts mint
+/// via breeding without a hard ceiling; the bonding-curve breeding cost
+/// (`compute_gene_price(breed_base_price, breed_curve_a, total_minted)`)
+/// makes additional supply progressively expensive.
+///
+/// **`hashbeast_collection` is the trust anchor** for "this asset is a
+/// canonical HashBeast" — every mint/breed Accounts struct address-pins the
+/// `hashbeast_collection` field to this pubkey, every stake/use/withdraw
+/// path resolves the same constraint. Don't add a new entry point that
+/// touches a HashBeast asset without binding the collection. See
+/// `instructions/hashbeasts.rs` module docs for the full mint-flow guard.
 #[account]
 pub struct HashBeastConfig {
     pub bump: u8,
 
-    /// HashBeast collection address (Metaplex Core)
+    /// Canonical Metaplex Core collection address for HashBeasts. Set once
+    /// at admin init; mint paths refuse any other collection.
     pub hashbeast_collection: Pubkey,
 
-    /// Lifetime count of HashBeasts ever minted. Used as the bonding-curve input
-    /// for breeding cost. Burns do not reduce this counter.
+    /// Lifetime count of HashBeasts ever minted. Monotonic bonding-curve
+    /// x-coordinate for breeding price. Burns do NOT decrement this.
     pub total_hashbeasts_minted: u64,
 
-    /// Whether breeding is currently allowed
+    /// Admin kill-switch. When false, `breed_hashbeasts` reverts.
     pub breeding_allowed: bool,
 
-    /// Base price for breeding cost bonding curve (in lamports)
+    /// Bonding-curve base price for breeding (lamports). y-intercept of the
+    /// curve `compute_gene_price(...)` returns.
     pub breed_base_price: u64,
 
-    /// Curve steepness for breeding cost
+    /// Bonding-curve steepness for breeding. Higher = supply ramps faster.
     pub breed_curve_a: u64,
 }
 
@@ -812,15 +863,15 @@ pub struct TaxConfig {
     pub bump: u8,
 
     /// Percentage of withheld tax that goes to faction treasury
-    pub faction_treasury_pct: u8,
+    pub treasury_pct: u8,
     /// Percentage of withheld tax that gets burned (remainder goes back to vault)
     pub burn_pct: u8,
 
-    /// Total amount of MineBtc burnt so far (cumulative)
+    /// Total amount of degenBTC burnt so far (cumulative)
     pub total_burnt: u64,
     /// Treasury tax accrued while no active faction war state existed yet.
     /// This amount gets attached to the next faction war when that state is initialized.
-    pub unassigned_faction_war_treasury_amount: u64,
+    pub unassigned_war_treasury_amount: u64,
 
     /// PDA addresses for tax system
     pub withdraw_withheld_authority: Pubkey,
@@ -830,10 +881,10 @@ pub struct TaxConfig {
 impl TaxConfig {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
-        1 +     // faction_treasury_pct
+        1 +     // treasury_pct
         1 +     // burn_pct
         8 +     // total_burnt
-        8 +     // unassigned_faction_war_treasury_amount
+        8 +     // unassigned_war_treasury_amount
         32 +    // withdraw_withheld_authority
         32; // faction_treasury_vault
 
@@ -866,8 +917,6 @@ pub struct GlobalGameSate {
     // --- Data from the *previous* round (for claiming) ---
     /// The last completed round ID
     pub last_round_id: u64,
-    /// The winning faction ID from the last completed round
-    pub winning_faction_id: u8,
 
     /// Global jackpot pot that accumulates across all rounds and factions.
     /// When the jackpot hits, this pot is distributed to exact winners of the selected faction.
@@ -882,20 +931,19 @@ impl GlobalGameSate {
         8 +     // current_round_id
         8 +     // round_duration_seconds
         8 +     // last_round_id
-        1 +     // winning_faction_id
         8; // jackpot_pot
 }
 
 #[account]
 pub struct HodlPool {
     pub hodl_tax_index: u128,
-    pub total_minebtc_claimable: u64,
+    pub total_dbtc_claimable: u64,
 }
 
 impl HodlPool {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         16 +    // hodl_tax_index (u128)
-        8; // total_minebtc_claimable (u64)
+        8; // total_dbtc_claimable (u64)
 }
 
 /// Faction State PDA (Seed: `[b"faction", faction_name.as_bytes()]`)
@@ -984,6 +1032,12 @@ pub struct GameSession {
     pub total_wgtd_points_bets: u64,
     /// Total stakers fee paid in this round
     pub stakers_fee: u64,
+    /// SOL added to the war's cycle-SOL pot this round (sum of
+    /// `cycle_sol_split_per_bet × num_bets` across every bet in this round).
+    /// Folded into `war_state.sol_reward_pool` at settle_round via
+    /// `track_war_round_completion`. Lets us track the cycle SOL pool without
+    /// loading war_state on the bet hot path.
+    pub cycle_sol_pool: u64,
 
     /// Number of users who bet on each faction.
     pub user_faction_indexes: [u64; NUM_FACTIONS],
@@ -999,21 +1053,21 @@ pub struct GameSession {
     /// The winning direction for the winning faction (0=Down, 1=Neutral, 2=Up).
     pub winning_direction: u8,
 
-    // --- MineBtc reward pools for this round ---
-    /// MineBtc allocated for exact winning faction+direction bettors in this round.
-    pub minebtc_winner_pool: u64,
-    /// MineBtc allocated per losing direction on the winning faction.
+    // --- degenBTC reward pools for this round ---
+    /// degenBTC allocated for exact winning faction+direction bettors in this round.
+    pub dbtc_winner_pool: u64,
+    /// degenBTC allocated per losing direction on the winning faction.
     /// The winning direction index remains zero in this array.
-    pub minebtc_same_faction_direction_pools: [u64; PredictionDirection::COUNT],
-    /// MineBtc allocated for stakers in this round
+    pub dbtc_same_faction_direction_pools: [u64; PredictionDirection::COUNT],
+    /// degenBTC allocated for stakers in this round
     pub faction_stakers: u64,
-    /// MineBtc allocated for the global jackpot in this round.
+    /// degenBTC allocated for the global jackpot in this round.
     pub jackpot_rewards: u64,
 
     /// SOL rewards index for this round's exact winning faction+direction.
     pub sol_rewards_index: u128,
-    /// MineBtc rewards index for this round's exact winning faction+direction.
-    pub minebtc_rewards_index: u128,
+    /// degenBTC rewards index for this round's exact winning faction+direction.
+    pub dbtc_rewards_index: u128,
     // --- Jackpot data for this round ---
     /// Whether the global jackpot was hit in this round.
     pub jackpot_hit: bool,
@@ -1021,6 +1075,12 @@ pub struct GameSession {
     pub jackpot_faction_id: u8,
     /// Global jackpot pot size when hit (if applicable).
     pub jackpot_pot_size_on_hit: u64,
+    /// degenBTC rewards index for jackpot winners (all directions on jackpot faction).
+    /// Set by `distribute_jackpot_rewards`; read by `claim_round_rewards`.
+    pub jackpot_rewards_index: u128,
+    /// Whether jackpot was already distributed for this round.
+    /// Prevents double-processing by cranker retries.
+    pub jackpot_distributed: bool,
 
     // --- Mutation tracking per round ---
     /// Number of mutations that have occurred per faction this round.
@@ -1030,18 +1090,23 @@ pub struct GameSession {
     /// Capped at active_factions / 3 to create scarcity.
     pub total_mutations_this_round: u8,
 
-    /// Snapshot of `faction_war_config.current_faction_war_id` at round start.
+    /// Snapshot of `war_config.current_war_id` at round start.
     /// Used by the round-claim handler to detect late claims (cycle has settled
     /// after the round ended) so mutation-bonus score is dropped instead of
     /// being applied to a different cycle.
-    pub faction_war_id_when_played: u64,
+    pub war_id_when_played: u64,
 
-    /// Snapshot of the winning country's `faction_volume_since_last_win`
-    /// captured at round-end (in `track_faction_war_round_completion`),
+    /// Snapshot of the winning country's `sol_volume_since_last_win`
+    /// captured at round-end (in `track_war_round_completion`),
     /// BEFORE the config counter is reset to 0. Frozen value the round-claim
     /// mutation roll feeds into the volume_factor — late claims see the same
     /// number even though the config-side counter has long been reset.
     pub winning_faction_volume_at_round: u64,
+
+    /// Accumulated cycle SOL split from bets placed during this round.
+    /// Folded into `FactionWarState.sol_reward_pool` once per round at
+    /// `settle_round` rather than touched per-bet — keeps JoinBets fast.
+    pub sol_reward_pool_accumulated: u64,
 }
 
 impl GameSession {
@@ -1060,25 +1125,29 @@ impl GameSession {
         8 +     // total_points_bets
         8 +     // total_wgtd_points_bets
         8 +     // stakers_fee
+        8 +     // cycle_sol_pool
         (NUM_FACTIONS * 8) + // user_faction_indexes
         (NUM_FACTIONS * 8) + // sol_bets_by_faction
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // points_bets_by_faction_direction
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // wgtd_points_bets_by_faction_direction
         1 +     // winning_faction_id (u8)
         1 +     // winning_direction (u8)
-        8 +     // minebtc_winner_pool
-        (PredictionDirection::COUNT * 8) + // minebtc_same_faction_direction_pools
+        8 +     // dbtc_winner_pool
+        (PredictionDirection::COUNT * 8) + // dbtc_same_faction_direction_pools
         8 +     // faction_stakers
         8 +     // jackpot_rewards
         16 +    // sol_rewards_index
-        16 +    // minebtc_rewards_index
+        16 +    // dbtc_rewards_index
         1 +     // jackpot_hit
         1 +     // jackpot_faction_id
         8 +     // jackpot_pot_size_on_hit
+        16 +    // jackpot_rewards_index
+        1 +     // jackpot_distributed
         (NUM_FACTIONS * 1) + // mutations_per_faction
         1 + // total_mutations_this_round
-        8 + // faction_war_id_when_played
-        8; // winning_faction_volume_at_round
+        8 + // war_id_when_played
+        8 + // winning_faction_volume_at_round
+        8; // sol_reward_pool_accumulated
 }
 
 // ========================================================================================
@@ -1120,12 +1189,15 @@ pub struct PlayerData {
 
     pub pending_sol_rewards: u64,
     pub hodl_tax_index: u128,
-    pub pending_minebtc_rewards: u64,
-    pub unrefined_minebtc_rewards: u64,
+    /// Gameplay-earned degenBTC rewards pending HODL-tax withdrawal.
+    pub pending_dbtc_rewards: u64,
+    /// Passive staking degenBTC rewards pending direct claim with SOL staking rewards.
+    pub pending_staking_dbtc_rewards: u64,
+    pub unrefined_dbtc_rewards: u64,
     /// Number of unclaimed per-round reward accounts still outstanding.
     pub pending_round_claims: u16,
     /// Number of unclaimed per-faction-war reward accounts still outstanding.
-    pub pending_faction_war_claims: u16,
+    pub pending_war_claims: u16,
 
     pub degenbtc_position_indices: Vec<u8>,
     pub lp_position_indices: Vec<u8>,
@@ -1158,13 +1230,13 @@ pub struct PlayerData {
     pub gameplay_unlock_request_faction_war: u64,
     /// Cumulative gameplay score for the current faction war cycle.
     /// Lazy-reset to 0 the first time it's touched in a new cycle (see
-    /// `current_faction_war_score_cycle_id` below). Used for MVP tracking.
-    pub current_faction_war_score: u64,
-    /// `faction_war_id` that `current_faction_war_score` belongs to.
-    /// On the first bet of a new cycle (when `faction_war_state.faction_war_id`
+    /// `current_war_score_cycle_id` below). Used for MVP tracking.
+    pub current_war_score: u64,
+    /// `war_id` that `current_war_score` belongs to.
+    /// On the first bet of a new cycle (when `war_state.war_id`
     /// differs from this), the running score is reset to 0 and this is updated.
     /// This avoids needing a separate per-user reset instruction at cycle rollover.
-    pub current_faction_war_score_cycle_id: u64,
+    pub current_war_score_cycle_id: u64,
 }
 
 impl PlayerData {
@@ -1193,10 +1265,11 @@ impl PlayerData {
         16 +    // lp_degenbtc_reward_debt (u128)
         8 +     // pending_sol_rewards (u64)
         16 +    // hodl_tax_index (u128)
-        8 +     // pending_minebtc_rewards (u64)
-        8 +     // unrefined_minebtc_rewards (u64)
+        8 +     // pending_dbtc_rewards (u64)
+        8 +     // pending_staking_dbtc_rewards (u64)
+        8 +     // unrefined_dbtc_rewards (u64)
         2 +     // pending_round_claims (u16)
-        2 +     // pending_faction_war_claims (u16)
+        2 +     // pending_war_claims (u16)
         4 + (Self::MAX_POSITIONS * 1) + // degenbtc_position_indices Vec<u8>
         4 + (Self::MAX_POSITIONS * 1) + // lp_position_indices Vec<u8>
         4 + (MAX_STAKED_HASHBEASTS * 32) + // staked_hashbeasts Vec<Pubkey>
@@ -1208,14 +1281,14 @@ impl PlayerData {
         32 +    // gameplay_hashbeast_dna [u8; 32]
         4 +     // gameplay_hashbeast_xp (u32)
         8 +     // gameplay_unlock_request_faction_war (u64)
-        8 +     // current_faction_war_score (u64)
-        8; // current_faction_war_score_cycle_id (u64)
+        8 +     // current_war_score (u64)
+        8; // current_war_score_cycle_id (u64)
 }
 
-/// Individual MineBtc staking position
+/// Individual degenBTC staking position
 #[account]
 pub struct StakedPosition {
-    pub position_type: u8, // 0 = minebtc, 1 = lp
+    pub position_type: u8, // 0 = degenBTC, 1 = lp
 
     pub position_index: u8,
     pub faction_id: u8,
@@ -1287,7 +1360,7 @@ pub const MAX_REFERRER_SOL_LIFETIME: u64 = 100_000 * 1_000_000_000;
 // ===============================  HASHBEAST NFT METADATA ===============================
 // ========================================================================================
 
-/// HashBeast NFT metadata (stored in minebtc program for simplicity)
+/// HashBeast NFT metadata (stored in degenBTC program for simplicity)
 #[account]
 pub struct HashBeastMetadata {
     /// The NFT mint address (Metaplex Core asset)
@@ -1304,7 +1377,7 @@ pub struct HashBeastMetadata {
     pub cooldown_end: i64,
     /// Creation timestamp
     pub created_at: i64,
-    /// Faction ID (country) that the hashbeast belongs to (matches minebtc faction)
+    /// Faction ID (country) that the hashbeast belongs to (matches degenBTC faction)
     pub faction_id: u8,
     /// Multiplier for this hashbeast (1000 = 1x, same scale as BASE_MULTIPLIER)
     pub multiplier: u32,
@@ -1425,7 +1498,7 @@ pub struct UserGameBet {
     /// The round ID this bet belongs to
     pub round_id: u64,
     /// Faction-war cycle active when this round bet was placed.
-    pub faction_war_id: u64,
+    pub war_id: u64,
 
     /// List of faction IDs user bet on.
     /// Index position corresponds to the same index in directions/sol_bets/points_bets.
@@ -1465,7 +1538,7 @@ impl UserGameBet {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         32 +    // owner
         8 +     // round_id
-        8 +     // faction_war_id
+        8 +     // war_id
         4 + (Self::MAX_POSITIONS_PER_BET * 1) + // faction_ids Vec<u8>
         4 + (Self::MAX_POSITIONS_PER_BET * 1) + // directions Vec<u8>
         4 + (Self::MAX_POSITIONS_PER_BET * 8) + // sol_bets Vec<u64>
@@ -1551,40 +1624,60 @@ impl AutominerVault {
 
 /// Faction War configuration PDA (Seed: `[b"faction-war-config"]`)
 /// Faction wars are tied to the economy cycle: one faction war per LP-burn cycle.
-/// Settlement becomes possible once lp_operations_count reaches faction_war_settle_cycle.
+/// Settlement becomes possible once lp_operations_count reaches settle_at_lp_op_count.
 #[account]
 pub struct FactionWarConfig {
     pub bump: u8,
 
     /// Current faction-war ID (incrementing counter, starts at 1)
-    pub current_faction_war_id: u64,
+    pub current_war_id: u64,
 
-    /// Whether faction-war scoring is active
-    pub is_active: bool,
+    /// Cached PDA bump for `war_sol_vault`. Stored here so the hot
+    /// JoinBets path can derive the vault address with `create_program_address`
+    /// instead of paying `find_program_address` every bet.
+    pub rewards_sol_vault_bump: u8,
 
     /// The LP operations count that triggers settlement of the current faction_war.
     /// Set to `pol_stats.lp_operations_count + 1` when the faction_war starts,
     /// meaning the faction_war settles after the next full economy cycle completes.
-    pub faction_war_settle_cycle: u32,
+    pub settle_at_lp_op_count: u32,
 
     /// Rankings from the previous faction war's gameplay scores.
     /// Used as start_ranks when the next faction war auto-starts.
     /// Initialized to [0, 1, 2, ..., NUM_FACTIONS-1] on first setup.
-    pub prev_faction_war_ranks: [u8; NUM_FACTIONS],
+    pub prev_ranks: [u8; NUM_FACTIONS],
 
     /// Last round whose round-completion side effects were applied to this cycle.
     pub last_processed_round_id: u64,
 
+    /// Round id snapshotted by the LP-burn instruction when
+    /// `lp_operations_count` first reaches `settle_at_lp_op_count`. Marks the
+    /// final round of the current cycle — any round after this one belongs to
+    /// the next war. `0` while the cycle is still open.
+    ///
+    /// Lifecycle:
+    /// - LP burn captures `global_game_state.current_round_id` here once the
+    ///   threshold crosses.
+    /// - `start_round` is blocked once this is non-zero (war must be settled
+    ///   before a new round can begin).
+    /// - `settle_war` requires this to be non-zero AND
+    ///   `last_processed_round_id == cycle_end_round_id` (boundary round
+    ///   already folded into war_state).
+    /// - Stays non-zero after `finalize_war_settlement` so `start_round`
+    ///   remains blocked until `initialize_war_internal` creates the next
+    ///   war PDAs, then resets to `0` there so the next war starts fresh.
+    pub cycle_end_round_id: u64,
+
     /// Per-country additive SOL volume accumulated since each country's last
     /// round win. Resets to 0 for the winner inside
-    /// `track_faction_war_round_completion` AFTER snapshotting onto
+    /// `track_war_round_completion` AFTER snapshotting onto
     /// `GameSession.winning_faction_volume_at_round`. Persists across cycle
     /// boundaries — a country in a long drought builds up potential.
-    pub faction_volume_since_last_win: [u64; NUM_FACTIONS],
+    pub sol_volume_since_last_win: [u64; NUM_FACTIONS],
 
     // ----- DYNAMIC MINING MULTIPLIER (degenBTC cycle rewards) -----
     /// Current multiplier for faction-war degenBTC rewards, in basis points.
-    /// 10_000 = 1.0x. Applied to `total_degenbtc_mined_in_faction_war` at settlement.
+    /// 10_000 = 1.0x. Applied to `total_dbtc_mined_in_rounds` at settlement.
     pub mining_multiplier_bps: u16,
     /// Basis-point increase applied when price goes up (e.g. 300 = +3%).
     pub multiplier_increase_bps: u16,
@@ -1599,12 +1692,13 @@ pub struct FactionWarConfig {
 impl FactionWarConfig {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
-        8 +     // current_faction_war_id
-        1 +     // is_active
-        4 +     // faction_war_settle_cycle
-        (NUM_FACTIONS * 1) + // prev_faction_war_ranks
+        8 +     // current_war_id
+        1 +     // rewards_sol_vault_bump
+        4 +     // settle_at_lp_op_count
+        (NUM_FACTIONS * 1) + // prev_ranks
         8 +     // last_processed_round_id
-        (NUM_FACTIONS * 8) + // faction_volume_since_last_win
+        8 +     // cycle_end_round_id
+        (NUM_FACTIONS * 8) + // sol_volume_since_last_win
         2 +     // mining_multiplier_bps
         2 +     // multiplier_increase_bps
         2 +     // multiplier_decrease_bps
@@ -1615,161 +1709,117 @@ impl FactionWarConfig {
 impl FactionWarConfig {
     pub fn reset_cycle_round_tracking(&mut self) {
         self.last_processed_round_id = 0;
-        // Note: faction_volume_since_last_win is intentionally NOT reset here
+        // Note: sol_volume_since_last_win is intentionally NOT reset here
         // — it tracks across cycles; only resets per-country on round win.
     }
 }
 
-/// Faction War state PDA (Seed: `[b"faction-war", faction_war_id_u64_le]`)
-/// Tracks a single gameplay-score-driven faction_war cycle: start/final ranks derived from
-/// home-country support scores, directional bet totals, and settlement outputs.
-/// FactionWar duration is tied to the economy cycle (one LP-burn cycle).
+/// Faction War state PDA (Seed: `[b"faction-war", war_id_u64_le]`)
+/// Tracks active gameplay data during a faction war cycle.
+/// Kept small because it is loaded on every bet and every settle_round.
 #[account]
 pub struct FactionWarState {
     pub bump: u8,
 
     /// FactionWar ID
-    pub faction_war_id: u64,
-    /// Timestamp when this faction_war was auto-started
+    pub war_id: u64,
+    /// Timestamp when this faction_war was started
     pub start_timestamp: u64,
 
     /// Stage: 0 = active, 1 = settled (claims open)
     pub stage: u8,
     /// Snapshot of how many factions were active when this faction_war started
-    pub active_faction_count: u8,
+    pub faction_count: u8,
 
     /// Total degenBTC mined via raffle rounds during this faction_war.
-    pub total_degenbtc_mined_in_faction_war: u64,
+    pub total_dbtc_mined_in_rounds: u64,
     /// Faction-war mining pool distributed to faction-war predictors.
-    pub faction_war_mining_pool: u64,
-
-    /// Rank snapshot from previous faction_war (baseline for direction resolution).
-    pub start_ranks: [u8; NUM_FACTIONS],
-    /// Final ranks derived from the gameplay-score array at settlement.
-    pub final_ranks: [u8; NUM_FACTIONS],
-
-    /// Rank deltas at settlement (positive = rank improved, negative = rank worsened).
-    pub rank_deltas: [i8; NUM_FACTIONS],
-    /// Resolved direction per faction (0=Down, 1=Neutral, 2=Up).
-    pub resolved_directions: [u8; NUM_FACTIONS],
-
-    /// Running MVP candidate per faction (user with highest cumulative gameplay score).
-    pub faction_mvp_user: [Pubkey; NUM_FACTIONS],
-    /// Running MVP score per faction.
-    pub faction_mvp_score: [u64; NUM_FACTIONS],
-    /// Bonus amount reserved for each faction's MVP at settlement.
-    pub faction_mvp_bonus: [u64; NUM_FACTIONS],
+    pub dbtc_mined_this_war: u64,
 
     /// Total weighted bets per faction and direction during this faction_war
     /// from all users. This powers the base "be right anywhere" cycle rewards.
     pub faction_direction_totals: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
-    /// Total weighted bets per faction and direction from users backing their
-    /// own country. This powers the loyalty bonus layer on top of the global base rewards.
-    pub loyalty_direction_totals: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
-
-    /// Pre-computed base reward pool per faction (rank-weighted across factions,
-    /// then shared by anyone who picked that country's resolved direction correctly).
-    pub faction_reward_pools: [u64; NUM_FACTIONS],
-    /// Pre-computed loyalty reward pool per faction shared only by home-country supporters.
-    pub loyalty_reward_pools: [u64; NUM_FACTIONS],
-    /// Reward pool per faction reserved for gameplay HashBeasts backing their home country during the faction_war.
-    pub faction_hashbeast_reward_pools: [u64; NUM_FACTIONS],
 
     /// Number of raffle rounds won by each faction during this faction war.
     /// Used as a tiebreak after story score.
-    pub faction_round_wins: [u16; NUM_FACTIONS],
-    /// Total own-country SOL support committed during this faction war.
-    /// Used as a second tiebreak after round wins.
-    pub faction_sol_totals: [u64; NUM_FACTIONS],
-    /// Total real SOL bets per faction/direction. Used for claim-time cycle mutation probability.
-    pub faction_sol_direction_totals: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
+    pub round_wins: [u16; NUM_FACTIONS],
+
+    /// Total real SOL volume across all factions/directions for this war.
+    /// Folded once per round from `game_session.total_sol_bets`. Used as the
+    /// `total_sol` denominator in the claim-time mutation chance roll.
+    pub total_cycle_sol: u64,
 
     /// Accumulated gameplay scores per faction during this faction_war.
-    /// Drives ranking at settlement, with round wins and own-country SOL support as tiebreaks.
-    /// DNA mutation rolls happen at claim time and do not retroactively alter settled rankings.
-    pub faction_gameplay_scores: [u64; NUM_FACTIONS],
-    /// Total weighted own-country bets per faction/direction from users with an active gameplay HashBeast.
-    pub eligible_hashbeast_direction_totals: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
+    /// Drives ranking at settlement (round wins is the tiebreak, then faction_id).
+    pub gameplay_scores: [u64; NUM_FACTIONS],
 
-    /// Exact amount of faction treasury tax attributed to this faction war.
-    /// This is accumulated during tax distribution while the war is active, or
-    /// seeded from TaxConfig.unassigned_faction_war_treasury_amount when the
-    /// war state is first initialized.
-    pub treasury_reward_base_amount: u64,
-    /// Bitmap of factions that have already claimed treasury rewards for this
-    /// faction war. Bit N = 1 means faction N has claimed.
-    pub treasury_claimed_bitmap: u16,
+    /// Running MVP candidate per faction (user with highest cumulative gameplay score).
+    pub mvp_user: [Pubkey; NUM_FACTIONS],
+    /// Running MVP score per faction.
+    pub mvp_score: [u64; NUM_FACTIONS],
+
+    /// Total mutation-bonus score per faction across all users this cycle.
+    /// Incremented in `apply_mutation_bonus_score` alongside per-user totals.
+    /// Denominator for HB bonus claim share — `hb_share[user] =
+    /// hb_pool[home] * user_mutation_score / faction_mutation_score[home]`.
+    /// HB lane is now purely gameplay-driven: you must have rolled at least
+    /// one successful mutation this cycle to earn HB-bonus.
+    pub faction_mutation_score: [u64; NUM_FACTIONS],
 
     /// Accumulated SOL (from `cycle_sol_split`) reserved for this faction-war
     /// cycle's SOL jackpot. Distributed to claimants at settlement.
     pub sol_reward_pool: u64,
+
+    /// Exact amount of faction treasury tax attributed to this faction war.
+    /// Accumulated during tax distribution while the war is active, or
+    /// seeded from TaxConfig.unassigned_war_treasury_amount when the
+    /// war state is first initialized.
+    pub treasury_reward_base_amount: u64,
 }
 
 impl FactionWarState {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
-        8 +     // faction_war_id
+        8 +     // war_id
         8 +     // start_timestamp
         1 +     // stage
-        1 +     // active_faction_count
-        8 +     // total_degenbtc_mined_in_faction_war
-        8 +     // faction_war_mining_pool
-        (NUM_FACTIONS * 1) + // start_ranks
-        (NUM_FACTIONS * 1) + // final_ranks
-        (NUM_FACTIONS * 1) + // rank_deltas
-        (NUM_FACTIONS * 1) + // resolved_directions
-        (NUM_FACTIONS * 32) + // faction_mvp_user
-        (NUM_FACTIONS * 8) + // faction_mvp_score
-        (NUM_FACTIONS * 8) + // faction_mvp_bonus
+        1 +     // faction_count
+        8 +     // total_dbtc_mined_in_rounds
+        8 +     // dbtc_mined_this_war
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // faction_direction_totals
-        (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // loyalty_direction_totals
-        (NUM_FACTIONS * 8) + // faction_reward_pools
-        (NUM_FACTIONS * 8) + // loyalty_reward_pools
-        (NUM_FACTIONS * 8) + // faction_hashbeast_reward_pools
-        (NUM_FACTIONS * 2) + // faction_round_wins
-        (NUM_FACTIONS * 8) + // faction_sol_totals
-        (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // faction_sol_direction_totals
-        (NUM_FACTIONS * 8) + // faction_gameplay_scores
-        (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // eligible_hashbeast_direction_totals
-        8 +     // treasury_reward_base_amount
-        2 +     // treasury_claimed_bitmap
-        8; // sol_reward_pool
+        (NUM_FACTIONS * 2) + // round_wins
+        8 +     // total_cycle_sol
+        (NUM_FACTIONS * 8) + // gameplay_scores
+        (NUM_FACTIONS * 32) + // mvp_user
+        (NUM_FACTIONS * 8) + // mvp_score
+        (NUM_FACTIONS * 8) + // faction_mutation_score
+        8 +     // sol_reward_pool
+        8; // treasury_reward_base_amount
 
     pub fn blank() -> Self {
         Self {
             bump: 0,
-            faction_war_id: 0,
+            war_id: 0,
             start_timestamp: 0,
             stage: 0,
-            active_faction_count: 0,
-            total_degenbtc_mined_in_faction_war: 0,
-            faction_war_mining_pool: 0,
-            start_ranks: [0u8; NUM_FACTIONS],
-            final_ranks: [0u8; NUM_FACTIONS],
-            rank_deltas: [0i8; NUM_FACTIONS],
-            resolved_directions: [0u8; NUM_FACTIONS],
+            faction_count: 0,
+            total_dbtc_mined_in_rounds: 0,
+            dbtc_mined_this_war: 0,
             faction_direction_totals: [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS],
-            loyalty_direction_totals: [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS],
-            faction_reward_pools: [0u64; NUM_FACTIONS],
-            loyalty_reward_pools: [0u64; NUM_FACTIONS],
-            faction_hashbeast_reward_pools: [0u64; NUM_FACTIONS],
-            faction_round_wins: [0u16; NUM_FACTIONS],
-            faction_sol_totals: [0u64; NUM_FACTIONS],
-            faction_sol_direction_totals: [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS],
-            faction_gameplay_scores: [0u64; NUM_FACTIONS],
-            faction_mvp_user: [Pubkey::default(); NUM_FACTIONS],
-            faction_mvp_score: [0u64; NUM_FACTIONS],
-            faction_mvp_bonus: [0u64; NUM_FACTIONS],
-            eligible_hashbeast_direction_totals: [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS],
-            treasury_reward_base_amount: 0,
-            treasury_claimed_bitmap: 0,
+            round_wins: [0u16; NUM_FACTIONS],
+            total_cycle_sol: 0,
+            gameplay_scores: [0u64; NUM_FACTIONS],
+            mvp_user: [Pubkey::default(); NUM_FACTIONS],
+            mvp_score: [0u64; NUM_FACTIONS],
+            faction_mutation_score: [0u64; NUM_FACTIONS],
             sol_reward_pool: 0,
+            treasury_reward_base_amount: 0,
         }
     }
 
     /// Deserialize from `buf` directly into `*target` field-by-field.
     ///
-    /// Avoids the ~2.6KB stack temporary that `<Self as AnchorDeserialize>::deserialize`
+    /// Avoids a large stack temporary that `<Self as AnchorDeserialize>::deserialize`
     /// would create. Each individual field deserialization uses at most ~480 bytes
     /// of stack (the `[Pubkey; NUM_FACTIONS]` field), keeping this function under
     /// BPF's 4096-byte stack budget.
@@ -1778,37 +1828,133 @@ impl FactionWarState {
     #[inline(never)]
     pub fn deserialize_into(target: &mut Self, buf: &mut &[u8]) -> Result<()> {
         target.bump = AnchorDeserialize::deserialize(buf)?;
-        target.faction_war_id = AnchorDeserialize::deserialize(buf)?;
+        target.war_id = AnchorDeserialize::deserialize(buf)?;
         target.start_timestamp = AnchorDeserialize::deserialize(buf)?;
         target.stage = AnchorDeserialize::deserialize(buf)?;
-        target.active_faction_count = AnchorDeserialize::deserialize(buf)?;
-        target.total_degenbtc_mined_in_faction_war = AnchorDeserialize::deserialize(buf)?;
-        target.faction_war_mining_pool = AnchorDeserialize::deserialize(buf)?;
-        target.start_ranks = AnchorDeserialize::deserialize(buf)?;
-        target.final_ranks = AnchorDeserialize::deserialize(buf)?;
-        target.rank_deltas = AnchorDeserialize::deserialize(buf)?;
-        target.resolved_directions = AnchorDeserialize::deserialize(buf)?;
-        target.faction_mvp_user = AnchorDeserialize::deserialize(buf)?;
-        target.faction_mvp_score = AnchorDeserialize::deserialize(buf)?;
-        target.faction_mvp_bonus = AnchorDeserialize::deserialize(buf)?;
+        target.faction_count = AnchorDeserialize::deserialize(buf)?;
+        target.total_dbtc_mined_in_rounds = AnchorDeserialize::deserialize(buf)?;
+        target.dbtc_mined_this_war = AnchorDeserialize::deserialize(buf)?;
         target.faction_direction_totals = AnchorDeserialize::deserialize(buf)?;
-        target.loyalty_direction_totals = AnchorDeserialize::deserialize(buf)?;
-        target.faction_reward_pools = AnchorDeserialize::deserialize(buf)?;
-        target.loyalty_reward_pools = AnchorDeserialize::deserialize(buf)?;
-        target.faction_hashbeast_reward_pools = AnchorDeserialize::deserialize(buf)?;
-        target.faction_round_wins = AnchorDeserialize::deserialize(buf)?;
-        target.faction_sol_totals = AnchorDeserialize::deserialize(buf)?;
-        target.faction_sol_direction_totals = AnchorDeserialize::deserialize(buf)?;
-        target.faction_gameplay_scores = AnchorDeserialize::deserialize(buf)?;
-        target.eligible_hashbeast_direction_totals = AnchorDeserialize::deserialize(buf)?;
-        target.treasury_reward_base_amount = AnchorDeserialize::deserialize(buf)?;
-        target.treasury_claimed_bitmap = AnchorDeserialize::deserialize(buf)?;
+        target.round_wins = AnchorDeserialize::deserialize(buf)?;
+        target.total_cycle_sol = AnchorDeserialize::deserialize(buf)?;
+        target.gameplay_scores = AnchorDeserialize::deserialize(buf)?;
+        target.mvp_user = AnchorDeserialize::deserialize(buf)?;
+        target.mvp_score = AnchorDeserialize::deserialize(buf)?;
+        target.faction_mutation_score = AnchorDeserialize::deserialize(buf)?;
         target.sol_reward_pool = AnchorDeserialize::deserialize(buf)?;
+        target.treasury_reward_base_amount = AnchorDeserialize::deserialize(buf)?;
         Ok(())
     }
 }
 
-/// User FactionWar Bets PDA (Seed: `[b"user-faction-war", user_pubkey, faction_war_id_u64_le]`)
+/// Faction War settlement PDA (Seed: `[b"faction-war-settlement", war_id_u64_le]`)
+/// Holds all settlement-only data computed when a faction war ends.
+/// Loaded by settle_war and claim_war_rewards — NOT by join_bets or settle_round.
+#[account]
+pub struct FactionWarSettlement {
+    pub bump: u8,
+
+    /// FactionWar ID (must match the corresponding FactionWarState)
+    pub war_id: u64,
+
+    /// Final ranks derived from the gameplay-score array at settlement.
+    pub final_ranks: [u8; NUM_FACTIONS],
+    /// Rank deltas at settlement (positive = rank improved, negative = rank worsened).
+    pub rank_deltas: [i8; NUM_FACTIONS],
+    /// Resolved direction per faction (0=Down, 1=Neutral, 2=Up).
+    pub resolved_directions: [u8; NUM_FACTIONS],
+
+    /// Bonus amount reserved for each faction's MVP at settlement.
+    pub mvp_bonus: [u64; NUM_FACTIONS],
+
+    /// Pre-computed base reward pool per faction (rank-weighted across factions,
+    /// then shared by anyone who picked that country's resolved direction correctly).
+    pub base_reward_pools: [u64; NUM_FACTIONS],
+    /// Reward pool per faction reserved for gameplay HashBeasts backing their home country during the faction_war.
+    pub hashbeast_reward_pools: [u64; NUM_FACTIONS],
+
+    /// SOL lane allocations (mirror of the dBTC lanes — same bps). Per-user
+    /// SOL payout at claim time scales each lane's pool by the user's dBTC
+    /// share of that lane:
+    ///   user_sol_<lane> = sol_<lane>_pool * user_dbtc_<lane> / total_dbtc_<lane>
+    ///
+    /// Distribution is **absolute rank-weighted**: each active faction's slice
+    /// of every lane is determined by its rank weight relative to the sum of
+    /// rank weights across all active factions. Non-eligible factions' slices
+    /// are NOT redistributed to other factions; they stay unallocated.
+    ///
+    /// `sol_base_pool + sol_hb_pool + sol_mvp_pool + undistributed_sol ==
+    /// FactionWarState.sol_reward_pool` at settle time.
+    pub sol_base_pool: u64,
+    pub sol_hb_pool: u64,
+    pub sol_mvp_pool: u64,
+
+    /// SOL that no eligible claimant can claim (no faction met the lane's
+    /// eligibility rule, or the rank-weight slot belonged to a faction with
+    /// no eligibles). Transferred to `sol_treasury` at settle so it doesn't
+    /// rot in the faction-war SOL vault.
+    pub undistributed_sol: u64,
+
+    /// Bitmap of factions that have already claimed treasury rewards for this
+    /// faction war. Bit N = 1 means faction N has claimed.
+    pub treasury_claimed_bitmap: u16,
+}
+
+impl FactionWarSettlement {
+    pub const LEN: usize = DISCRIMINATOR_SIZE +
+        1 +     // bump
+        8 +     // war_id
+        (NUM_FACTIONS * 1) + // final_ranks
+        (NUM_FACTIONS * 1) + // rank_deltas
+        (NUM_FACTIONS * 1) + // resolved_directions
+        (NUM_FACTIONS * 8) + // mvp_bonus
+        (NUM_FACTIONS * 8) + // base_reward_pools
+        (NUM_FACTIONS * 8) + // hashbeast_reward_pools
+        8 +     // sol_base_pool
+        8 +     // sol_hb_pool
+        8 +     // sol_mvp_pool
+        8 +     // undistributed_sol
+        2; // treasury_claimed_bitmap
+
+    pub fn blank() -> Self {
+        Self {
+            bump: 0,
+            war_id: 0,
+            final_ranks: [0u8; NUM_FACTIONS],
+            rank_deltas: [0i8; NUM_FACTIONS],
+            resolved_directions: [0u8; NUM_FACTIONS],
+            mvp_bonus: [0u64; NUM_FACTIONS],
+            base_reward_pools: [0u64; NUM_FACTIONS],
+            hashbeast_reward_pools: [0u64; NUM_FACTIONS],
+            sol_base_pool: 0,
+            sol_hb_pool: 0,
+            sol_mvp_pool: 0,
+            undistributed_sol: 0,
+            treasury_claimed_bitmap: 0,
+        }
+    }
+
+    /// Field-order deserializer to stay under BPF stack limit.
+    #[inline(never)]
+    pub fn deserialize_into(target: &mut Self, buf: &mut &[u8]) -> Result<()> {
+        target.bump = AnchorDeserialize::deserialize(buf)?;
+        target.war_id = AnchorDeserialize::deserialize(buf)?;
+        target.final_ranks = AnchorDeserialize::deserialize(buf)?;
+        target.rank_deltas = AnchorDeserialize::deserialize(buf)?;
+        target.resolved_directions = AnchorDeserialize::deserialize(buf)?;
+        target.mvp_bonus = AnchorDeserialize::deserialize(buf)?;
+        target.base_reward_pools = AnchorDeserialize::deserialize(buf)?;
+        target.hashbeast_reward_pools = AnchorDeserialize::deserialize(buf)?;
+        target.sol_base_pool = AnchorDeserialize::deserialize(buf)?;
+        target.sol_hb_pool = AnchorDeserialize::deserialize(buf)?;
+        target.sol_mvp_pool = AnchorDeserialize::deserialize(buf)?;
+        target.undistributed_sol = AnchorDeserialize::deserialize(buf)?;
+        target.treasury_claimed_bitmap = AnchorDeserialize::deserialize(buf)?;
+        Ok(())
+    }
+}
+
+/// User FactionWar Bets PDA (Seed: `[b"user-faction-war", user_pubkey, war_id_u64_le]`)
 /// Tracks how much weighted stake a user bet on each faction's direction during a
 /// specific faction_war. These weights power the global base cycle rewards.
 #[account]
@@ -1818,11 +1964,17 @@ pub struct UserFactionWarBets {
     /// The user who placed these bets
     pub owner: Pubkey,
     /// The faction-war ID this tracks
-    pub faction_war_id: u64,
-    /// Gameplay hashbeast that became eligible for the faction_war hashbeast-reward pool.
+    pub war_id: u64,
+    /// Gameplay hashbeast that backed home country during the faction_war.
+    /// Set on the user's first home-faction bet while an HB is deployed;
+    /// validated to stay the same for subsequent home bets in the cycle.
     pub gameplay_hashbeast: Pubkey,
-    /// Whether this user had an active gameplay hashbeast backing their home country during the faction_war.
-    pub hashbeast_bonus_eligible: bool,
+
+    /// Cumulative mutation-bonus score this user contributed to their home
+    /// country during the cycle. Incremented in `apply_mutation_bonus_score`
+    /// on each successful round-claim mutation roll. Used as the HB-bonus
+    /// numerator at war claim (`hb_share = pool * mutation_score / faction_mutation_score`).
+    pub mutation_score: u64,
 
     /// Weighted bet per faction and direction during this faction_war.
     pub direction_bets: [[u64; PredictionDirection::COUNT]; NUM_FACTIONS],
@@ -1834,9 +1986,9 @@ impl UserFactionWarBets {
     pub const LEN: usize = DISCRIMINATOR_SIZE +
         1 +     // bump
         32 +    // owner
-        8 +     // faction_war_id
+        8 +     // war_id
         32 +    // gameplay_hashbeast
-        1 +     // hashbeast_bonus_eligible
+        8 +     // mutation_score
         (NUM_FACTIONS * PredictionDirection::COUNT * 8) + // direction_bets
         (NUM_FACTIONS * PredictionDirection::COUNT * 8); // sol_direction_bets
 
@@ -1844,9 +1996,9 @@ impl UserFactionWarBets {
         Self {
             bump: 0,
             owner: Pubkey::default(),
-            faction_war_id: 0,
+            war_id: 0,
             gameplay_hashbeast: Pubkey::default(),
-            hashbeast_bonus_eligible: false,
+            mutation_score: 0,
             direction_bets: [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS],
             sol_direction_bets: [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS],
         }
@@ -1887,20 +2039,47 @@ pub enum RebornOrigin {
     Swept = 1,
 }
 
-/// Single global inventory pool PDA. Doubles as the on-chain custody address
-/// (mpl-core asset `owner` field is set to this PDA when an asset is reborn,
-/// listed, or swept). Seeds: `[b"inventory-pool"]`.
+/// Singleton inventory pool PDA. Seeds: `[b"inventory-pool"]`.
+///
+/// **Dual role:** the PDA at this address simultaneously serves as
+///   1. the typed `Account<InventoryPool>` (this struct — holds counters
+///      and cached marketplace identifiers), and
+///   2. the on-chain custody account: every HashBeast asset the protocol
+///      acquires via `sweep_floor_lowest` or holds for the lootbox queue
+///      has its mpl-core `owner` field set to this PDA.
+///
+/// Most marketplace ix in `marketplace_cpi.rs` therefore pull this PDA
+/// twice — once as `inventory_pool` (typed view, for counter mutation) and
+/// once as `inventory_pda` (raw view, for asset transfer signer). Same
+/// pubkey, same bump. The PDA signs all asset moves out of inventory
+/// (transfer to user on lootbox claim, list/cancel CPI to the marketplace,
+/// burn CPI to mpl-core) using `[INVENTORY_POOL_SEED, bump]`.
+///
+/// Sale proceeds: when the marketplace fills one of our inventory listings,
+/// the SOL lands on this PDA as raw lamports above the rent floor.
+/// `handle_inventory_proceeds` routes that surplus 50/50 to
+/// `inventory_sweep_vault` and `sol_treasury`.
+///
+/// `marketplace_program` / `marketplace_config` are cached at init to avoid
+/// passing them as args; every CPI wrapper validates the caller-supplied
+/// account against the cached pubkey.
 #[account]
 pub struct InventoryPool {
     pub bump: u8,
-    /// Cached pubkey of the marketplace program for CPI validation.
+    /// Cached pubkey of the standalone `degenbtc_market` program. CPI
+    /// wrappers `require_keys_eq!(...)` against this.
     pub marketplace_program: Pubkey,
-    /// Cached marketplace config PDA inside the marketplace program.
+    /// Cached marketplace `MarketplaceConfig` PDA inside that program.
+    /// Also `require_keys_eq!`'d in every wrapper.
     pub marketplace_config: Pubkey,
 
-    /// Live count of NFTs in inventory custody (lootbox + listed).
-    /// Used only for the MAX_INVENTORY cap; per-status counts are
-    /// derivable by indexers from events.
+    /// Live count of NFTs in inventory custody (status: Lootbox or Listed).
+    /// Bumped on intake (sweep buy success), decremented on outflow
+    /// (`claim_lootbox_nft`, `inventory_finalize_sale`, burn paths in
+    /// `expire_program_listing` / `sweep_floor_lowest`). Capped at
+    /// `MAX_INVENTORY`. Per-status counts are NOT tracked here — indexers
+    /// reconstruct them from `LootboxQueuePush` / `InventoryAssetRelisted`
+    /// / `InventoryAssetBurned` / `InventorySaleFinalized` events.
     pub total_count: u32,
 }
 
@@ -1912,26 +2091,67 @@ impl InventoryPool {
         + 4; // total_count
 }
 
-/// One per HashBeast currently held by `inventory_pda`. Closes on Sold (verified
-/// via on-chain owner check) or Dropped (claim_lootbox_nft).
+/// One per HashBeast currently held by `inventory_pda`.
 /// Seeds: `[b"reborn-entry", asset]`.
+///
+/// **Lifecycle:**
+///
+/// ```text
+///   ┌───────────────────────────────────────────────────────────────────┐
+///   │ INTAKE (creates RebornEntry, +1 InventoryPool.total_count)        │
+///   │   sweep_floor_lowest → status = Lootbox  OR  Listed  OR  (burn,   │
+///   │                        no entry)                                   │
+///   │   rebirth_hashbeast   → status = Lootbox (no relist path)         │
+///   └───────────────────────────────────────────────────────────────────┘
+///                                  │
+///                                  ▼
+///   ┌───────────────────────────────────────────────────────────────────┐
+///   │ ACTIVE                                                             │
+///   │   Lootbox: sits in `LootboxQueue[faction_id]`; awaits loser-roll. │
+///   │   Listed:  live program-owned listing on marketplace.             │
+///   └───────────────────────────────────────────────────────────────────┘
+///                                  │
+///                ┌─────────────────┼──────────────────┐
+///                ▼                 ▼                  ▼
+///   ┌────────────────────┐ ┌────────────────┐ ┌──────────────────────┐
+///   │ claim_lootbox_nft  │ │ inventory_     │ │ expire_program_      │
+///   │ (Lootbox → user)   │ │ finalize_sale  │ │ listing              │
+///   │ closes RebornEntry │ │ (Listed sold)  │ │ (Listed unsold @ 7d) │
+///   │ -1 total_count     │ │ closes entry   │ │ cancel + cascade:    │
+///   └────────────────────┘ │ -1 total_count │ │  - relist (++strike) │
+///                          └────────────────┘ │  - lootbox push      │
+///                                             │  - burn @ MAX_EXPIRES│
+///                                             └──────────────────────┘
+/// ```
+///
+/// **`original_buy_price`** is the immutable anchor for relist markup math.
+/// Across multiple expire/relist cycles, each new list price is computed as
+/// `apply_markup(original_buy_price, markup_bps)` where `markup_bps` depends
+/// on the floor trend and `expire_count`. This keeps the protocol's effective
+/// resale "cost basis" stable even as the asset is repriced over time.
+///
+/// **Quality score** is fixed at intake from
+/// `compute_quality_score(multiplier, xp, breed_count)`. Indexers use it for
+/// "rare drop" UX.
 #[account]
 pub struct RebornEntry {
     pub bump: u8,
     pub asset: Pubkey,
     pub faction_id: u8,
-    /// 0..=10_000. Snapshot at intake.
+    /// 0..=10_000. Snapshot at intake; never updated.
     pub quality_score: u16,
     pub reborn_at: i64,
-    /// `RebornStatus` enum value.
+    /// `RebornStatus` enum value (Lootbox | Listed).
     pub status: u8,
-    /// Live listing price; 0 if not listed.
+    /// Current live listing price (lamports); 0 if status != Listed.
     pub listing_price: u64,
-    /// `RebornOrigin` enum value.
+    /// `RebornOrigin` enum value (Reborn | Swept).
     pub origin: u8,
-    /// For swept entries: price the protocol paid to acquire this asset.
-    /// Used as the immutable anchor for relist markup math across expire
-    /// cycles. Zero for reborn (queue-only) entries.
+    /// Immutable cost basis: the price the protocol paid for the asset
+    /// (sweep buy amount, or 0 for rebirth-origin entries). Used as the
+    /// base of the relist markup formula across expire cycles, so the
+    /// protocol's effective floor for resale doesn't drift downward as
+    /// strikes accumulate.
     pub original_buy_price: u64,
     /// Number of times `expire_program_listing` has fired for this entry.
     /// Each strike subtracts `RELIST_EXPIRE_PENALTY_BPS` from the markup
@@ -1956,10 +2176,39 @@ impl RebornEntry {
 // ========================================================================================
 // =========================== FLOOR QUEUE / SALE HISTORY / FLOOR HISTORY ==================
 // ========================================================================================
+//
+// These three accounts form the on-chain price oracle + buy-target index
+// for the permissionless market maker. They are all singletons (single PDA
+// each, no per-user variants) and all initialized once in
+// `init_inventory_pool` (admin path).
+//
+//   FloorQueue   — currently registered cheapest user listings, sorted
+//                  ascending by price. The `sweep_floor_lowest` ix buys
+//                  the head. Spam-resistant: capped at FLOOR_QUEUE_SIZE,
+//                  cheaper-than-worst eviction, dedup on asset.
+//
+//   SaleHistory  — ringbuffer of recent qualifying user-to-user sales
+//                  (≥5min listing age, neither party is `inventory_pda`).
+//                  Median of the qualifying window seeds the floor anchor.
+//
+//   FloorHistory — 7-day rolling ringbuffer of (timestamp, anchor_price)
+//                  snapshots. `current_anchor()` is the head; `compute_
+//                  trend_bps()` is the (clamped) head-vs-oldest delta.
+//                  Read by `breed_hashbeasts` for the 1.5× floor min,
+//                  and by `sweep_floor_lowest` for the 1.05× price ceiling.
+//
+// See `instructions/marketplace_cpi.rs` for the manipulation-resistance
+// analysis (5min listing-age qualifier × 17-sale minimum × queue/prior-anchor
+// caps × 24h interval = brute anchor manipulation is loss-leading).
 
 /// One entry in the on-chain sorted-floor queue. Tracks a user-listed asset
-/// (program listings are explicitly excluded). Stale entries are popped
-/// one at a time by `sweep_floor_lowest`; no privileged purge ix needed.
+/// (program-owned listings are explicitly excluded — sweep buying the
+/// protocol's own listings would be circular). Stale entries (listing was
+/// canceled directly via the marketplace, bypassing our `cancel_user_listing`
+/// wrapper that would have atomic-deregistered) are popped one at a time
+/// by `sweep_floor_lowest`; the keeper bounty for that purge is the
+/// `STALE_PURGE_KEEPER_REWARD_LAMPORTS` constant, set deliberately low to
+/// defuse list→raw-cancel→purge spam attacks. See that constant's docs.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct FloorEntry {
     pub listing: Pubkey,
@@ -2124,8 +2373,9 @@ pub fn compute_quality_score(multiplier: u32, xp: u32, breed_count: u8) -> u16 {
 }
 
 /// Loser-roll drop chance in basis points, keyed by the country queue's
-/// current `filled_count`. Steep curve: full queue drains aggressively,
-/// near-empty queue drains slowly so the few remaining NFTs stay visible.
+/// current `filled_count`. The table stays intentionally conservative:
+/// full depth is 1.50%, and near-empty queues are low enough to keep the last
+/// few NFTs visible instead of creating an instant drain race.
 /// `filled_count == 0` returns 0 — eligibility upstream prevents that case
 /// from reaching here, but defensive zero is correct.
 pub fn compute_loser_drop_chance_bps(filled_count: u8) -> u16 {
@@ -2136,6 +2386,29 @@ pub fn compute_loser_drop_chance_bps(filled_count: u8) -> u16 {
         return CHANCE_BPS_BY_QUEUE_DEPTH[CHANCE_BPS_BY_QUEUE_DEPTH.len() - 1];
     }
     CHANCE_BPS_BY_QUEUE_DEPTH[idx]
+}
+
+#[cfg(test)]
+mod lootbox_probability_tests {
+    use super::*;
+
+    #[test]
+    fn loser_drop_chance_matches_configured_depth_schedule() {
+        let expected: [u16; LOOTBOX_QUEUE_SIZE + 1] = [0, 3, 8, 15, 25, 40, 58, 78, 100, 125, 150];
+
+        for (depth, expected_bps) in expected.iter().copied().enumerate() {
+            assert_eq!(
+                compute_loser_drop_chance_bps(depth as u8),
+                expected_bps,
+                "wrong loser lootbox chance at depth {depth}"
+            );
+        }
+    }
+
+    #[test]
+    fn loser_drop_chance_clamps_above_queue_capacity() {
+        assert_eq!(compute_loser_drop_chance_bps(u8::MAX), 150);
+    }
 }
 
 // ========================================================================================
@@ -2157,7 +2430,7 @@ pub struct LootboxQueue {
 }
 
 impl LootboxQueue {
-    /// 8 (disc) + 1 + 1 + 5*32 + 1 = 171 bytes.
+    /// 8 (disc) + 1 + 1 + LOOTBOX_QUEUE_SIZE*32 + 1.
     pub const LEN: usize = DISCRIMINATOR_SIZE + 1 + 1 + (LOOTBOX_QUEUE_SIZE * 32) + 1;
 }
 

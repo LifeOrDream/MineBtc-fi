@@ -10,7 +10,7 @@ use crate::state::{PredictionDirection, NUM_FACTIONS};
 pub struct ReferralRewardsClaimed {
     pub referrer: Pubkey,
     pub referral_rewards_account: Pubkey,
-    pub minebtc_amount: u64,
+    pub dbtc_amount: u64,
     pub sol_amount: u64,
     pub timestamp: i64,
 }
@@ -30,8 +30,6 @@ pub struct MiningTokenVaultSet {
     pub token_vault: Pubkey,
     /// The token vault authority address
     pub token_vault_authority: Pubkey,
-    /// Timestamp of when mining started
-    pub mining_start_timestamp: u64,
 }
 
 #[event]
@@ -51,7 +49,7 @@ pub struct FactionAdded {
 pub struct PriceSnapshotTaken {
     pub snapshot_number: u8,         // 1-8 (which snapshot in the cycle)
     pub sol_swapped: u64,            // SOL amount swapped (lamports)
-    pub minebtc_received: u64,       // MINE_BTC received from swap (6 decimals)
+    pub dbtc_received: u64,          // MINE_BTC received from swap (6 decimals)
     pub current_price: u64,          // Calculated price (9 decimals: SOL per MINE_BTC)
     pub weighted_avg_price: u64,     // Weighted average price so far (9 decimals)
     pub sol_earnmarked_for_pol: u64, // SOL earnmarked for POL this snapshot (lamports)
@@ -64,7 +62,7 @@ pub struct PriceSnapshotTaken {
 #[event]
 pub struct LiquidityAdded {
     pub sol_amount: u64,       // SOL added to pool (lamports)
-    pub minebtc_amount: u64,   // MINE_BTC added to pool (6 decimals)
+    pub dbtc_amount: u64,      // MINE_BTC added to pool (6 decimals)
     pub lp_tokens_minted: u64, // LP tokens minted (6 decimals)
     pub lp_token_price: u64,   // LP token price in SOL (9 decimals)
     pub timestamp: i64,        // Unix timestamp
@@ -96,7 +94,7 @@ pub struct FactionWarMultiplierUpdated {
 pub struct LpTokensBurned {
     pub lp_tokens_burned: u64,
     pub total_lp_burnt: u64,
-    pub minebtc_amount_added: u64,
+    pub dbtc_amount_added: u64,
     pub sol_amount_added: u64,
     pub lp_token_price: u64, // LP token price in SOL (9 decimals)
     pub timestamp: i64,
@@ -185,10 +183,9 @@ pub struct GameplayTuningUpdated {
     pub authority: Pubkey,
     pub rpg_progression: bool,
     pub max_evolution_stage_unlocked: u8,
-    pub faction_war_base_reward_bps: u16,
-    pub faction_war_loyalty_reward_bps: u16,
-    pub faction_war_mvp_reward_bps: u16,
-    pub faction_war_hashbeast_reward_bps: u16,
+    pub war_base_reward_bps: u16,
+    pub war_mvp_reward_bps: u16,
+    pub war_hashbeast_reward_bps: u16,
     pub base_mutation_chance_bps: u16,
     pub mutation_chance_floor_bps: u16,
     pub mutation_chance_cap_bps: u16,
@@ -274,8 +271,8 @@ pub struct MineBtcStaked {
     pub lockup_duration: u64,
     pub hashpower_contribution: u64, // final hashpower (with hashbeast multiplier)
     pub new_sol_rewards: u64,
-    pub new_minebtc_rewards: u64,
-    pub unrefined_minebtc: u64,
+    pub new_dbtc_rewards: u64,
+    pub unrefined_dbtc: u64,
     pub timestamp: i64,
 }
 
@@ -286,8 +283,8 @@ pub struct MineBtcUnstaked {
     pub position_index: u8,
     pub position_key: Pubkey,
     pub new_sol_rewards: u64,
-    pub new_minebtc_rewards: u64,
-    pub unrefined_minebtc: u64,
+    pub new_dbtc_rewards: u64,
+    pub unrefined_dbtc: u64,
     pub original_amount: u64,
     pub returned_amount: u64,
     pub timestamp: i64,
@@ -306,8 +303,8 @@ pub struct LiquidityStaked {
     pub lockup_duration: u64,
     pub hashpower_contribution: u64, // final hashpower (with hashbeast multiplier)
     pub new_sol_rewards: u64,
-    pub new_minebtc_rewards: u64,
-    pub unrefined_minebtc: u64,
+    pub new_dbtc_rewards: u64,
+    pub unrefined_dbtc: u64,
     pub timestamp: i64,
 }
 
@@ -318,8 +315,8 @@ pub struct LiquidityUnstaked {
     pub position_index: u8,
     pub position_key: Pubkey,
     pub new_sol_rewards: u64,
-    pub new_minebtc_rewards: u64,
-    pub unrefined_minebtc: u64,
+    pub new_dbtc_rewards: u64,
+    pub unrefined_dbtc: u64,
     pub original_amount: u64,
     pub returned_amount: u64,
     pub timestamp: i64,
@@ -331,7 +328,7 @@ pub struct PaperHandBurned {
     pub player_data: Pubkey,
     pub position_index: u8,
     pub position_key: Pubkey,
-    pub staked_token_type: u8, // 0 = MineBTC, 1 = LP
+    pub staked_token_type: u8, // 0 = degenBTC, 1 = LP
     pub original_amount: u64,
     pub penalty_amount: u64,
     pub returned_amount: u64,
@@ -340,23 +337,24 @@ pub struct PaperHandBurned {
     pub timestamp: i64,
 }
 
-/// Event emitted when a user claims SOL rewards from staking
+/// Event emitted when a user claims passive staking rewards.
 #[event]
 pub struct SolRewardsClaimed {
     pub user: Pubkey,
     pub player_data: Pubkey,
     pub faction_id: u8,
     pub sol_amount: u64,
+    pub dbtc_amount: u64,
     pub timestamp: i64,
 }
 
-/// Event emitted when a user claims MineBtc token rewards from staking
+/// Event emitted when a user withdraws gameplay-earned degenBTC token rewards.
 #[event]
 pub struct DbtcRewardsClaimed {
     pub user: Pubkey,
     pub player_data: Pubkey,
     pub faction_id: u8,
-    pub minebtc_amount: u64,
+    pub dbtc_amount: u64,
     pub hodl_tax: u64,
     pub referral_bonus: u64,  // 1% bonus to user if they have referral code
     pub referral_reward: u64, // 3% reward to referrer
@@ -364,7 +362,7 @@ pub struct DbtcRewardsClaimed {
     pub timestamp: i64,
 }
 
-/// Event emitted whenever pending MineBtc claimable balance is increased.
+/// Event emitted whenever pending degenBTC claimable balance is increased.
 /// `source_amount` is the new reward from the triggering action, while
 /// `unrefined_bonus_amount` is previously deferred hodl-tax yield realized at the same time.
 #[event]
@@ -376,14 +374,14 @@ pub struct MinebtcClaimableAccrued {
     pub source_amount: u64,
     pub unrefined_bonus_amount: u64,
     pub total_added: u64,
-    pub pending_minebtc_after: u64,
+    pub pending_dbtc_after: u64,
     pub total_claimable_after: u64,
     pub timestamp: i64,
 }
 
-/// Event emitted when a MineBtc HODL tax is redistributed through the HODL tax index.
+/// Event emitted when a degenBTC HODL tax is redistributed through the HODL tax index.
 /// Event emitted when a user pays the HODL tax ("HODL Tax") and it gets
-/// redistributed to all other unclaimed stakers (the "diamond hands").
+/// redistributed to other users with unclaimed gameplay rewards.
 #[event]
 pub struct HodlTaxRedistributed {
     pub paper_hand: Pubkey, // user who paid the tax (unstaked early / claimed rewards)
@@ -391,7 +389,7 @@ pub struct HodlTaxRedistributed {
     pub tax_amount: u64, // total HODL tax paid
     pub redistributed_amount: u64,
     pub redistributed_index_increment: u128,
-    pub remaining_total_claimable: u64, // proxy for how many diamond hands benefit
+    pub remaining_total_claimable: u64, // remaining HODL-eligible gameplay rewards
     pub timestamp: i64,
 }
 
@@ -434,7 +432,7 @@ pub struct BetsPlaced {
     pub gameplay_hashbeast_xp: u32,
 
     pub round_id: u64,
-    pub faction_war_id: u64,
+    pub war_id: u64,
     pub num_bets: u8,
     pub faction_ids: Vec<u8>,
     pub directions: Vec<u8>,
@@ -478,7 +476,7 @@ pub struct RoundRewardsClaimed {
     pub player_data: Pubkey,
     pub round_id: u64,
     pub sol_reward: u64,
-    pub minebtc_reward: u64,
+    pub dbtc_reward: u64,
     pub timestamp: i64,
 }
 
@@ -544,7 +542,7 @@ pub struct AutominerReloaded {
 pub struct RoundStarted {
     pub round_id: u64,
     pub game_session: Pubkey,
-    pub faction_war_id: u64,
+    pub war_id: u64,
     pub round_start_slot: u64,
     pub round_start_timestamp: i64,
     pub round_end_timestamp: i64,
@@ -552,7 +550,13 @@ pub struct RoundStarted {
     pub timestamp: i64,
 }
 
-/// Event emitted when a round ends (after winner selection and reward calculations)
+/// Event emitted when a round ends (after winner selection and reward calculations).
+///
+/// Carries everything the off-chain indexer needs to render `latest_result`
+/// WITHOUT having to fetch the `GameSession` PDA. All these fields are already
+/// populated on the PDA by the time `emit_round_ended` is called (game.rs:559).
+/// `winning_faction_volume_at_round` is the one exception — it lands later in
+/// `track_war_round_completion` and ships on `RewardsDistributedForRound`.
 #[event]
 pub struct RoundEnded {
     pub round_id: u64,
@@ -563,16 +567,34 @@ pub struct RoundEnded {
     pub used_entropy_fallback: bool,
     pub total_sol_bets: u64,
     pub total_points_bets: u64,
+    pub total_wgtd_points_bets: u64,
 
     pub user_bets_count: [u64; NUM_FACTIONS],
     pub faction_sol_bets: [u64; NUM_FACTIONS],
 
-    pub minebtc_winner_pool: u64,
-    pub minebtc_same_faction_direction_pools: [u64; PredictionDirection::COUNT],
-    pub minebtc_faction_stakers: u64,
-    pub minebtc_jackpot: u64,
+    pub dbtc_winner_pool: u64,
+    pub dbtc_same_faction_direction_pools: [u64; PredictionDirection::COUNT],
+    pub dbtc_stakers: u64,
+    pub dbtc_jackpot: u64,
     pub jackpot_hit: bool,
     pub jackpot_faction_id: u8,
+
+    /// Σ stakers_fee_per_bet accumulated by internal_process_bets (user.rs:2544).
+    /// Indexer reverses this to derive effective_fee = stakers_fee × 100 / stakers_pct,
+    /// then splits the residual into buybacks / nft_mm / dev_fee per economy.rs.
+    pub stakers_fee: u64,
+    /// Reward indexes finalized inside end_round. SOL paid by raw points,
+    /// dBTC paid by weighted points (hashbeast multiplier applies to dBTC only).
+    pub sol_rewards_index: u128,
+    pub dbtc_rewards_index: u128,
+    /// Mutation tally for this round (state.rs:1037-1040).
+    pub mutations_per_faction: [u8; NUM_FACTIONS],
+    pub total_mutations_this_round: u8,
+    /// Cycle ID snapshot at round-start, frozen onto the GameSession so late
+    /// claims hit the right FactionWarState PDA even after the cycle settles
+    /// (state.rs:1042-1046).
+    pub war_id_when_played: u64,
+
     pub timestamp: i64,
 }
 
@@ -580,7 +602,7 @@ pub struct RoundEnded {
 pub struct DegenBtcStakingRewardsDistributed {
     pub round_id: u64,
     pub faction_id: u8,
-    pub minebtc_staker_rewards: u64,
+    pub dbtc_staker_rewards: u64,
     pub sol_staker_rewards: u64,
     pub degenbtc_degenbtc_reward_index: u128,
     pub degenbtc_sol_reward_index: u128,
@@ -590,19 +612,26 @@ pub struct DegenBtcStakingRewardsDistributed {
 pub struct LpStakingRewardsDistributed {
     pub round_id: u64,
     pub faction_id: u8,
-    pub minebtc_staker_rewards: u64,
+    pub dbtc_staker_rewards: u64,
     pub sol_staker_rewards: u64,
     pub lp_degenbtc_reward_index: u128,
     pub lp_sol_reward_index: u128,
 }
 
+/// Event emitted by `distribute_jackpot_rewards` when the jackpot pot was
+/// successfully paid out to bettors on `faction_id`. Note that `faction_id`
+/// here is the JACKPOT faction (selected by inverse-volume weighting), NOT
+/// the round winner — see game.rs:777-783.
 #[event]
 pub struct JackpotHit {
     pub round_id: u64,
     pub faction_id: u8,
-    pub winning_direction: u8,
-    pub jackpot_amount: u64,
-    pub minebtc_rewards_index: u128,
+    /// Size of the global jackpot pot at the moment of the hit, snapshotted
+    /// onto GameSession.jackpot_pot_size_on_hit before the pot was drained.
+    pub jackpot_pot_size_on_hit: u64,
+    /// dBTC reward index for any-direction bettors on the jackpot faction
+    /// (state.rs:1029). Claim payout = wgtd_points × jackpot_rewards_index / INDEX_PRECISION.
+    pub jackpot_rewards_index: u128,
 }
 
 /// Event emitted when the jackpot roll was close to hitting (within top 10 closest rolls).
@@ -627,9 +656,19 @@ pub struct JackpotRolledOver {
     pub timestamp: i64,
 }
 
+/// Event emitted by `settle_round` after `track_war_round_completion`
+/// runs. Carries the drought-volume snapshot that fed into the mutation roll for
+/// this round's claimers (state.rs:1048-1053, used at user.rs:1689).
 #[event]
 pub struct RewardsDistributedForRound {
     pub round_id: u64,
+    pub winning_faction_id: u8,
+    pub winning_direction: u8,
+    /// Frozen value of the winning faction's `sol_volume_since_last_win` at
+    /// round-end, BEFORE the counter was reset to 0. Late claims hours later
+    /// will still see this same number when computing volume_factor.
+    pub winning_faction_volume_at_round: u64,
+    pub timestamp: i64,
 }
 
 // ========================================================================================
@@ -649,7 +688,7 @@ pub struct TaxDistributed {
 /// Event emitted when a faction claims treasury rewards for a settled faction_war.
 #[event]
 pub struct FactionTreasuryRewardsClaimed {
-    pub faction_war_id: u64,
+    pub war_id: u64,
     pub faction_id: u8,
     pub rank: u8,
     pub reward_amount: u64,
@@ -684,8 +723,8 @@ pub struct HashBeastWithdrawnFromGameplay {
 pub struct HashBeastGameplayUnlockRequested {
     pub user: Pubkey,
     pub hashbeast_mint: Pubkey,
-    pub requested_during_faction_war_id: u64,
-    pub unlock_available_after_faction_war_id: u64,
+    pub requested_during_war_id: u64,
+    pub unlock_available_after_war_id: u64,
     pub timestamp: i64,
 }
 
@@ -756,19 +795,58 @@ pub struct HashBeastVisualMutation {
 /// Rankings driven by on-chain gameplay scores accumulated during the faction_war.
 #[event]
 pub struct FactionWarSettled {
-    pub faction_war_id: u64,
+    pub war_id: u64,
     pub total_degenbtc_mined: u64,
-    pub faction_war_mining_pool: u64,
-    pub start_ranks: [u8; NUM_FACTIONS],
+    pub dbtc_mined_this_war: u64,
     pub final_ranks: [u8; NUM_FACTIONS],
     pub rank_deltas: [i8; NUM_FACTIONS],
     pub resolved_directions: [u8; NUM_FACTIONS],
-    pub faction_reward_pools: [u64; NUM_FACTIONS],
-    pub loyalty_reward_pools: [u64; NUM_FACTIONS],
-    pub faction_hashbeast_reward_pools: [u64; NUM_FACTIONS],
-    pub faction_round_wins: [u16; NUM_FACTIONS],
-    pub faction_sol_totals: [u64; NUM_FACTIONS],
-    pub faction_gameplay_scores: [u64; NUM_FACTIONS],
+    pub base_reward_pools: [u64; NUM_FACTIONS],
+    pub hashbeast_reward_pools: [u64; NUM_FACTIONS],
+    /// SOL lane allocations (sum across eligibles). Per-user SOL share at
+    /// claim time scales each by `user_dbtc_lane / total_dbtc_lane`.
+    pub sol_base_pool: u64,
+    pub sol_hb_pool: u64,
+    pub sol_mvp_pool: u64,
+    /// SOL drained to sol_treasury because no eligible claimant existed for
+    /// that rank/lane slot (e.g. faction had no winners on resolved direction,
+    /// no mutations, or no MVP).
+    pub undistributed_sol: u64,
+    /// Per-faction MVP dBTC bonus (zero where mvp_user[fid] == default).
+    pub mvp_bonus: [u64; NUM_FACTIONS],
+    /// Per-faction MVP user (default pubkey = no MVP this cycle).
+    pub mvp_user: [Pubkey; NUM_FACTIONS],
+    pub round_wins: [u16; NUM_FACTIONS],
+    pub gameplay_scores: [u64; NUM_FACTIONS],
+    pub timestamp: i64,
+}
+
+/// Emitted by `initialize_war_internal` when a new cycle's FactionWarState
+/// PDA is created. Lets indexers detect cycle starts without scanning ix data.
+#[event]
+pub struct FactionWarStarted {
+    pub war_id: u64,
+    pub faction_count: u8,
+    pub start_timestamp: u64,
+    pub prev_ranks: [u8; NUM_FACTIONS],
+    /// LP-operations count threshold; once `pol_stats.lp_operations_count`
+    /// reaches this, the LP-burn ix snapshots the cycle's final round.
+    pub settle_at_lp_op_count: u32,
+    /// Treasury-tax SOL seeded at war start (rolled forward from
+    /// `tax_config.unassigned_war_treasury_amount`).
+    pub treasury_reward_base_amount: u64,
+}
+
+/// Emitted by `add_lp_and_burn` when an LP operation pushes
+/// `lp_operations_count` past `settle_at_lp_op_count` and the current cycle's
+/// final round_id is snapshotted onto `FactionWarConfig.cycle_end_round_id`.
+/// Lets indexers know the active cycle is now in its final round — no new
+/// rounds will start until settle_war runs.
+#[event]
+pub struct CycleEndRoundSnapshotted {
+    pub war_id: u64,
+    pub cycle_end_round_id: u64,
+    pub lp_operations_count: u32,
     pub timestamp: i64,
 }
 
@@ -781,13 +859,16 @@ pub struct FactionWarSettled {
 ///
 /// - `score_source = GAMEPLAY_SCORE_SOURCE_MUTATION_BONUS (1)`: per-claim
 ///   bonus when a player's round-claim mutation roll succeeds and the
-///   round's cycle is still active. `score_added` equals
+///   round's cycle is still active. Full bonus is
 ///   `user_wgtd_points_on_winner × active_multiplier / BASE_MULTIPLIER × mutation_weight`
-///   where `mutation_weight` is 4/2/1 for Evolution/Power/Trait. `user` is
-///   the claimant — also drives MVP candidacy for the winning country.
+///   where `mutation_weight` is 4/2/1 for Evolution/Power/Trait.
+///   `score_added` reflects the **leaderboard delta actually applied**:
+///   the full bonus if the user backed their own home faction, or **half**
+///   the bonus if the user was playing mercenary on a foreign winner.
+///   Only home-win mutations also affect MVP candidacy and HB-bonus pools.
 #[event]
 pub struct GameplayScoreAccumulated {
-    pub faction_war_id: u64,
+    pub war_id: u64,
     pub faction_id: u8,
     pub score_source: u8,
     pub score_added: u64,
@@ -799,7 +880,7 @@ pub struct GameplayScoreAccumulated {
 /// The #1 ranked faction's top contributor receives a bonus.
 #[event]
 pub struct FactionWarMvp {
-    pub faction_war_id: u64,
+    pub war_id: u64,
     pub faction_id: u8,
     pub user: Pubkey,
     pub mvp_score: u64,
@@ -807,35 +888,23 @@ pub struct FactionWarMvp {
     pub timestamp: i64,
 }
 
-/// Event emitted when a user claims faction_war rewards
+/// Event emitted when a user claims faction_war rewards. dBTC amounts are
+/// per-lane (base + mvp + hb = reward_amount). SOL is broken out the same way
+/// so the indexer can attribute earnings to predict/perform/mvp activity.
 #[event]
 pub struct FactionWarRewardsClaimed {
-    pub faction_war_id: u64,
+    pub war_id: u64,
     pub user: Pubkey,
     pub reward_amount: u64,
     pub base_reward_amount: u64,
-    pub loyalty_reward_amount: u64,
     pub mvp_bonus_amount: u64,
     pub hashbeast_bonus_amount: u64,
     pub sol_reward_amount: u64,
+    pub sol_base_amount: u64,
+    pub sol_hb_amount: u64,
+    pub sol_mvp_amount: u64,
     pub hashbeast_mint: Pubkey,
     pub timestamp: i64,
-}
-
-/// Event emitted when a faction_war is auto-started inline (during join_round)
-#[event]
-pub struct FactionWarAutoStarted {
-    pub faction_war_id: u64,
-    pub start_timestamp: u64,
-    /// LP operations count that will trigger settlement of this faction_war.
-    pub settle_cycle: u32,
-}
-
-/// Event emitted when a faction_war is auto-settled inline (during end_round_faction_rewards)
-#[event]
-pub struct FactionWarAutoSettled {
-    pub faction_war_id: u64,
-    pub mining_pool: u64,
 }
 
 /// Emitted when the authority toggles the global pause flag.
@@ -936,7 +1005,9 @@ pub struct UserSaleRecorded {
 #[event]
 pub struct FloorSnapshotRecorded {
     pub anchor_price: u64,
-    pub source: u8, // 0 = sale-median, 1 = queue-median fallback
+    /// 0 = sale median, 1 = queue median fallback, 2 = sale capped by queue,
+    /// 3 = first snapshot capped to marketplace min, 4 = capped by prior anchor.
+    pub source: u8,
     pub samples: u32,
     pub timestamp: i64,
 }

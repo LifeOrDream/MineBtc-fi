@@ -9,7 +9,14 @@ use crate::state::{Listing, MarketplaceConfig, ESCROW_SEED, LISTING_SEED};
 
 #[derive(Accounts)]
 pub struct CancelListing<'info> {
+    /// Pays any mpl-core transfer reallocations. Usually the same wallet as
+    /// `seller`; protocol-owned listings may use a separate system-owned
+    /// payer PDA.
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
     /// Original lister. Receives the asset back and the listing rent refund.
+    /// May be a PDA authority, so it must not be assumed system-owned.
     #[account(mut)]
     pub seller: Signer<'info>,
 
@@ -75,13 +82,12 @@ pub fn handler(ctx: Context<CancelListing>) -> Result<()> {
     let signers: &[&[&[u8]]] = &[signer_seeds_inner];
 
     // Transfer escrow -> seller. The escrow PDA signs via seeds.
-    // NOTE: `payer` must be the human seller (signer), not the escrow PDA —
-    // mpl-core may grow the asset account on transfer (plugin reallocation),
-    // and PDAs without lamports can't pay rent.
+    // NOTE: `payer` is split from `seller` so program-owned sellers can
+    // authorize the asset while a system-owned payer covers any realloc rent.
     transfer_mpl_core_asset(
         &ctx.accounts.asset.to_account_info(),
         Some(&ctx.accounts.collection.to_account_info()),
-        &ctx.accounts.seller.to_account_info(),
+        &ctx.accounts.payer.to_account_info(),
         &ctx.accounts.escrow.to_account_info(),
         &ctx.accounts.seller.to_account_info(),
         &ctx.accounts.mpl_core_program,

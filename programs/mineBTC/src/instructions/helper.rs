@@ -140,13 +140,22 @@ pub fn transfer_to_autominer_custody<'info>(
     Ok(())
 }
 
+/// Return the native SOL that can leave an account without dropping it below
+/// its current rent-exempt floor. This is zero for the zero-data system PDAs
+/// used as simple SOL vaults today, but keeping the helper generic prevents a
+/// future vault shape change from introducing rent-drain failures.
+pub fn native_lamports_available_after_rent(account: &AccountInfo<'_>) -> Result<u64> {
+    let rent_floor = Rent::get()?.minimum_balance(account.data_len());
+    Ok(account.lamports().saturating_sub(rent_floor))
+}
+
 pub fn transfer_from_autominer_custody<'info>(
     autominer_custody: &AccountInfo<'info>,
     to: &AccountInfo<'info>,
     system_program: &AccountInfo<'info>,
     amount: u64,
     custody_bump: u8,
-) -> Result<()> {
+) -> Result<u64> {
     msg!(
         "💰 [helper.transfer_from_autominer_custody] from={} to={} amount={} SOL bump={}",
         autominer_custody.key(),
@@ -154,6 +163,13 @@ pub fn transfer_from_autominer_custody<'info>(
         amount as f64 / 1e9,
         custody_bump
     );
+    let available = native_lamports_available_after_rent(autominer_custody)?;
+    let actual_amount = amount.min(available);
+    if actual_amount == 0 {
+        msg!("   ⚠️ autominer custody has no withdrawable SOL after rent reserve");
+        return Ok(0);
+    }
+
     let seeds = &[AUTOMINER_CUSTODY_SEED.as_ref(), &[custody_bump]];
     transfer(
         CpiContext::new_with_signer(
@@ -164,10 +180,13 @@ pub fn transfer_from_autominer_custody<'info>(
             },
             &[seeds],
         ),
-        amount,
+        actual_amount,
     )?;
-    msg!("   ✅ transfer_from_autominer_custody complete");
-    Ok(())
+    msg!(
+        "   ✅ transfer_from_autominer_custody complete actual_amount={}",
+        actual_amount
+    );
+    Ok(actual_amount)
 }
 
 // Helper function to transfer SOL to the sol_rewards_vault PDA
@@ -481,7 +500,7 @@ pub fn transfer_from_sol_rewards_vault<'info>(
     system_program: &AccountInfo<'info>,
     amount: u64,
     vault_bump: u8,
-) -> Result<()> {
+) -> Result<u64> {
     msg!(
         "💰 [helper.transfer_from_sol_rewards_vault] from={} to={} amount={} SOL bump={}",
         sol_rewards_vault.key(),
@@ -489,6 +508,13 @@ pub fn transfer_from_sol_rewards_vault<'info>(
         amount as f64 / 1e9,
         vault_bump
     );
+    let available = native_lamports_available_after_rent(sol_rewards_vault)?;
+    let actual_amount = amount.min(available);
+    if actual_amount == 0 {
+        msg!("   ⚠️ sol_rewards_vault has no withdrawable SOL after rent reserve");
+        return Ok(0);
+    }
+
     let seeds = &[STAKER_SOL_REWARD_VAULT_SEED.as_ref(), &[vault_bump]];
     let signer_seeds = &[&seeds[..]];
 
@@ -501,10 +527,13 @@ pub fn transfer_from_sol_rewards_vault<'info>(
             },
             signer_seeds,
         ),
-        amount,
+        actual_amount,
     )?;
-    msg!("   ✅ transfer_from_sol_rewards_vault complete");
-    Ok(())
+    msg!(
+        "   ✅ transfer_from_sol_rewards_vault complete actual_amount={}",
+        actual_amount
+    );
+    Ok(actual_amount)
 }
 
 // Helper function to transfer SOL FROM sol_prize_pot_vault to a user
@@ -515,7 +544,7 @@ pub fn transfer_from_sol_prize_pot_vault<'info>(
     system_program: &AccountInfo<'info>,
     amount: u64,
     vault_bump: u8,
-) -> Result<()> {
+) -> Result<u64> {
     msg!(
         "💰 [helper.transfer_from_sol_prize_pot_vault] from={} to={} amount={} SOL bump={}",
         sol_prize_pot_vault.key(),
@@ -523,6 +552,21 @@ pub fn transfer_from_sol_prize_pot_vault<'info>(
         amount as f64 / 1e9,
         vault_bump
     );
+
+    let available = native_lamports_available_after_rent(sol_prize_pot_vault)?;
+    let actual_amount = amount.min(available);
+    if actual_amount < amount {
+        msg!(
+            "   ⚠️ Capping prize-pot payout: requested={} actual={} available_after_rent={}",
+            amount,
+            actual_amount,
+            available
+        );
+    }
+    if actual_amount == 0 {
+        return Ok(0);
+    }
+
     let seeds = &[JACKPOT_POT_VAULT_SEED.as_ref(), &[vault_bump]];
     let signer_seeds = &[&seeds[..]];
 
@@ -535,10 +579,13 @@ pub fn transfer_from_sol_prize_pot_vault<'info>(
             },
             signer_seeds,
         ),
-        amount,
+        actual_amount,
     )?;
-    msg!("   ✅ transfer_from_sol_prize_pot_vault complete");
-    Ok(())
+    msg!(
+        "   ✅ transfer_from_sol_prize_pot_vault complete actual_amount={}",
+        actual_amount
+    );
+    Ok(actual_amount)
 }
 
 // Helper function to transfer WSOL to multisig token account
@@ -644,7 +691,7 @@ pub fn calculate_multiplier(
         .ok_or(ErrorCode::ArithmeticOverflow.into())
 }
 
-/// Add position index to user's minebtc positions
+/// Add position index to user's degenBTC positions
 pub fn add_degenbtc_position(player_ac: &mut PlayerData, position_index: u8) -> Result<()> {
     msg!(
         "🔍 [add_degenbtc_position] Adding position index: {}",
@@ -680,7 +727,7 @@ pub fn add_degenbtc_position(player_ac: &mut PlayerData, position_index: u8) -> 
     Ok(())
 }
 
-/// Remove position index from user's minebtc positions
+/// Remove position index from user's degenBTC positions
 pub fn remove_degenbtc_position(player_ac: &mut PlayerData, position_index: u8) -> Result<()> {
     crate::log_fn!("helper", "remove_degenbtc_position");
     msg!(
@@ -831,6 +878,7 @@ pub fn init_position(
     lockup_duration: u64,
     current_ts: i64,
     multiplier: u16,
+    bump: u8,
 ) -> Result<()> {
     crate::log_fn!("helper", "init_position");
     msg!(
@@ -853,6 +901,7 @@ pub fn init_position(
     position.lockup_duration = lockup_duration;
     position.start_timestamp = current_ts;
     position.multiplier = multiplier;
+    position.bump = bump;
 
     let seconds_to_add = lockup_duration
         .checked_mul(DAY_IN_SECONDS)
@@ -872,11 +921,11 @@ pub fn init_position(
     Ok(())
 }
 
-/// Add to total claimable and pending rewards
+/// Add gameplay rewards to total claimable and pending rewards.
 pub fn add_to_total_claimable(
-    unrefined_minebtc: &mut HodlPool,
+    unrefined_dbtc: &mut HodlPool,
     player_data: &mut PlayerData,
-    minebtc_rewards: u64,
+    dbtc_rewards: u64,
     user: Pubkey,
     player_data_key: Pubkey,
     source: u8,
@@ -885,32 +934,32 @@ pub fn add_to_total_claimable(
     // Calculate extra degenBtc rewards from the HODL tax. The global hodl_tax_index
     // is monotonically non-decreasing, so checked_sub should never fail — but we
     // validate it to surface any state corruption rather than panicking.
-    let index_dif = unrefined_minebtc
+    let index_dif = unrefined_dbtc
         .hodl_tax_index
         .checked_sub(player_data.hodl_tax_index)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     let accrued_u128 = mul_div_u128(
-        player_data.pending_minebtc_rewards as u128,
+        player_data.pending_dbtc_rewards as u128,
         index_dif,
         INDEX_PRECISION as u128,
     )?;
     let accrued_rewards = u64::try_from(accrued_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
-    msg!("     Accrued MineBtc rewards: {}", accrued_rewards);
+    msg!("     Accrued degenBTC rewards: {}", accrued_rewards);
 
-    let total_new = minebtc_rewards
+    let total_new = dbtc_rewards
         .checked_add(accrued_rewards)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    unrefined_minebtc.total_minebtc_claimable = unrefined_minebtc
-        .total_minebtc_claimable
+    unrefined_dbtc.total_dbtc_claimable = unrefined_dbtc
+        .total_dbtc_claimable
         .checked_add(total_new)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    player_data.hodl_tax_index = unrefined_minebtc.hodl_tax_index;
-    player_data.pending_minebtc_rewards = player_data
-        .pending_minebtc_rewards
+    player_data.hodl_tax_index = unrefined_dbtc.hodl_tax_index;
+    player_data.pending_dbtc_rewards = player_data
+        .pending_dbtc_rewards
         .checked_add(total_new)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    player_data.unrefined_minebtc_rewards = player_data
-        .unrefined_minebtc_rewards
+    player_data.unrefined_dbtc_rewards = player_data
+        .unrefined_dbtc_rewards
         .checked_add(accrued_rewards)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
@@ -920,11 +969,11 @@ pub fn add_to_total_claimable(
             player_data: player_data_key,
             source,
             reference_id,
-            source_amount: minebtc_rewards,
+            source_amount: dbtc_rewards,
             unrefined_bonus_amount: accrued_rewards,
             total_added: total_new,
-            pending_minebtc_after: player_data.pending_minebtc_rewards,
-            total_claimable_after: unrefined_minebtc.total_minebtc_claimable,
+            pending_dbtc_after: player_data.pending_dbtc_rewards,
+            total_claimable_after: unrefined_dbtc.total_dbtc_claimable,
             timestamp: Clock::get()?.unix_timestamp,
         });
     }
@@ -977,9 +1026,9 @@ pub fn calculate_emergency_tax(
 /// Charge emergency tax for MINEBTC tokens by burning the full penalty amount.
 /// This function handles the penalty for early withdrawal from MINEBTC staking positions.
 pub fn charge_emergency_tax<'info>(
-    minebtc_custodian: &AccountInfo<'info>,
-    minebtc_custodian_authority: &AccountInfo<'info>,
-    minebtc_mint: &AccountInfo<'info>,
+    dbtc_custodian: &AccountInfo<'info>,
+    dbtc_custodian_authority: &AccountInfo<'info>,
+    degenbtc_mint: &AccountInfo<'info>,
     token_program: &AccountInfo<'info>,
     custodian_authority_bump: u8,
     penalty_amount: u64,
@@ -994,9 +1043,9 @@ pub fn charge_emergency_tax<'info>(
             penalty_amount as f64 / 1e6
         );
 
-        // Get PDA signer seeds for the minebtc_custodian authority (global, no faction_id)
+        // Get PDA signer seeds for the dbtc_custodian authority (global, no faction_id)
         let custodian_authority_seeds = &[
-            MINEBTC_CUSTODIAN_AUTHORITY_SEED.as_ref(),
+            DEGENBTC_CUSTODIAN_AUTHORITY_SEED.as_ref(),
             &[custodian_authority_bump],
         ];
         let custodian_signer = &[&custodian_authority_seeds[..]];
@@ -1006,9 +1055,9 @@ pub fn charge_emergency_tax<'info>(
             CpiContext::new_with_signer(
                 token_program.to_account_info(),
                 Burn {
-                    mint: minebtc_mint.to_account_info(),
-                    from: minebtc_custodian.to_account_info(),
-                    authority: minebtc_custodian_authority.to_account_info(),
+                    mint: degenbtc_mint.to_account_info(),
+                    from: dbtc_custodian.to_account_info(),
+                    authority: dbtc_custodian_authority.to_account_info(),
                 },
                 custodian_signer,
             ),
@@ -1079,11 +1128,368 @@ pub fn calc_tickets_count(total_price: u64, ticket_value: u64) -> u64 {
 mod tests {
     use super::*;
 
+    fn blank_player_data() -> PlayerData {
+        PlayerData {
+            bump: 0,
+            owner: Pubkey::default(),
+            referral_code: Pubkey::default(),
+            faction_id: 0,
+            origin_faction_id: 0,
+            referrer_faction_id: u8::MAX,
+            degenbtc_hashpower: 0,
+            degenbtc_staked: 0,
+            degenbtc_degenbtc_reward_debt: 0,
+            degenbtc_sol_reward_debt: 0,
+            lp_hashpower: 0,
+            lp_staked: 0,
+            lp_sol_reward_debt: 0,
+            lp_degenbtc_reward_debt: 0,
+            pending_sol_rewards: 0,
+            hodl_tax_index: 0,
+            pending_dbtc_rewards: 0,
+            pending_staking_dbtc_rewards: 0,
+            unrefined_dbtc_rewards: 0,
+            pending_round_claims: 0,
+            pending_war_claims: 0,
+            degenbtc_position_indices: Vec::new(),
+            lp_position_indices: Vec::new(),
+            staked_hashbeasts: Vec::new(),
+            hashbeast_multiplier: BASE_MULTIPLIER as u16,
+            free_tickets: Vec::new(),
+            free_tickets_remaining: Vec::new(),
+            gameplay_hashbeast: Pubkey::default(),
+            active_multiplier: BASE_MULTIPLIER,
+            gameplay_hashbeast_dna: [0u8; 32],
+            gameplay_hashbeast_xp: 0,
+            gameplay_unlock_request_faction_war: 0,
+            current_war_score: 0,
+            current_war_score_cycle_id: 0,
+        }
+    }
+
+    fn blank_staked_position() -> StakedPosition {
+        StakedPosition {
+            position_type: 0,
+            position_index: 0,
+            faction_id: 0,
+            staked_amount: 0,
+            weighted_amount: 0,
+            start_timestamp: 0,
+            lockup_end_timestamp: 0,
+            lockup_duration: 0,
+            multiplier: 100,
+            bump: 0,
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // calculate_multiplier
+    // ------------------------------------------------------------------------
+
     #[test]
     fn lockup_multiplier_cannot_exceed_three_x() {
         let multiplier = calculate_multiplier(90, 7, 90, 100, 300).unwrap();
         assert_eq!(multiplier, 300);
         assert!(calculate_multiplier(91, 7, 90, 100, 300).is_err());
         assert!(calculate_multiplier(90, 7, 90, 100, 301).is_err());
+    }
+
+    #[test]
+    fn lockup_multiplier_min_returns_base() {
+        let m = calculate_multiplier(7, 7, 90, 100, 300).unwrap();
+        assert_eq!(m, 100);
+    }
+
+    #[test]
+    fn lockup_multiplier_midpoint() {
+        let m = calculate_multiplier(48, 7, 90, 100, 300).unwrap();
+        // 48 is halfway between 7 and 90
+        // multiplier_range = 200, duration_above_min = 41, duration_range = 83
+        // increase = 41 * 200 / 83 = 98 (truncated)
+        assert_eq!(m, 198);
+    }
+
+    #[test]
+    fn lockup_multiplier_zero_duration_range() {
+        let m = calculate_multiplier(30, 30, 30, 150, 300).unwrap();
+        assert_eq!(m, 150);
+    }
+
+    #[test]
+    fn lockup_multiplier_invalid_bounds() {
+        assert!(calculate_multiplier(5, 10, 20, 100, 300).is_err()); // lockup < min
+        assert!(calculate_multiplier(25, 10, 20, 100, 300).is_err()); // lockup > max
+        assert!(calculate_multiplier(15, 10, 20, 50, 300).is_err()); // base < 100
+        assert!(calculate_multiplier(15, 10, 20, 100, 50).is_err()); // max < base
+    }
+
+    // ------------------------------------------------------------------------
+    // mul_div / mul_div_u128
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn mul_div_basic() {
+        assert_eq!(mul_div(100, 50, 100).unwrap(), 50);
+        assert_eq!(mul_div(0, 50, 100).unwrap(), 0);
+    }
+
+    #[test]
+    fn mul_div_large_numbers() {
+        assert_eq!(
+            mul_div(u64::MAX, u64::MAX, u64::MAX).unwrap(),
+            u64::MAX as u128
+        );
+    }
+
+    #[test]
+    fn mul_div_division_by_zero_errors() {
+        assert!(mul_div(100, 50, 0).is_err());
+    }
+
+    #[test]
+    fn mul_div_u128_basic() {
+        assert_eq!(mul_div_u128(100, 50, 100).unwrap(), 50);
+        assert_eq!(mul_div_u128(0, 50, 100).unwrap(), 0);
+    }
+
+    #[test]
+    fn mul_div_u128_overflow_protection() {
+        assert!(mul_div_u128(u128::MAX, 2, 1).is_err());
+    }
+
+    // ------------------------------------------------------------------------
+    // calc_tickets_count
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn tickets_count_basic() {
+        assert_eq!(calc_tickets_count(1_000_000, 100_000), 10);
+        assert_eq!(calc_tickets_count(1_000_000, 300_000), 3);
+    }
+
+    #[test]
+    fn tickets_count_zero_ticket_value() {
+        assert_eq!(calc_tickets_count(1_000_000, 0), 0);
+    }
+
+    // ------------------------------------------------------------------------
+    // add/remove degenbtc position
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn add_degenbtc_position_success() {
+        let mut player = blank_player_data();
+        add_degenbtc_position(&mut player, 3).unwrap();
+        assert!(player.degenbtc_position_indices.contains(&3));
+    }
+
+    #[test]
+    fn add_degenbtc_position_duplicate_is_noop() {
+        let mut player = blank_player_data();
+        add_degenbtc_position(&mut player, 3).unwrap();
+        add_degenbtc_position(&mut player, 3).unwrap();
+        assert_eq!(player.degenbtc_position_indices.len(), 1);
+    }
+
+    #[test]
+    fn add_degenbtc_position_invalid_index_fails() {
+        let mut player = blank_player_data();
+        assert!(add_degenbtc_position(&mut player, MAX_ALLOWED_POSITIONS).is_err());
+    }
+
+    #[test]
+    fn remove_degenbtc_position_success() {
+        let mut player = blank_player_data();
+        add_degenbtc_position(&mut player, 2).unwrap();
+        add_degenbtc_position(&mut player, 5).unwrap();
+        remove_degenbtc_position(&mut player, 2).unwrap();
+        assert!(!player.degenbtc_position_indices.contains(&2));
+        assert!(player.degenbtc_position_indices.contains(&5));
+    }
+
+    #[test]
+    fn remove_degenbtc_position_missing_fails() {
+        let mut player = blank_player_data();
+        assert!(remove_degenbtc_position(&mut player, 2).is_err());
+    }
+
+    // ------------------------------------------------------------------------
+    // add/remove lp position
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn add_lp_position_success() {
+        let mut player = blank_player_data();
+        add_lp_position(&mut player, 4).unwrap();
+        assert!(player.lp_position_indices.contains(&4));
+    }
+
+    #[test]
+    fn add_lp_position_duplicate_is_noop() {
+        let mut player = blank_player_data();
+        add_lp_position(&mut player, 4).unwrap();
+        add_lp_position(&mut player, 4).unwrap();
+        assert_eq!(player.lp_position_indices.len(), 1);
+    }
+
+    #[test]
+    fn remove_lp_position_success() {
+        let mut player = blank_player_data();
+        add_lp_position(&mut player, 1).unwrap();
+        remove_lp_position(&mut player, 1).unwrap();
+        assert!(player.lp_position_indices.is_empty());
+    }
+
+    #[test]
+    fn remove_lp_position_missing_fails() {
+        let mut player = blank_player_data();
+        assert!(remove_lp_position(&mut player, 1).is_err());
+    }
+
+    // ------------------------------------------------------------------------
+    // init_position
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn init_position_sets_fields() {
+        let mut pos = blank_staked_position();
+        init_position(
+            &mut pos, 0, 2, 5, 1_000_000, 2_000_000, 30, 1_000_000, 250, 42,
+        )
+        .unwrap();
+
+        assert_eq!(pos.position_type, 0);
+        assert_eq!(pos.faction_id, 2);
+        assert_eq!(pos.position_index, 5);
+        assert_eq!(pos.staked_amount, 1_000_000);
+        assert_eq!(pos.weighted_amount, 2_000_000);
+        assert_eq!(pos.lockup_duration, 30);
+        assert_eq!(pos.start_timestamp, 1_000_000);
+        assert_eq!(
+            pos.lockup_end_timestamp,
+            1_000_000 + (30 * DAY_IN_SECONDS as i64)
+        );
+        assert_eq!(pos.multiplier, 250);
+        assert_eq!(pos.bump, 42);
+    }
+
+    #[test]
+    fn init_position_overflow_fails() {
+        let mut pos = blank_staked_position();
+        assert!(init_position(&mut pos, 0, 0, 0, 0, 0, u64::MAX, 0, 100, 0).is_err());
+    }
+
+    // ------------------------------------------------------------------------
+    // calculate_staking_rewards
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn staking_rewards_basic() {
+        let rewards = calculate_staking_rewards(1_000_000, 2_000_000, 1_000_000).unwrap();
+        // reward_diff = 1_000_000
+        // new_rewards = 1_000_000 * 1_000_000 / 1_000_000 = 1_000_000
+        assert_eq!(rewards, 1_000_000);
+    }
+
+    #[test]
+    fn staking_rewards_zero_weight() {
+        let rewards = calculate_staking_rewards(0, 2_000_000, 1_000_000).unwrap();
+        assert_eq!(rewards, 0);
+    }
+
+    #[test]
+    fn staking_rewards_debt_greater_than_accumulated_errors() {
+        assert!(calculate_staking_rewards(1_000_000, 500_000, 1_000_000).is_err());
+    }
+
+    // ------------------------------------------------------------------------
+    // calculate_emergency_tax
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn emergency_tax_full_remaining() {
+        let pos = StakedPosition {
+            start_timestamp: 0,
+            lockup_end_timestamp: 100,
+            staked_amount: 1_000_000,
+            position_type: 0,
+            position_index: 0,
+            faction_id: 0,
+            weighted_amount: 0,
+            lockup_duration: 0,
+            multiplier: 100,
+            bump: 0,
+        };
+        let tax = calculate_emergency_tax(&pos, 0, 100).unwrap();
+        assert_eq!(tax, 1_000_000); // 100% penalty
+    }
+
+    #[test]
+    fn emergency_tax_half_remaining() {
+        let pos = StakedPosition {
+            start_timestamp: 0,
+            lockup_end_timestamp: 100,
+            staked_amount: 1_000_000,
+            position_type: 0,
+            position_index: 0,
+            faction_id: 0,
+            weighted_amount: 0,
+            lockup_duration: 0,
+            multiplier: 100,
+            bump: 0,
+        };
+        let tax = calculate_emergency_tax(&pos, 50, 100).unwrap();
+        // remaining = 50, total = 100 → 50%
+        // penalty_pct = 100 * 50 / 100 = 50
+        // tax = 1_000_000 * 50 / 100 = 500_000
+        assert_eq!(tax, 500_000);
+    }
+
+    #[test]
+    fn emergency_tax_expired_lockup() {
+        let pos = StakedPosition {
+            start_timestamp: 0,
+            lockup_end_timestamp: 100,
+            staked_amount: 1_000_000,
+            position_type: 0,
+            position_index: 0,
+            faction_id: 0,
+            weighted_amount: 0,
+            lockup_duration: 0,
+            multiplier: 100,
+            bump: 0,
+        };
+        let tax = calculate_emergency_tax(&pos, 101, 100).unwrap();
+        assert_eq!(tax, 0);
+    }
+
+    #[test]
+    fn emergency_tax_zero_lockup() {
+        let pos = StakedPosition {
+            start_timestamp: 100,
+            lockup_end_timestamp: 100,
+            staked_amount: 1_000_000,
+            position_type: 0,
+            position_index: 0,
+            faction_id: 0,
+            weighted_amount: 0,
+            lockup_duration: 0,
+            multiplier: 100,
+            bump: 0,
+        };
+        let tax = calculate_emergency_tax(&pos, 50, 100).unwrap();
+        assert_eq!(tax, 0);
+    }
+
+    // ------------------------------------------------------------------------
+    // referral_rewards_pda
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn referral_rewards_pda_is_deterministic() {
+        let pk = Pubkey::new_from_array([1u8; 32]);
+        let pda1 = referral_rewards_pda(&pk);
+        let pda2 = referral_rewards_pda(&pk);
+        assert_eq!(pda1, pda2);
     }
 }

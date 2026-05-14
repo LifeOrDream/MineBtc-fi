@@ -10,9 +10,16 @@ use crate::state::{Listing, MarketplaceConfig, BPS_DENOMINATOR, ESCROW_SEED, LIS
 
 #[derive(Accounts)]
 pub struct BuyListing<'info> {
-    /// Pays SOL (price), receives the asset.
+    /// Pays SOL (price) and any mpl-core transfer reallocations. Usually the
+    /// same wallet as `buyer`; protocol sweeps may use a separate system-owned
+    /// payer PDA while sending the NFT to inventory.
     #[account(mut)]
-    pub buyer: Signer<'info>,
+    pub payer: Signer<'info>,
+
+    /// Receives the asset. Does not need to sign.
+    /// CHECK: arbitrary new owner for the mpl-core transfer.
+    #[account(mut)]
+    pub buyer: AccountInfo<'info>,
 
     /// Receives `price - fee` in SOL plus the listing rent refund.
     /// CHECK: pubkey is verified against `listing.seller`.
@@ -93,31 +100,31 @@ pub fn handler(ctx: Context<BuyListing>, max_price_lamports: u64) -> Result<()> 
         to_seller
     );
 
-    // Cheap pre-flight: refuse if buyer balance is below price. The system
+    // Cheap pre-flight: refuse if payer balance is below price. The system
     // transfer will fail anyway, but a typed error is friendlier.
     require!(
-        ctx.accounts.buyer.lamports() >= price,
+        ctx.accounts.payer.lamports() >= price,
         MarketError::InsufficientFunds
     );
 
-    // 1. SOL: buyer -> fee_recipient (3%).
+    // 1. SOL: payer -> fee_recipient (3%).
     if fee > 0 {
         let cpi_ctx = CpiContext::new(
             ctx.accounts.system_program.to_account_info(),
             Transfer {
-                from: ctx.accounts.buyer.to_account_info(),
+                from: ctx.accounts.payer.to_account_info(),
                 to: ctx.accounts.fee_recipient.to_account_info(),
             },
         );
         system_program::transfer(cpi_ctx, fee)?;
     }
 
-    // 2. SOL: buyer -> seller (97%).
+    // 2. SOL: payer -> seller (97%).
     if to_seller > 0 {
         let cpi_ctx = CpiContext::new(
             ctx.accounts.system_program.to_account_info(),
             Transfer {
-                from: ctx.accounts.buyer.to_account_info(),
+                from: ctx.accounts.payer.to_account_info(),
                 to: ctx.accounts.seller.to_account_info(),
             },
         );
@@ -137,12 +144,12 @@ pub fn handler(ctx: Context<BuyListing>, max_price_lamports: u64) -> Result<()> 
     ];
     let signers: &[&[&[u8]]] = &[signer_seeds_inner];
 
-    // `payer` here is the buyer — they're a signer with lamports, and TransferV1
-    // may need to pay for asset reallocation (plugin add/remove side effects).
+    // `payer` pays for any asset reallocation (plugin add/remove side effects);
+    // `buyer` is only the new owner.
     transfer_mpl_core_asset(
         &ctx.accounts.asset.to_account_info(),
         Some(&ctx.accounts.collection.to_account_info()),
-        &ctx.accounts.buyer.to_account_info(),
+        &ctx.accounts.payer.to_account_info(),
         &ctx.accounts.escrow.to_account_info(),
         &ctx.accounts.buyer.to_account_info(),
         &ctx.accounts.mpl_core_program,

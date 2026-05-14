@@ -1,6 +1,6 @@
 // # Admin Instructions
 //
-// This module contains administrative functions for configuring and managing the MineBTC program.
+// This module contains administrative functions for configuring and managing the degenBTC program.
 //
 // ## Key Functions
 //
@@ -50,10 +50,9 @@ pub struct GameplayTuningUpdateArgs {
     pub enable_rpg_progression: Option<bool>,
     pub max_evolution_stage_unlocked: Option<u8>,
 
-    pub faction_war_base_reward_bps: Option<u16>,
-    pub faction_war_loyalty_reward_bps: Option<u16>,
-    pub faction_war_mvp_reward_bps: Option<u16>,
-    pub faction_war_hashbeast_reward_bps: Option<u16>,
+    pub war_base_reward_bps: Option<u16>,
+    pub war_mvp_reward_bps: Option<u16>,
+    pub war_hashbeast_reward_bps: Option<u16>,
 
     pub base_mutation_chance_bps: Option<u16>,
     pub mutation_chance_floor_bps: Option<u16>,
@@ -71,7 +70,7 @@ pub struct GameplayTuningUpdateArgs {
 
 /// Initialize the global program configuration (admin only)
 ///
-/// Creates the GlobalConfig and MineBtcMining accounts and initializes default values.
+/// Creates the GlobalConfig and DegenBtcMining accounts and initializes default values.
 /// This function can only be called once during program deployment.
 ///
 /// # Parameters
@@ -79,12 +78,12 @@ pub struct GameplayTuningUpdateArgs {
 ///
 /// # Initializes
 /// - GlobalConfig with default fee distributions
-/// - MineBtcMining account
+/// - DegenBtcMining account
 /// - SOL treasury PDA
 pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> Result<()> {
     crate::log_fn!("admin", "internal_initialize");
     let global_config = &mut ctx.accounts.global_config;
-    let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
+    let dbtc_mining = &mut ctx.accounts.dbtc_mining;
 
     // Initialize GlobalConfig
     global_config.ext_authority = ctx.accounts.authority.key();
@@ -106,11 +105,11 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
 
     // Initialize degenBTC round distribution config (defaults defined in state.rs)
     // Invariant: stakers + winners + 2 * same_faction + jackpot = 100
-    global_config.minebtc_dist_config = MineBtcDistConfig {
-        minebtc_stakers_pct: DEFAULT_MINEBTC_STAKERS_PCT,
-        minebtc_winners_pct: DEFAULT_MINEBTC_WINNERS_PCT,
-        minebtc_same_faction_pct: DEFAULT_MINEBTC_SAME_FACTION_PCT,
-        minebtc_jackpot_pct: DEFAULT_MINEBTC_JACKPOT_PCT,
+    global_config.dbtc_dist_config = DegenBtcDistConfig {
+        dbtc_stakers_pct: DEFAULT_DBTC_STAKERS_PCT,
+        dbtc_winners_pct: DEFAULT_DBTC_WINNERS_PCT,
+        dbtc_same_faction_pct: DEFAULT_DBTC_SAME_FACTION_PCT,
+        dbtc_jackpot_pct: DEFAULT_DBTC_JACKPOT_PCT,
         hodl_tax_pct: DEFAULT_HODL_TAX_PCT,
     };
 
@@ -149,31 +148,30 @@ pub fn internal_initialize(ctx: Context<Initialize>, fee_recipient: Pubkey) -> R
         1,
     )?;
 
-    // Initialize MineBtcMining
-    mine_btc_mining.minebtc_token_vault = Pubkey::default(); // Will be set during initialize_mining
-    mine_btc_mining.mining_start_timestamp = 0; // Set to 0 to indicate mining not started
-    mine_btc_mining.mine_btc_per_round = 0;
+    // Initialize DegenBtcMining
+    dbtc_mining.dbtc_token_vault = Pubkey::default(); // Will be set during initialize_mining
+    dbtc_mining.dbtc_per_round = 0;
 
-    mine_btc_mining.total_tokens_mined = 0;
-    mine_btc_mining.bump = ctx.bumps.mine_btc_mining;
-    mine_btc_mining.vault_auth_bump = 0; // Will be set during initialize_mining
+    dbtc_mining.total_tokens_mined = 0;
+    dbtc_mining.bump = ctx.bumps.dbtc_mining;
+    dbtc_mining.vault_auth_bump = 0; // Will be set during initialize_mining
 
     // Initialize dynamic distribution fields with defaults
-    mine_btc_mining.raydium_pool_state = Pubkey::default();
-    mine_btc_mining.last_rate_update = 0;
-    mine_btc_mining.price_history = Vec::new();
-    mine_btc_mining.recent_price = 0; // Default: 0.001 SOL/MINEBTC
-    mine_btc_mining.track_price = 0;
+    dbtc_mining.raydium_pool_state = Pubkey::default();
+    dbtc_mining.last_rate_update = 0;
+    dbtc_mining.price_history = Vec::new();
+    dbtc_mining.recent_price = 0; // Default: 0.001 SOL/degenBTC
+    dbtc_mining.track_price = 0;
 
     // Initialize emission adjustment parameters (defaults defined in state.rs)
-    mine_btc_mining.price_change_threshold = DEFAULT_PRICE_CHANGE_THRESHOLD;
-    mine_btc_mining.emission_increase_pct = DEFAULT_EMISSION_INCREASE_PCT;
-    mine_btc_mining.emission_decrease_pct = DEFAULT_EMISSION_DECREASE_PCT;
+    dbtc_mining.price_change_threshold = DEFAULT_PRICE_CHANGE_THRESHOLD;
+    dbtc_mining.emission_increase_pct = DEFAULT_EMISSION_INCREASE_PCT;
+    dbtc_mining.emission_decrease_pct = DEFAULT_EMISSION_DECREASE_PCT;
 
     // ---------------------------- Unrefined Rewards ---------------------------------
     let hodl_pool = &mut ctx.accounts.hodl_pool;
     hodl_pool.hodl_tax_index = INDEX_PRECISION as u128;
-    hodl_pool.total_minebtc_claimable = 0;
+    hodl_pool.total_dbtc_claimable = 0;
 
     Ok(())
 }
@@ -232,17 +230,17 @@ pub fn set_raydium_pool_state_internal(
         )?;
     }
 
-    // Initialize faction_war_sol_vault if not already initialized. User bets
+    // Initialize war_sol_vault if not already initialized. User bets
     // transfer tiny cycle splits here, so the PDA must exist rent-exempt before
     // the first split arrives.
-    let faction_war_sol_vault_lamports = ctx.accounts.faction_war_sol_vault.lamports();
-    if faction_war_sol_vault_lamports == 0 {
+    let war_sol_vault_lamports = ctx.accounts.war_sol_vault.lamports();
+    if war_sol_vault_lamports == 0 {
         anchor_lang::system_program::transfer(
             CpiContext::new(
                 ctx.accounts.system_program.to_account_info(),
                 anchor_lang::system_program::Transfer {
                     from: ctx.accounts.authority.to_account_info(),
-                    to: ctx.accounts.faction_war_sol_vault.to_account_info(),
+                    to: ctx.accounts.war_sol_vault.to_account_info(),
                 },
             ),
             1,
@@ -255,7 +253,7 @@ pub fn set_raydium_pool_state_internal(
 /// Add a single faction to the global config (admin only)
 ///
 /// Adds a new faction to the supported factions list and initializes its FactionState account.
-/// Maximum of MAX_FACTIONS (15) factions can be added.
+/// Maximum of MAX_FACTIONS (12) factions can be added.
 ///
 /// # Parameters
 /// - `faction_name`: Name of the faction (max MAX_FACTION_NAME_LENGTH characters)
@@ -401,7 +399,7 @@ pub fn accept_authority_internal(ctx: Context<AcceptAuthority>) -> Result<()> {
 
 /// Update fee configuration (admin only)
 ///
-/// Updates SOL fee distribution percentages and/or MineBtc distribution percentages.
+/// Updates SOL fee distribution percentages and/or degenBTC distribution percentages.
 /// These config fields use whole-percent precision (`100` = 100%).
 /// All percentage splits must sum to the percentage denominator for their category.
 ///
@@ -409,27 +407,27 @@ pub fn accept_authority_internal(ctx: Context<AcceptAuthority>) -> Result<()> {
 /// - `new_protocol_fee_pct`: Optional new protocol fee percentage (SOL fees)
 /// - `new_buyback_pct`: Optional new buyback percentage (SOL fees)
 /// - `new_stakers_pct`: Optional new stakers percentage (SOL fees)
-/// - `new_minebtc_stakers_pct`: Optional new MineBtc stakers percentage
-/// - `new_minebtc_winners_pct`: Optional new MineBtc winners percentage
-/// - `new_minebtc_same_faction_pct`: Optional new MineBtc same-faction percentage
-/// - `new_minebtc_jackpot_pct`: Optional new MineBtc jackpot percentage
+/// - `new_dbtc_stakers_pct`: Optional new degenBTC stakers percentage
+/// - `new_dbtc_winners_pct`: Optional new degenBTC winners percentage
+/// - `new_dbtc_same_faction_pct`: Optional new degenBTC same-faction percentage
+/// - `new_dbtc_jackpot_pct`: Optional new degenBTC jackpot percentage
 /// - `new_hodl_tax_pct`: Optional new HODL tax percentage
 /// - `snapshot_interval`: Optional new snapshot interval (in seconds, minimum time between price snapshots)
 ///
 /// # Validation
 /// - SOL fees: protocol_fee_pct + buyback_pct + stakers_pct == `PERCENTAGE_DENOMINATOR`
-/// - MineBtc dist: minebtc_stakers_pct + minebtc_winners_pct +
-///   (`PredictionDirection::COUNT - 1`) * minebtc_same_faction_pct +
-///   minebtc_jackpot_pct == `PERCENTAGE_DENOMINATOR`
+/// - degenBTC dist: dbtc_stakers_pct + dbtc_winners_pct +
+///   (`PredictionDirection::COUNT - 1`) * dbtc_same_faction_pct +
+///   dbtc_jackpot_pct == `PERCENTAGE_DENOMINATOR`
 pub fn update_fees_internal(
     ctx: Context<UpdateConfigAc>,
     new_protocol_fee_pct: Option<u8>,
     new_buyback_pct: Option<u8>,
     new_stakers_pct: Option<u8>,
-    new_minebtc_stakers_pct: Option<u8>,
-    new_minebtc_winners_pct: Option<u8>,
-    new_minebtc_same_faction_pct: Option<u8>,
-    new_minebtc_jackpot_pct: Option<u8>,
+    new_dbtc_stakers_pct: Option<u8>,
+    new_dbtc_winners_pct: Option<u8>,
+    new_dbtc_same_faction_pct: Option<u8>,
+    new_dbtc_jackpot_pct: Option<u8>,
     new_hodl_tax_pct: Option<u8>,
     snapshot_interval: Option<u64>,
     new_cycle_sol_split_pct: Option<u8>,
@@ -456,6 +454,15 @@ pub fn update_fees_internal(
 
         require!(
             protocol_fee_pct <= PERCENTAGE_DENOMINATOR_U8,
+            ErrorCode::InvalidParameters
+        );
+        // Referral cuts (up to 100 bps of gross) are taken from the per-bet
+        // protocol fee in `internal_process_bets` via `fee.checked_sub(cut)`.
+        // Setting protocol_fee_pct below MIN_PROTOCOL_FEE_PCT would cause
+        // that subtraction to underflow and DOS every referred user. Pin the
+        // floor so the runtime math is always solvent.
+        require!(
+            protocol_fee_pct >= MIN_PROTOCOL_FEE_PCT,
             ErrorCode::InvalidParameters
         );
         require!(
@@ -489,45 +496,45 @@ pub fn update_fees_internal(
         };
     }
 
-    // Update MineBtc distribution config if any values provided
-    if new_minebtc_stakers_pct.is_some()
-        || new_minebtc_winners_pct.is_some()
-        || new_minebtc_same_faction_pct.is_some()
-        || new_minebtc_jackpot_pct.is_some()
+    // Update degenBTC distribution config if any values provided
+    if new_dbtc_stakers_pct.is_some()
+        || new_dbtc_winners_pct.is_some()
+        || new_dbtc_same_faction_pct.is_some()
+        || new_dbtc_jackpot_pct.is_some()
     {
-        let minebtc_stakers_pct = new_minebtc_stakers_pct
-            .unwrap_or(global_config.minebtc_dist_config.minebtc_stakers_pct);
-        let minebtc_winners_pct = new_minebtc_winners_pct
-            .unwrap_or(global_config.minebtc_dist_config.minebtc_winners_pct);
-        let minebtc_same_faction_pct = new_minebtc_same_faction_pct
-            .unwrap_or(global_config.minebtc_dist_config.minebtc_same_faction_pct);
-        let minebtc_jackpot_pct = new_minebtc_jackpot_pct
-            .unwrap_or(global_config.minebtc_dist_config.minebtc_jackpot_pct);
+        let dbtc_stakers_pct =
+            new_dbtc_stakers_pct.unwrap_or(global_config.dbtc_dist_config.dbtc_stakers_pct);
+        let dbtc_winners_pct =
+            new_dbtc_winners_pct.unwrap_or(global_config.dbtc_dist_config.dbtc_winners_pct);
+        let dbtc_same_faction_pct = new_dbtc_same_faction_pct
+            .unwrap_or(global_config.dbtc_dist_config.dbtc_same_faction_pct);
+        let dbtc_jackpot_pct =
+            new_dbtc_jackpot_pct.unwrap_or(global_config.dbtc_dist_config.dbtc_jackpot_pct);
 
         require!(
-            minebtc_stakers_pct <= PERCENTAGE_DENOMINATOR_U8,
+            dbtc_stakers_pct <= PERCENTAGE_DENOMINATOR_U8,
             ErrorCode::InvalidParameters
         );
         require!(
-            minebtc_winners_pct <= PERCENTAGE_DENOMINATOR_U8,
+            dbtc_winners_pct <= PERCENTAGE_DENOMINATOR_U8,
             ErrorCode::InvalidParameters
         );
         require!(
-            minebtc_same_faction_pct <= PERCENTAGE_DENOMINATOR_U8,
+            dbtc_same_faction_pct <= PERCENTAGE_DENOMINATOR_U8,
             ErrorCode::InvalidParameters
         );
         require!(
-            minebtc_jackpot_pct <= PERCENTAGE_DENOMINATOR_U8,
+            dbtc_jackpot_pct <= PERCENTAGE_DENOMINATOR_U8,
             ErrorCode::InvalidParameters
         );
 
-        // `minebtc_same_faction_pct` is applied once for each losing direction on the
+        // `dbtc_same_faction_pct` is applied once for each losing direction on the
         // winning faction. With Up / Down / Neutral that means two losing directions.
         let losing_direction_count = (PredictionDirection::COUNT - 1) as u16;
-        let total = minebtc_stakers_pct as u16
-            + minebtc_winners_pct as u16
-            + (minebtc_same_faction_pct as u16 * losing_direction_count)
-            + minebtc_jackpot_pct as u16;
+        let total = dbtc_stakers_pct as u16
+            + dbtc_winners_pct as u16
+            + (dbtc_same_faction_pct as u16 * losing_direction_count)
+            + dbtc_jackpot_pct as u16;
 
         require!(
             total == PERCENTAGE_DENOMINATOR_U16,
@@ -535,13 +542,13 @@ pub fn update_fees_internal(
         );
 
         // Get current hodl_tax_pct to preserve it
-        let current_hodl_tax_pct = global_config.minebtc_dist_config.hodl_tax_pct;
+        let current_hodl_tax_pct = global_config.dbtc_dist_config.hodl_tax_pct;
 
-        global_config.minebtc_dist_config = MineBtcDistConfig {
-            minebtc_stakers_pct,
-            minebtc_winners_pct,
-            minebtc_same_faction_pct,
-            minebtc_jackpot_pct,
+        global_config.dbtc_dist_config = DegenBtcDistConfig {
+            dbtc_stakers_pct,
+            dbtc_winners_pct,
+            dbtc_same_faction_pct,
+            dbtc_jackpot_pct,
             hodl_tax_pct: current_hodl_tax_pct,
         };
     }
@@ -552,7 +559,7 @@ pub fn update_fees_internal(
             hodl_tax_pct <= PERCENTAGE_DENOMINATOR_U8,
             ErrorCode::InvalidParameters
         );
-        global_config.minebtc_dist_config.hodl_tax_pct = hodl_tax_pct;
+        global_config.dbtc_dist_config.hodl_tax_pct = hodl_tax_pct;
     }
 
     // Update snapshot interval if provided
@@ -641,7 +648,7 @@ pub fn update_emission_params_internal(
     emission_decrease_pct: Option<u64>,
 ) -> Result<()> {
     crate::log_fn!("admin", "update_emission_params_internal");
-    let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
+    let dbtc_mining = &mut ctx.accounts.dbtc_mining;
 
     // Update price change threshold if provided
     if let Some(threshold) = price_change_threshold {
@@ -649,7 +656,7 @@ pub fn update_emission_params_internal(
             threshold > 0 && threshold <= PERCENTAGE_DENOMINATOR,
             ErrorCode::InvalidParameters
         );
-        mine_btc_mining.price_change_threshold = threshold;
+        dbtc_mining.price_change_threshold = threshold;
     }
 
     // Update emission increase percentage if provided
@@ -658,7 +665,7 @@ pub fn update_emission_params_internal(
             increase_pct > 0 && increase_pct <= PERCENTAGE_DENOMINATOR,
             ErrorCode::InvalidParameters
         );
-        mine_btc_mining.emission_increase_pct = increase_pct;
+        dbtc_mining.emission_increase_pct = increase_pct;
     }
 
     // Update emission decrease percentage if provided
@@ -667,7 +674,7 @@ pub fn update_emission_params_internal(
             decrease_pct > 0 && decrease_pct <= PERCENTAGE_DENOMINATOR,
             ErrorCode::InvalidParameters
         );
-        mine_btc_mining.emission_decrease_pct = decrease_pct;
+        dbtc_mining.emission_decrease_pct = decrease_pct;
     }
 
     Ok(())
@@ -701,23 +708,16 @@ pub fn update_gameplay_tuning_internal(
     let tuning = &mut global_config.gameplay_tuning;
 
     let next_base_reward_bps = args
-        .faction_war_base_reward_bps
-        .unwrap_or(tuning.faction_war_base_reward_bps);
-    let next_loyalty_reward_bps = args
-        .faction_war_loyalty_reward_bps
-        .unwrap_or(tuning.faction_war_loyalty_reward_bps);
-    let next_mvp_reward_bps = args
-        .faction_war_mvp_reward_bps
-        .unwrap_or(tuning.faction_war_mvp_reward_bps);
+        .war_base_reward_bps
+        .unwrap_or(tuning.war_base_reward_bps);
+    let next_mvp_reward_bps = args.war_mvp_reward_bps.unwrap_or(tuning.war_mvp_reward_bps);
     let next_hashbeast_reward_bps = args
-        .faction_war_hashbeast_reward_bps
-        .unwrap_or(tuning.faction_war_hashbeast_reward_bps);
-    // base + loyalty + MVP + hashbeast must close to 100% — these are the four
-    // lanes that `compute_faction_reward_pools` splits the cycle pool into.
-    let reward_total = next_base_reward_bps as u32
-        + next_loyalty_reward_bps as u32
-        + next_mvp_reward_bps as u32
-        + next_hashbeast_reward_bps as u32;
+        .war_hashbeast_reward_bps
+        .unwrap_or(tuning.war_hashbeast_reward_bps);
+    // base + MVP + hashbeast must close to 100% — these are the three
+    // lanes that `compute_base_reward_pools` splits the cycle pool into.
+    let reward_total =
+        next_base_reward_bps as u32 + next_mvp_reward_bps as u32 + next_hashbeast_reward_bps as u32;
     require!(
         reward_total == BASIS_POINTS_DENOMINATOR as u32,
         ErrorCode::InvalidParameters
@@ -763,10 +763,9 @@ pub fn update_gameplay_tuning_internal(
         ErrorCode::InvalidParameters
     );
 
-    tuning.faction_war_base_reward_bps = next_base_reward_bps;
-    tuning.faction_war_loyalty_reward_bps = next_loyalty_reward_bps;
-    tuning.faction_war_mvp_reward_bps = next_mvp_reward_bps;
-    tuning.faction_war_hashbeast_reward_bps = next_hashbeast_reward_bps;
+    tuning.war_base_reward_bps = next_base_reward_bps;
+    tuning.war_mvp_reward_bps = next_mvp_reward_bps;
+    tuning.war_hashbeast_reward_bps = next_hashbeast_reward_bps;
     tuning.base_mutation_chance_bps = next_base_mutation_chance_bps;
     tuning.mutation_chance_floor_bps = next_chance_floor_bps;
     tuning.mutation_chance_cap_bps = next_chance_cap_bps;
@@ -782,10 +781,9 @@ pub fn update_gameplay_tuning_internal(
 
     let rpg_progression = tuning.rpg_progression;
     let max_evolution_stage_unlocked = tuning.max_evolution_stage_unlocked;
-    let faction_war_base_reward_bps = tuning.faction_war_base_reward_bps;
-    let faction_war_loyalty_reward_bps = tuning.faction_war_loyalty_reward_bps;
-    let faction_war_mvp_reward_bps = tuning.faction_war_mvp_reward_bps;
-    let faction_war_hashbeast_reward_bps = tuning.faction_war_hashbeast_reward_bps;
+    let war_base_reward_bps = tuning.war_base_reward_bps;
+    let war_mvp_reward_bps = tuning.war_mvp_reward_bps;
+    let war_hashbeast_reward_bps = tuning.war_hashbeast_reward_bps;
     let base_mutation_chance_bps = tuning.base_mutation_chance_bps;
     let mutation_chance_floor_bps = tuning.mutation_chance_floor_bps;
     let mutation_chance_cap_bps = tuning.mutation_chance_cap_bps;
@@ -800,10 +798,9 @@ pub fn update_gameplay_tuning_internal(
         authority: ctx.accounts.authority.key(),
         rpg_progression,
         max_evolution_stage_unlocked,
-        faction_war_base_reward_bps,
-        faction_war_loyalty_reward_bps,
-        faction_war_mvp_reward_bps,
-        faction_war_hashbeast_reward_bps,
+        war_base_reward_bps,
+        war_mvp_reward_bps,
+        war_hashbeast_reward_bps,
         base_mutation_chance_bps,
         mutation_chance_floor_bps,
         mutation_chance_cap_bps,
@@ -823,81 +820,78 @@ pub fn update_gameplay_tuning_internal(
 // --------------------------------------------------------------------------------
 // --------------------------------------------------------------------------------
 
-/// Initialize mining by setting the token vault and starting timestamp (admin only)
+/// Initialize mining by setting the token vault and emission rate (admin only)
 ///
-/// Sets up the MineBtc mining system with the token vault and initial mining parameters.
+/// Sets up the degenBTC mining system with the token vault and initial mining parameters.
 /// Can only be called once when `mining_start_timestamp == 0`.
+/// Mining start time is recorded from the on-chain clock automatically.
 ///
 /// # Parameters
-/// - `start_timestamp`: Unix timestamp when mining should start
-/// - `mine_btc_per_round`: Base MineBtc emission rate per slot
+/// - `dbtc_per_round`: Base degenBTC emission rate per slot
 /// - `pool_state`: Raydium pool state address for price discovery
 pub fn initialize_mining_internal(
     ctx: Context<InitializeMining>,
-    start_timestamp: u64,
-    mine_btc_per_round: u64,
+    dbtc_per_round: u64,
     pool_state: Pubkey,
 ) -> Result<()> {
     crate::log_fn!("admin", "initialize_mining_internal");
-    let mine_btc_mining = &mut ctx.accounts.mine_btc_mining;
+    let dbtc_mining = &mut ctx.accounts.dbtc_mining;
 
-    // Check mining hasn't been initialized yet
+    // Check mining hasn't been initialized yet (vault not set)
     require!(
-        mine_btc_mining.mining_start_timestamp == 0,
+        dbtc_mining.dbtc_token_vault == Pubkey::default(),
         ErrorCode::MiningAlreadyInitialized
     );
-    require!(mine_btc_per_round > 0, ErrorCode::InvalidParameters);
+    require!(dbtc_per_round > 0, ErrorCode::InvalidParameters);
 
     // ───── persist vault + bump(s) ─────
-    mine_btc_mining.minebtc_token_vault = ctx.accounts.token_vault.key();
-    mine_btc_mining.vault_auth_bump = ctx.bumps.vault_authority;
+    dbtc_mining.dbtc_token_vault = ctx.accounts.token_vault.key();
+    dbtc_mining.vault_auth_bump = ctx.bumps.vault_authority;
 
     // Initialize mining parameters
-    mine_btc_mining.mining_start_timestamp = start_timestamp;
-    mine_btc_mining.mine_btc_per_round = mine_btc_per_round;
+    dbtc_mining.dbtc_per_round = dbtc_per_round;
 
     // Initialize dynamic distribution fields
-    mine_btc_mining.raydium_pool_state = pool_state;
-    mine_btc_mining.last_rate_update = Clock::get()?.unix_timestamp;
+    dbtc_mining.raydium_pool_state = pool_state;
+    dbtc_mining.last_rate_update = Clock::get()?.unix_timestamp;
 
-    mine_btc_mining.price_history = Vec::with_capacity(8);
-    mine_btc_mining.recent_price = 0; // Default: 0.001 SOL/MINEBTC
-    mine_btc_mining.track_price = 0; // Initialize with same default
+    dbtc_mining.price_history = Vec::with_capacity(8);
+    dbtc_mining.recent_price = 0; // Default: 0.001 SOL/degenBTC
+    dbtc_mining.track_price = 0; // Initialize with same default
 
-    mine_btc_mining.pol_stats = ProtocolOwnedLiquidity::default(); // Initialize POL stats tracking
+    dbtc_mining.pol_stats = ProtocolOwnedLiquidity::default(); // Initialize POL stats tracking
 
     // Emit event
     emit!(MiningTokenVaultSet {
         authority: ctx.accounts.authority.key(),
         token_vault: ctx.accounts.token_vault.key(),
         token_vault_authority: ctx.accounts.vault_authority.key(),
-        mining_start_timestamp: start_timestamp,
     });
 
     Ok(())
 }
 
-/// Deposit MineBtc tokens to the mining vault (anyone can call)
+/// Deposit degenBTC tokens to the mining vault (anyone can call)
 ///
-/// Allows anyone to deposit MineBtc tokens into the mining vault.
+/// Allows anyone to deposit degenBTC tokens into the mining vault.
 /// These tokens will be distributed as rewards to stakers over time.
 ///
 /// # Parameters
-/// - `amount`: Amount of MineBtc tokens to deposit (in token's native decimals)
-pub fn deposit_mine_btc_tokens_internal(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {
-    crate::log_fn!("admin", "deposit_mine_btc_tokens_internal");
+/// - `amount`: Amount of degenBTC tokens to deposit (in token's native decimals)
+pub fn deposit_dbtc_tokens_internal(ctx: Context<DepositTokens>, amount: u64) -> Result<()> {
+    crate::log_fn!("admin", "deposit_dbtc_tokens_internal");
     token_if::transfer_checked(
         CpiContext::new(
             ctx.accounts.token_program.to_account_info(), // TOKEN_2022_PROGRAM_ID
             token_if::TransferChecked {
                 from: ctx.accounts.depositor_token_account.to_account_info(),
                 mint: ctx.accounts.token_mint.to_account_info(),
-                to: ctx.accounts.minebtc_token_vault.to_account_info(),
+                to: ctx.accounts.dbtc_token_vault.to_account_info(),
                 authority: ctx.accounts.depositor.to_account_info(),
             },
         ),
         amount,
-        MINEBTC_DECIMALS,
+        DBTC_DECIMALS,
     )?;
 
     Ok(())
@@ -1475,7 +1469,6 @@ pub fn initialize_game_state_internal(
 
     // Initialize previous round data
     global_game_state.last_round_id = 0;
-    global_game_state.winning_faction_id = 0;
 
     Ok(())
 }
@@ -1552,11 +1545,11 @@ pub struct Initialize<'info> {
     #[account(
         init,
         payer = authority,
-        space = MineBtcMining::LEN,
+        space = DegenBtcMining::LEN,
         seeds = [MINE_BTC_MINING_SEED.as_ref()],
         bump
     )]
-    pub mine_btc_mining: Account<'info, MineBtcMining>,
+    pub dbtc_mining: Account<'info, DegenBtcMining>,
 
     #[account(
         init,
@@ -1636,7 +1629,7 @@ pub struct SetRaydiumPoolState<'info> {
         bump,
         owner = system_program.key()
     )]
-    pub faction_war_sol_vault: UncheckedAccount<'info>,
+    pub war_sol_vault: UncheckedAccount<'info>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -1681,9 +1674,9 @@ pub struct UpdateEmissionParams<'info> {
     #[account(
         mut,
         seeds = [MINE_BTC_MINING_SEED.as_ref()],
-        bump = mine_btc_mining.bump,
+        bump = dbtc_mining.bump,
     )]
-    pub mine_btc_mining: Account<'info, MineBtcMining>,
+    pub dbtc_mining: Account<'info, DegenBtcMining>,
 
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
@@ -1739,11 +1732,11 @@ pub struct InitializeMining<'info> {
         seeds = [MINE_BTC_MINING_SEED.as_ref()],
         bump,
     )]
-    pub mine_btc_mining: Account<'info, MineBtcMining>,
+    pub dbtc_mining: Account<'info, DegenBtcMining>,
 
     //  Vault authority PDA (0-byte, signer only)
     #[account(
-        seeds = [MINE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
+        seeds = [DEGEN_BTC_VAULT_AUTHORITY_SEED.as_ref()],
         bump
     )]
     /// CHECK: signer-only PDA, no data or lamports required
@@ -1754,7 +1747,7 @@ pub struct InitializeMining<'info> {
         init,
         payer  = authority,
         owner  = token_program.key(),
-        seeds  = [MINE_BTC_VAULT_SEED, mine_btc_mining.key().as_ref()],
+        seeds  = [DEGEN_BTC_VAULT_SEED, dbtc_mining.key().as_ref()],
         token::mint      = token_mint,
         token::authority = vault_authority,
         bump
@@ -1782,24 +1775,24 @@ pub struct DepositTokens<'info> {
         mut,
         owner       = token_program.key(),                     // interface account check
         constraint  = depositor_token_account.owner == depositor.key() @ ErrorCode::Unauthorized,
-        constraint  = depositor_token_account.mint  == minebtc_token_vault.mint @ ErrorCode::InvalidMint
+        constraint  = depositor_token_account.mint  == dbtc_token_vault.mint @ ErrorCode::InvalidMint
     )]
     pub depositor_token_account: InterfaceAccount<'info, TokenAccount2022>,
 
     // ─── mining token vault ───
     #[account(
         mut,
-        seeds  = [MINE_BTC_VAULT_SEED, mine_btc_mining.key().as_ref()],
+        seeds  = [DEGEN_BTC_VAULT_SEED, dbtc_mining.key().as_ref()],
         bump,
         owner  = token_program.key(),
     )]
-    pub minebtc_token_vault: InterfaceAccount<'info, TokenAccount2022>,
+    pub dbtc_token_vault: InterfaceAccount<'info, TokenAccount2022>,
 
     #[account(
         seeds = [MINE_BTC_MINING_SEED.as_ref()],
         bump
     )]
-    pub mine_btc_mining: Account<'info, MineBtcMining>,
+    pub dbtc_mining: Account<'info, DegenBtcMining>,
 
     #[account(owner = token_program.key())]
     pub token_mint: InterfaceAccount<'info, Mint2022>,
@@ -2187,17 +2180,17 @@ pub struct InitializeSystemAccounts<'info> {
 
 /// Initialize both custodian token accounts (admin only)
 /// Initializes:
-/// - MINEBTC custodian: Token-2022 account that holds all staked MINE_BTC tokens (global for all factions)
+/// - degenBTC custodian: Token-2022 account that holds all staked MINE_BTC tokens (global for all factions)
 /// - Liquidity custodian: Standard SPL Token account that holds all staked LP tokens (global for all factions)
 pub fn int_initialize_custodian_accounts(ctx: Context<InitializeCustodianAccounts>) -> Result<()> {
     crate::log_fn!("admin", "int_initialize_custodian_accounts");
-    // Verify MINEBTC custodian
+    // Verify degenBTC custodian
     require!(
-        ctx.accounts.minebtc_custodian.mint == ctx.accounts.minebtc_mint.key(),
+        ctx.accounts.dbtc_custodian.mint == ctx.accounts.degenbtc_mint.key(),
         ErrorCode::InvalidMint
     );
     require!(
-        ctx.accounts.minebtc_custodian.owner == ctx.accounts.minebtc_custodian_authority.key(),
+        ctx.accounts.dbtc_custodian.owner == ctx.accounts.dbtc_custodian_authority.key(),
         ErrorCode::InvalidOwner
     );
 
@@ -2223,27 +2216,27 @@ pub struct InitializeCustodianAccounts<'info> {
     )]
     pub global_config: Account<'info, GlobalConfig>,
 
-    /// CHECK: MINEBTC Mint (Token-2022)
-    pub minebtc_mint: InterfaceAccount<'info, Mint2022>,
+    /// CHECK: degenBTC Mint (Token-2022)
+    pub degenbtc_mint: InterfaceAccount<'info, Mint2022>,
 
-    /// MINEBTC custodian token account (Token-2022) - PDA owned by minebtc_custodian_authority
+    /// degenBTC custodian token account (Token-2022) - PDA owned by dbtc_custodian_authority
     #[account(
         init,
         payer = authority,
-        seeds = [MINEBTC_CUSTODIAN_SEED.as_ref()],
+        seeds = [DEGENBTC_CUSTODIAN_SEED.as_ref()],
         bump,
-        token::mint = minebtc_mint,
-        token::authority = minebtc_custodian_authority,
+        token::mint = degenbtc_mint,
+        token::authority = dbtc_custodian_authority,
         token::token_program = token_2022_program,
     )]
-    pub minebtc_custodian: InterfaceAccount<'info, TokenAccount2022>,
+    pub dbtc_custodian: InterfaceAccount<'info, TokenAccount2022>,
 
-    /// CHECK: Authority PDA for minebtc_custodian (signs for token transfers)
+    /// CHECK: Authority PDA for dbtc_custodian (signs for token transfers)
     #[account(
-        seeds = [MINEBTC_CUSTODIAN_AUTHORITY_SEED.as_ref()],
+        seeds = [DEGENBTC_CUSTODIAN_AUTHORITY_SEED.as_ref()],
         bump,
     )]
-    pub minebtc_custodian_authority: UncheckedAccount<'info>,
+    pub dbtc_custodian_authority: UncheckedAccount<'info>,
 
     /// CHECK: LP Mint (standard SPL Token)
     pub lp_mint: Account<'info, token::Mint>,

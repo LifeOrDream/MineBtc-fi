@@ -48,3 +48,11 @@ pub struct NftSold {
     pub fee_lamports: u64,
     pub timestamp: i64,
 }
+
+#[event]
+pub struct ListingReclaimed {
+    pub asset: Pubkey,
+    pub old_seller: Pubkey,
+    pub new_owner: Pubkey,
+    pub timestamp: i64,
+}

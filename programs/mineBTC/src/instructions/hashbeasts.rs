@@ -1,3 +1,137 @@
+//! # HashBeasts — minting, staking, rebirth, breeding
+//!
+//! HashBeasts are MineBTC's primary NFT asset, implemented on Metaplex Core
+//! (mpl-core) with a per-asset `HashBeastMetadata` PDA holding game state. They
+//! serve three roles:
+//!
+//! 1. **Primary-market NFTs** minted from a bonding-curve-like pricing path
+//!    (genesis allocations) plus free-mint allowances and admin grants.
+//! 2. **Passive staking boosters** — staking a HashBeast raises the owner's
+//!    home-faction staking hashpower multiplier
+//!    (`player_data.hashbeast_multiplier`).
+//! 3. **Gameplay avatars** — used in round betting / mutation rolls. The
+//!    "deploy for gameplay" flow itself lives in `user.rs`
+//!    (`use_hashbeast_for_gameplay` / `withdraw_hashbeast_from_gameplay`);
+//!    this file owns the lifecycle entry points (mint / breed / rebirth) and
+//!    the passive staking flows (`stake_hashbeast` / `unstake_hashbeast`).
+//!
+//! ## Multiplier model — important distinction
+//!
+//! Two different multipliers live on `PlayerData`. They have NOTHING to do
+//! with each other and editing one never affects the other:
+//!
+//! | Field                                | Set by                          | Read by                          |
+//! |--------------------------------------|---------------------------------|----------------------------------|
+//! | `player_data.hashbeast_multiplier`   | `stake_hashbeast` / `unstake`   | `stake.rs` staking reward calc   |
+//! | `player_data.active_multiplier`     | mutation rolls during gameplay  | `user.rs` round / cycle scoring  |
+//!
+//! ## Account graph
+//!
+//! ```text
+//!   GlobalConfig    (program config root)
+//!       ▲
+//!       └── referenced by all mint/stake paths for is_paused / supported_factions
+//!
+//!   HashBeastConfig             ── canonical Core collection pubkey, breed flags,
+//!     seeds [HASHBEAST_CONFIG]     total_hashbeasts_minted, breed_curve params
+//!
+//!   HashBeastMintConfig         ── genesis allocation counters
+//!     seeds [HASHBEAST_MINT_CONFIG]
+//!
+//!   HashBeastMetadata           ── one per minted asset: DNA, XP, faction_id,
+//!     seeds [HASHBEAST_METADATA,    breed_count, rebirth_count, incubated flag
+//!            mint]
+//!
+//!   The on-chain mpl-core Asset is the source of truth for ownership; we
+//!   read it via `BaseAssetV1::try_from` or `get_mpl_core_owner`.
+//! ```
+//!
+//! ## Mint paths (all 4 funnel through the same metadata creation)
+//!
+//! - `batch_mint_hashbeasts` — public bonding-curve mint, batched (up to 10).
+//! - `admin_mint_hashbeast` — admin allocation (free) for treasury/airdrops.
+//! - `whitelist_mint_hashbeast` — pre-list free mints from
+//!   `HashBeastFreeMintAllowance`.
+//! - `breed_hashbeasts` — two parents → one offspring, post-genesis.
+//!
+//! All four paths:
+//!   - **MUST** receive the canonical `hashbeast_collection` (seed-pinned
+//!     via `address = hashbeast_config.hashbeast_collection` constraint +
+//!     handler-side `require!(hashbeast_collection.is_some())`). Mints
+//!     outside the official Core collection break royalties, identity, and
+//!     marketplace gating, so we hard-reject them.
+//!   - Call `create_mpl_core_asset` to mint the Core asset attached to the
+//!     collection.
+//!   - Init a `HashBeastMetadata` PDA, seeded by asset key, holding DNA/XP/
+//!     faction/incubated/rebirth/breed-count.
+//!   - Increment `hashbeast_config.total_hashbeasts_minted` (monotonic; used
+//!     for the breed bonding curve).
+//!
+//! ## Breeding economics
+//!
+//! `breed_hashbeasts` enforces an "always above marketplace floor" invariant:
+//!   - Curve price = bonding-curve formula(`breed_base_price`,
+//!     `breed_curve_a`, `total_minted`).
+//!   - Floor min price = `floor_history.current_anchor() × 1.5` (150%).
+//!   - Final price = `max(curve, floor)`.
+//!
+//! **Floor staleness guard**: we require `last_snapshot_at` to be within
+//! `BREED_FLOOR_MAX_AGE_SECS` (48h, one snapshot interval + grace). If the
+//! oracle pipeline stalls, breeding hard-reverts rather than pricing against
+//! months-old data. (See marketplace_cpi.rs for how the snapshot is fed.)
+//!
+//! Payment split: half SOL (with fee-recipient/treasury legs), half degenBTC
+//! (burn/emission split). See `BREED_*_BPS` constants in state.rs.
+//!
+//! ## Rebirth
+//!
+//! `rebirth_hashbeast` lets an owner cash out the asset's accumulated degenBTC
+//! and recycle the same Core asset into protocol inventory. If the faction
+//! lootbox queue and inventory cap have room, metadata is reset in-place:
+//! fresh DNA, default gameplay state, and `rebirth_count + 1`, then the asset
+//! transfers to `inventory_pda` for future loser-roll delivery. If the queue
+//! is full or the asset has reached the 7-rebirth cap, the asset is burned
+//! instead. Rebirth requires the canonical HashBeast collection account, just
+//! like mint paths, so collection identity stays intact through recycling.
+//!
+//! ## Passive staking (`stake_hashbeast` / `unstake_hashbeast`)
+//!
+//! Stakes a HashBeast asset (transferred to a custody PDA) and adds its
+//! `passive_multiplier_bps` to `player_data.hashbeast_multiplier`, capped at
+//! `PASSIVE_HASHBEAST_STAKING_MAX_MULTIPLIER` (3x). Stake also bumps
+//! `faction_state.hashbeasts_staked_count` (faction loyalty signal).
+//!
+//! Unstaking pulls the asset back to the owner and subtracts the multiplier
+//! after first syncing pending staking rewards at the pre-unstake hashpower.
+//! There is no passive-unstake delay in the current account model; gameplay
+//! HashBeast withdrawal has its own next-faction-war unlock gate in `user.rs`.
+//!
+//! ## Tickets
+//!
+//! Free mint / breed paths can grant "free tickets" via `add_tickets_to_player`,
+//! which credit `player_data.free_tickets_remaining` for use as gameplay
+//! bet-points in `internal_join_bets`. Counters use checked-add — tickets are
+//! value accounting, not stats.
+//!
+//! ## Caller surface
+//!
+//! All mint/breed/rebirth/stake paths require the **owner of the asset** (or
+//! the recipient, in the admin case) as `Signer`. No permissionless paths
+//! here — that's the marketplace_cpi.rs module.
+//!
+//! ## Future-AI-agent notes
+//!
+//! - Never relax the `hashbeast_collection` address binding on mint paths
+//!   without also re-auditing the marketplace assumptions (e.g.
+//!   `assert_asset_collection` in marketplace_cpi.rs reads the asset's
+//!   `UpdateAuthority::Collection`).
+//! - `HashBeastMetadata` is the only authoritative game-state mirror of the
+//!   on-chain Core asset. If you add a new field, update `LEN`, init paths,
+//!   and any state migrations. Never assume "no metadata" means "not a
+//!   HashBeast" — metadata is always present for in-flow assets.
+//! - `total_hashbeasts_minted` is used as a bonding-curve x-coordinate. Don't
+//!   reset or decrement it. Burns from rebirth do NOT decrement.
+
 use crate::errors::ErrorCode;
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::AssociatedToken;
@@ -5,20 +139,6 @@ use anchor_spl::token::Token;
 use anchor_spl::token_2022::{self, Burn, Token2022, TransferChecked};
 use anchor_spl::token_interface::{Mint as Mint2022, TokenAccount as TokenAccount2022};
 use mpl_core::ID as MPL_CORE_PROGRAM_ID;
-// # HashBeast Instructions
-//
-// HashBeasts serve three distinct roles in MineBTC:
-// - primary-market NFTs minted from the bonding-curve-like pricing path,
-// - passive staking boosters that raise a player's home-faction staking hashpower,
-// - gameplay avatars used in round betting / mutation progression (handled partly in `user.rs`).
-//
-// Important distinction:
-// - `player_data.hashbeast_multiplier` is the passive staking multiplier affected by `stake_hashbeast`.
-// - `player_data.active_multiplier` is the gameplay multiplier used for round participation.
-//
-// This file focuses on minting, passive HashBeast staking, rebirthing (`rebirth_hashbeast`),
-// and breeding. Gameplay lock / unlock flows live elsewhere.
-//
 
 use crate::events::*;
 use crate::instructions::helper;
@@ -266,6 +386,15 @@ pub fn int_batch_mint_hashbeasts<'info>(
         ErrorCode::InvalidParameters
     );
 
+    // Mint paths MUST receive the canonical collection. The Accounts struct
+    // address-pins the field when present; this guard ensures it's actually
+    // present (so MPL Core attaches the new asset to the collection instead
+    // of minting it standalone).
+    require!(
+        ctx.accounts.hashbeast_collection.is_some(),
+        ErrorCode::InvalidAccount
+    );
+
     let global_config = &ctx.accounts.global_config;
     let hashbeast_config = &mut ctx.accounts.hashbeast_config;
     let hashbeast_mint_config = &mut ctx.accounts.hashbeast_mint_config;
@@ -299,7 +428,9 @@ pub fn int_batch_mint_hashbeasts<'info>(
         total_price
     );
 
-    // --- Referral commission: 1% of total_price sent directly to the canonical referrer's ReferralRewards PDA ---
+    // --- Referral commission: tiered based on faction alignment ---
+    // Same-country recruits: 1.0% of mint price. Cross-country: 0.5%.
+    // Sent directly to the canonical referrer's ReferralRewards PDA.
     let has_referrer = player_data.referral_code != ctx.accounts.system_program.key();
     let (_referral_cut, remaining) = if has_referrer {
         helper::validate_referrer_rewards_account(
@@ -307,10 +438,15 @@ pub fn int_batch_mint_hashbeasts<'info>(
             ctx.accounts.referrer_rewards.as_ref(),
         )?;
 
-        let cut = total_price
-            .checked_mul(REFERRAL_FEE_PCT as u64)
-            .ok_or(ErrorCode::ArithmeticOverflow)?
-            / 100;
+        let same_faction = player_data.referrer_faction_id != u8::MAX
+            && player_data.faction_id == player_data.referrer_faction_id;
+        let bps = if same_faction {
+            crate::state::REFERRAL_FEE_BPS_SAME_FACTION
+        } else {
+            crate::state::REFERRAL_FEE_BPS_CROSS_FACTION
+        };
+        let cut = u64::try_from(helper::mul_div(total_price, bps as u64, 10_000)?)
+            .map_err(|_| ErrorCode::ArithmeticOverflow)?;
         let referrer_rewards = ctx
             .accounts
             .referrer_rewards
@@ -337,7 +473,9 @@ pub fn int_batch_mint_hashbeasts<'info>(
             .checked_add(cut)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
         msg!(
-            "   Referral commission: {} lamports sent to referrer PDA",
+            "   Referral commission ({} bps, same_faction={}): {} lamports sent to referrer PDA",
+            bps,
+            same_faction,
             cut
         );
         (
@@ -597,6 +735,16 @@ pub fn int_admin_mint_hashbeast(
     let hashbeast_config = &mut ctx.accounts.hashbeast_config;
     let hashbeast_mint_config = &mut ctx.accounts.hashbeast_mint_config;
 
+    // See `int_batch_mint_hashbeasts` for rationale.
+    require!(
+        ctx.accounts.hashbeast_collection.is_some(),
+        ErrorCode::InvalidAccount
+    );
+    require!(
+        ctx.accounts.hashbeast_asset.is_signer,
+        ErrorCode::Unauthorized
+    );
+
     // Verify recipient matches instruction parameter
     require!(
         ctx.accounts.recipient.key() == recipient,
@@ -765,6 +913,12 @@ pub fn int_whitelist_mint_hashbeast(
     let allowance = &mut ctx.accounts.hashbeast_free_mint_allowance;
     let user = ctx.accounts.user.key();
 
+    // See `int_batch_mint_hashbeasts` for rationale.
+    require!(
+        ctx.accounts.hashbeast_collection.is_some(),
+        ErrorCode::InvalidAccount
+    );
+
     require!(!global_config.is_paused, ErrorCode::GamePaused);
     require!(
         hashbeast_mint_config.is_active,
@@ -920,7 +1074,7 @@ pub fn int_whitelist_mint_hashbeast(
     Ok(())
 }
 
-/// Stake a HashBeast to boost hashpower (multiplier applies to the player's home-faction MineBTC and LP stakes).
+/// Stake a HashBeast to boost hashpower (multiplier applies to the player's home-faction degenBTC and LP stakes).
 /// The HashBeast's own faction does not matter for staking boosts.
 ///
 /// Passive staking uses three-slot smoothing:
@@ -928,15 +1082,14 @@ pub fn int_whitelist_mint_hashbeast(
 /// - three 1.0x HashBeasts: 2.0x
 /// - three strong HashBeasts: capped at 3.0x
 ///
-/// This keeps Genesis HashBeasts useful while avoiding the old shape where one maxed
-/// HashBeast could immediately consume the full passive cap.
+/// Smoothing ensures Genesis HashBeasts remain useful: three weak beasts can
+/// match one strong beast, and no single beast monopolizes the passive cap.
 /// The effective multiplier is capped at PASSIVE_HASHBEAST_STAKING_MAX_MULTIPLIER for reward-share math.
 /// Clients must pass metadata accounts for all already-staked hashbeasts in `remaining_accounts`
 /// so the program can derive the exact pre-stake multiplier without storing extra state.
 pub fn int_stake_hashbeast(ctx: Context<StakeHashBeast>) -> Result<()> {
     crate::log_fn!("hashbeasts", "int_stake_hashbeast");
     let hashbeast_metadata = &mut ctx.accounts.hashbeast_metadata;
-    let player_data_key = ctx.accounts.player_data.key();
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
     let current_time = Clock::get()?.unix_timestamp;
@@ -953,13 +1106,13 @@ pub fn int_stake_hashbeast(ctx: Context<StakeHashBeast>) -> Result<()> {
         hashbeast_multiplier as f64 / 1000.0
     );
     msg!(
-        "🧾 [stake_hashbeast] player_before staked_hashbeasts={:?} hashbeast_multiplier={}x degenbtc_hashpower={} lp_hashpower={} pending_sol={} pending_minebtc={}",
+        "🧾 [stake_hashbeast] player_before staked_hashbeasts={:?} hashbeast_multiplier={}x degenbtc_hashpower={} lp_hashpower={} pending_sol={} pending_dbtc={}",
         player_data.staked_hashbeasts,
         player_data.hashbeast_multiplier as f64 / 1000.0,
         player_data.degenbtc_hashpower as f64 / 1e6,
         player_data.lp_hashpower as f64 / 1e6,
         player_data.pending_sol_rewards as f64 / 1e9,
-        player_data.pending_minebtc_rewards as f64 / 1e6
+        player_data.pending_dbtc_rewards as f64 / 1e6
     );
     let prev_faction_degenbtc_hashpower = faction_state.total_degenbtc_hashpower;
     let prev_faction_lp_hashpower = faction_state.total_lp_hashpower;
@@ -991,6 +1144,14 @@ pub fn int_stake_hashbeast(ctx: Context<StakeHashBeast>) -> Result<()> {
         player_data.staked_hashbeasts.len() < MAX_STAKED_HASHBEASTS,
         ErrorCode::InvalidParameters
     );
+    require!(
+        !player_data.staked_hashbeasts.contains(&hashbeast_mint),
+        ErrorCode::InvalidParameters
+    );
+    require!(
+        ctx.accounts.hashbeast_collection.is_some(),
+        ErrorCode::InvalidAccount
+    );
 
     // Transfer NFT to custody PDA (lock it)
     msg!("🔒 Transferring NFT to custody PDA (locking)");
@@ -1009,26 +1170,15 @@ pub fn int_stake_hashbeast(ctx: Context<StakeHashBeast>) -> Result<()> {
     )?;
 
     // Process pending rewards before updating position
-    let (_new_sol_rewards, _new_minebtc_rewards, _accrued_minebtc_rewards) =
-        stake::int_update_minebtc_staking_rewards(
-            ctx.accounts.user.key(),
-            player_data_key,
-            player_data,
-            &mut ctx.accounts.hodl_pool,
-            faction_state,
-        )?;
-    let (_new_sol_rewards, _new_minebtc_rewards, _accrued_minebtc_rewards) =
-        stake::int_update_lp_staking_rewards(
-            ctx.accounts.user.key(),
-            player_data_key,
-            player_data,
-            &mut ctx.accounts.hodl_pool,
-            faction_state,
-        )?;
+    let (_new_sol_rewards, _new_dbtc_rewards) =
+        stake::int_update_dbtc_staking_rewards(player_data, faction_state)?;
+    let (_new_sol_rewards, _new_dbtc_rewards) =
+        stake::int_update_lp_staking_rewards(player_data, faction_state)?;
     msg!(
-        "💹 [stake_hashbeast] pending_after_reward_sync sol={} minebtc={}",
+        "💹 [stake_hashbeast] pending_after_reward_sync sol={} staking_degenBTC={} gameplay_degenBTC={}",
         player_data.pending_sol_rewards as f64 / 1e9,
-        player_data.pending_minebtc_rewards as f64 / 1e6
+        player_data.pending_staking_dbtc_rewards as f64 / 1e6,
+        player_data.pending_dbtc_rewards as f64 / 1e6
     );
 
     // Derive the exact multiplier from currently staked hashbeasts so cap-hit flows remain reversible
@@ -1090,7 +1240,7 @@ pub fn int_stake_hashbeast(ctx: Context<StakeHashBeast>) -> Result<()> {
         )?;
     }
     msg!(
-        "   MineBtc hashpower: {} -> {}",
+        "   degenBTC hashpower: {} -> {}",
         existing_degenbtc_hashpower as f64 / 1e6,
         player_data.degenbtc_hashpower as f64 / 1e6
     );
@@ -1109,7 +1259,7 @@ pub fn int_stake_hashbeast(ctx: Context<StakeHashBeast>) -> Result<()> {
         player_data.lp_hashpower,
     )?;
     msg!(
-        "   Faction minebtc hashpower: {} -> {}",
+        "   Faction degenBTC hashpower: {} -> {}",
         prev_faction_degenbtc_hashpower as f64 / 1e6,
         faction_state.total_degenbtc_hashpower as f64 / 1e6
     );
@@ -1156,7 +1306,6 @@ pub fn int_stake_hashbeast(ctx: Context<StakeHashBeast>) -> Result<()> {
 pub fn int_unstake_hashbeast(ctx: Context<UnstakeHashBeast>) -> Result<()> {
     crate::log_fn!("hashbeasts", "int_unstake_hashbeast");
     let hashbeast_metadata = &mut ctx.accounts.hashbeast_metadata;
-    let player_data_key = ctx.accounts.player_data.key();
     let player_data = &mut ctx.accounts.player_data;
     let faction_state = &mut ctx.accounts.faction_state;
     let hashbeast_mint = hashbeast_metadata.mint;
@@ -1174,13 +1323,13 @@ pub fn int_unstake_hashbeast(ctx: Context<UnstakeHashBeast>) -> Result<()> {
         hashbeast_multiplier as f64 / 1000.0
     );
     msg!(
-        "🧾 [unstake_hashbeast] player_before staked_hashbeasts={:?} hashbeast_multiplier={}x degenbtc_hashpower={} lp_hashpower={} pending_sol={} pending_minebtc={}",
+        "🧾 [unstake_hashbeast] player_before staked_hashbeasts={:?} hashbeast_multiplier={}x degenbtc_hashpower={} lp_hashpower={} pending_sol={} pending_degenBTC={}",
         player_data.staked_hashbeasts,
         player_data.hashbeast_multiplier as f64 / 1000.0,
         player_data.degenbtc_hashpower as f64 / 1e6,
         player_data.lp_hashpower as f64 / 1e6,
         player_data.pending_sol_rewards as f64 / 1e9,
-        player_data.pending_minebtc_rewards as f64 / 1e6
+        player_data.pending_dbtc_rewards as f64 / 1e6
     );
     let prev_faction_degenbtc_hashpower = faction_state.total_degenbtc_hashpower;
     let prev_faction_lp_hashpower = faction_state.total_lp_hashpower;
@@ -1217,26 +1366,15 @@ pub fn int_unstake_hashbeast(ctx: Context<UnstakeHashBeast>) -> Result<()> {
     );
 
     // Process pending rewards before updating position
-    let (_new_sol_rewards, _new_minebtc_rewards, _accrued_minebtc_rewards) =
-        stake::int_update_minebtc_staking_rewards(
-            ctx.accounts.user.key(),
-            player_data_key,
-            player_data,
-            &mut ctx.accounts.hodl_pool,
-            faction_state,
-        )?;
-    let (_new_sol_rewards, _new_minebtc_rewards, _accrued_minebtc_rewards) =
-        stake::int_update_lp_staking_rewards(
-            ctx.accounts.user.key(),
-            player_data_key,
-            player_data,
-            &mut ctx.accounts.hodl_pool,
-            faction_state,
-        )?;
+    let (_new_sol_rewards, _new_dbtc_rewards) =
+        stake::int_update_dbtc_staking_rewards(player_data, faction_state)?;
+    let (_new_sol_rewards, _new_dbtc_rewards) =
+        stake::int_update_lp_staking_rewards(player_data, faction_state)?;
     msg!(
-        "💹 [unstake_hashbeast] pending_after_reward_sync sol={} minebtc={}",
+        "💹 [unstake_hashbeast] pending_after_reward_sync sol={} staking_degenBTC={} gameplay_degenBTC={}",
         player_data.pending_sol_rewards as f64 / 1e9,
-        player_data.pending_minebtc_rewards as f64 / 1e6
+        player_data.pending_staking_dbtc_rewards as f64 / 1e6,
+        player_data.pending_dbtc_rewards as f64 / 1e6
     );
 
     // Build the expected post-unstake hashbeast set before mutating state so we can validate
@@ -1311,7 +1449,7 @@ pub fn int_unstake_hashbeast(ctx: Context<UnstakeHashBeast>) -> Result<()> {
             scale_hashpower_by_multiplier(existing_lp_hashpower, new_multiplier, old_multiplier)?;
     }
     msg!(
-        "   MineBtc hashpower: {} -> {}",
+        "   degenBTC hashpower: {} -> {}",
         existing_degenbtc_hashpower as f64 / 1e6,
         player_data.degenbtc_hashpower as f64 / 1e6
     );
@@ -1330,7 +1468,7 @@ pub fn int_unstake_hashbeast(ctx: Context<UnstakeHashBeast>) -> Result<()> {
         player_data.lp_hashpower,
     )?;
     msg!(
-        "   Faction minebtc hashpower: {} -> {}",
+        "   Faction degenBTC hashpower: {} -> {}",
         prev_faction_degenbtc_hashpower as f64 / 1e6,
         faction_state.total_degenbtc_hashpower as f64 / 1e6
     );
@@ -1360,6 +1498,10 @@ pub fn int_unstake_hashbeast(ctx: Context<UnstakeHashBeast>) -> Result<()> {
     msg!("🔓 Transferring NFT back to user (unlocking)");
     let custody_seeds = &[HASHBEAST_CUSTODY_SEED, &[ctx.bumps.hashbeast_custody_pda]];
     let signer_seeds = &[&custody_seeds[..]];
+    require!(
+        ctx.accounts.hashbeast_collection.is_some(),
+        ErrorCode::InvalidAccount
+    );
 
     crate::mpl_core_helpers::transfer_mpl_core_asset(
         &ctx.accounts.hashbeast_asset.to_account_info(),
@@ -1394,15 +1536,16 @@ pub fn int_unstake_hashbeast(ctx: Context<UnstakeHashBeast>) -> Result<()> {
 /// the inventory path cannot accept another rebirth.
 ///
 /// Behavior:
-/// 1. Pays the user any `accumulated_val` they had earned (same as before).
-/// 2. If the NFT has already hit `MAX_REBIRTH_COUNT`, burns it.
+/// 1. Pays the user any `accumulated_val` they had earned.
+/// 2. If the NFT has hit `MAX_REBIRTH_COUNT`, or the queue/inventory path is
+///    full, burns the asset.
 /// 3. Otherwise increments rebirth_count, rerolls fresh DNA, and resets
 ///    gameplay state: multiplier, xp, accumulated_val, breed_count, cooldown,
 ///    and parent lineage.
 /// 4. Transfers the mpl-core asset from the user to `inventory_pda` (= the
 ///    `InventoryPool` account, which doubles as the global custody address).
-/// 5. If the country's lootbox queue has room, initializes a `RebornEntry`
-///    with status Lootbox and pushes the asset into that queue.
+/// 5. Initializes a fresh `RebornEntry` with status Lootbox and pushes the
+///    asset into that faction's queue.
 /// 6. Bumps inventory pool counters and emits `HashBeastReborn`.
 pub fn int_rebirth_hashbeast(ctx: Context<RebirthHashBeast>) -> Result<()> {
     crate::log_fn!("hashbeasts", "int_rebirth_hashbeast");
@@ -1427,6 +1570,10 @@ pub fn int_rebirth_hashbeast(ctx: Context<RebirthHashBeast>) -> Result<()> {
         metadata.incubated_player_data == Pubkey::default(),
         ErrorCode::HashBeastAlreadyAtGuard
     );
+    require!(
+        ctx.accounts.hashbeast_collection.is_some(),
+        ErrorCode::InvalidAccount
+    );
 
     msg!(
         "♻️  Rebirthing HashBeast — accumulated_val={}",
@@ -1445,8 +1592,8 @@ pub fn int_rebirth_hashbeast(ctx: Context<RebirthHashBeast>) -> Result<()> {
     if accumulated_val > 0 {
         msg!("💸 Transferring {} degenBTC to user", accumulated_val);
         let seeds = &[
-            MINE_BTC_VAULT_AUTHORITY_SEED,
-            &[ctx.accounts.mine_btc_mining.vault_auth_bump],
+            DEGEN_BTC_VAULT_AUTHORITY_SEED,
+            &[ctx.accounts.dbtc_mining.vault_auth_bump],
         ];
         let signer_seeds = &[&seeds[..]];
 
@@ -1454,7 +1601,7 @@ pub fn int_rebirth_hashbeast(ctx: Context<RebirthHashBeast>) -> Result<()> {
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
                 TransferChecked {
-                    from: ctx.accounts.minebtc_token_vault.to_account_info(),
+                    from: ctx.accounts.dbtc_token_vault.to_account_info(),
                     mint: ctx.accounts.token_mint.to_account_info(),
                     to: ctx.accounts.user_token_account.to_account_info(),
                     authority: ctx.accounts.vault_authority.to_account_info(),
@@ -1462,10 +1609,10 @@ pub fn int_rebirth_hashbeast(ctx: Context<RebirthHashBeast>) -> Result<()> {
                 signer_seeds,
             ),
             accumulated_val,
-            MINEBTC_DECIMALS,
+            DBTC_DECIMALS,
         )?;
 
-        let mining_state = &mut ctx.accounts.mine_btc_mining;
+        let mining_state = &mut ctx.accounts.dbtc_mining;
         mining_state.total_tokens_distributed = mining_state
             .total_tokens_distributed
             .checked_add(accumulated_val)
@@ -1538,7 +1685,7 @@ pub fn int_rebirth_hashbeast(ctx: Context<RebirthHashBeast>) -> Result<()> {
                 original_buy_price: 0,
                 expire_count: 0,
             };
-            crate::instructions::helper::init_pda_account_if_needed::<RebornEntry>(
+            let was_created = crate::instructions::helper::init_pda_account_if_needed::<RebornEntry>(
                 &ctx.accounts.user.to_account_info(),
                 &entry_info,
                 &ctx.accounts.system_program.to_account_info(),
@@ -1546,6 +1693,7 @@ pub fn int_rebirth_hashbeast(ctx: Context<RebirthHashBeast>) -> Result<()> {
                 RebornEntry::LEN,
                 &blank,
             )?;
+            require!(was_created, ErrorCode::InvalidState);
         }
 
         // Push asset into the next slot in the country queue.
@@ -1633,6 +1781,7 @@ pub fn int_rebirth_hashbeast(ctx: Context<RebirthHashBeast>) -> Result<()> {
 pub fn int_breed_hashbeasts(ctx: Context<BreedHashBeast>) -> Result<()> {
     crate::log_fn!("hashbeasts", "int_breed_hashbeasts");
     require!(!ctx.accounts.global_config.is_paused, ErrorCode::GamePaused);
+
     // Block self-breeding: passing the same asset as mom and dad would
     // increment breed_count only once (second metadata mutation overwrites
     // the first on serialize), bypassing the two-parent requirement.
@@ -1641,6 +1790,39 @@ pub fn int_breed_hashbeasts(ctx: Context<BreedHashBeast>) -> Result<()> {
         ErrorCode::InvalidParameters
     );
     let hashbeast_config = &mut ctx.accounts.hashbeast_config;
+    // Breed mints a new asset; the canonical collection account must be
+    // supplied so MPL Core attaches it to the collection. This is checked in
+    // the handler rather than as an Anchor account constraint to keep
+    // BreedHashBeast::try_accounts under the SBF stack ceiling.
+    let hashbeast_collection = ctx
+        .accounts
+        .hashbeast_collection
+        .as_ref()
+        .ok_or(ErrorCode::InvalidAccount)?;
+    require_keys_eq!(
+        hashbeast_collection.key(),
+        hashbeast_config.hashbeast_collection,
+        ErrorCode::InvalidAccount
+    );
+    require_keys_eq!(
+        ctx.accounts.dbtc_token_vault.key(),
+        ctx.accounts.dbtc_mining.dbtc_token_vault,
+        ErrorCode::InvalidAccount
+    );
+    require_keys_eq!(
+        ctx.accounts.dbtc_token_vault.mint,
+        ctx.accounts.token_mint.key(),
+        ErrorCode::InvalidMint
+    );
+    require_keys_eq!(
+        ctx.accounts.dbtc_token_vault.owner,
+        ctx.accounts.vault_authority.key(),
+        ErrorCode::Unauthorized
+    );
+    require!(
+        ctx.accounts.token_mint.decimals == DBTC_DECIMALS,
+        ErrorCode::InvalidMint
+    );
     let mom = &mut ctx.accounts.mom_metadata;
     let dad = &mut ctx.accounts.dad_metadata;
     let clock = Clock::get()?;
@@ -1743,6 +1925,18 @@ pub fn int_breed_hashbeasts(ctx: Context<BreedHashBeast>) -> Result<()> {
         hashbeast_config.breed_curve_a,
         hashbeast_config.total_hashbeasts_minted,
     )?;
+    // Reject stale floor data. The anchor returned by `current_anchor()` is
+    // whatever was at `head` last — without checking `last_snapshot_at` we'd
+    // happily price against an anchor from months ago if the floor pipeline
+    // stalled. Hard-revert past the grace window so breeding can't undercut
+    // the "always above floor" invariant.
+    let floor_age = current_time
+        .checked_sub(floor_history.last_snapshot_at)
+        .ok_or(ErrorCode::BreedFloorAnchorUnavailable)?;
+    require!(
+        floor_history.last_snapshot_at > 0 && floor_age <= BREED_FLOOR_MAX_AGE_SECS,
+        ErrorCode::BreedFloorAnchorUnavailable
+    );
     let floor_anchor = floor_history.current_anchor();
     require!(
         floor_anchor >= SWEEP_MIN_ANCHOR_LAMPORTS,
@@ -1770,9 +1964,9 @@ pub fn int_breed_hashbeasts(ctx: Context<BreedHashBeast>) -> Result<()> {
     let dbtc_value_lamports = breed_cost
         .checked_sub(sol_due)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    let dbtc_price_lamports = ctx.accounts.mine_btc_mining.recent_price;
+    let dbtc_price_lamports = ctx.accounts.dbtc_mining.recent_price;
     require!(dbtc_price_lamports > 0, ErrorCode::DbtcPriceUnavailable);
-    let dbtc_due = ceil_mul_div_u64(dbtc_value_lamports, MINEBTC_BASE_UNITS, dbtc_price_lamports)?;
+    let dbtc_due = ceil_mul_div_u64(dbtc_value_lamports, DBTC_BASE_UNITS, dbtc_price_lamports)?;
     require!(dbtc_due > 0, ErrorCode::InvalidAmount);
 
     let sol_fee_recipient = ceil_mul_div_u64(
@@ -1829,12 +2023,12 @@ pub fn int_breed_hashbeasts(ctx: Context<BreedHashBeast>) -> Result<()> {
                 TransferChecked {
                     from: ctx.accounts.user_token_account.to_account_info(),
                     mint: ctx.accounts.token_mint.to_account_info(),
-                    to: ctx.accounts.minebtc_token_vault.to_account_info(),
+                    to: ctx.accounts.dbtc_token_vault.to_account_info(),
                     authority: ctx.accounts.user.to_account_info(),
                 },
             ),
             dbtc_to_vault,
-            MINEBTC_DECIMALS,
+            DBTC_DECIMALS,
         )?;
     }
     msg!(
@@ -1864,7 +2058,7 @@ pub fn int_breed_hashbeasts(ctx: Context<BreedHashBeast>) -> Result<()> {
         .total_hashbeasts_minted
         .checked_add(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    let name = format!("Bitcoin hashbeasts #{}", current_mint_number);
+    let name = format!("hashbeast #{}", current_mint_number);
     let uri = format!(
         "https://assets.minebtc.fun/hashbeasts/{}.json",
         ctx.accounts.offspring_asset.key()
@@ -2013,7 +2207,7 @@ pub fn generate_hashbeast_data(
         Clock::get()?.slot + slot_offset,
         faction_id,
     )?;
-    let name = format!("Bitcoin hashbeasts #{}", mint_number);
+    let name = format!("hashbeast #{}", mint_number);
     let uri = format!("https://assets.minebtc.fun/hashbeasts/{}.json", asset_key);
     let multiplier = BASE_MULTIPLIER;
 
@@ -2027,6 +2221,10 @@ fn add_tickets_to_player(
     ticket_tier_index: u8,
     price: u64,
 ) -> Result<u64> {
+    require!(
+        player_data.free_tickets.len() == player_data.free_tickets_remaining.len(),
+        ErrorCode::InvalidState
+    );
     require!(
         (ticket_tier_index as usize) < hashbeast_mint_config.ticket_tiers.len(),
         ErrorCode::InvalidParameters
@@ -2053,7 +2251,12 @@ fn add_tickets_to_player(
         .iter()
         .position(|&v| v == ticket_value)
     {
-        player_data.free_tickets_remaining[index] += ticket_count;
+        // Checked add — this counter is value accounting (each ticket can be
+        // redeemed for a free bet of `ticket_value` lamports of points), so a
+        // wrap would silently print free game value.
+        player_data.free_tickets_remaining[index] = player_data.free_tickets_remaining[index]
+            .checked_add(ticket_count)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
     } else {
         require!(
             player_data.free_tickets.len() < PlayerData::MAX_TICKET_TYPES,
@@ -2156,6 +2359,30 @@ fn remove_hashbeast_multiplier(
 mod tests {
     use super::*;
 
+    fn blank_hashbeast_metadata() -> HashBeastMetadata {
+        HashBeastMetadata {
+            mint: Pubkey::default(),
+            mom: Pubkey::default(),
+            dad: Pubkey::default(),
+            breed_count: 0,
+            rebirth_count: 0,
+            cooldown_end: 0,
+            created_at: 0,
+            faction_id: 0,
+            multiplier: BASE_MULTIPLIER,
+            accumulated_val: 0,
+            dna: [0u8; 32],
+            incubated_player_data: Pubkey::default(),
+            last_update_ts: 0,
+            xp: 0,
+            bump: 0,
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // Existing tests
+    // ------------------------------------------------------------------------
+
     #[test]
     fn multiplier_cap_is_reversible_with_raw_sum() {
         let starting_raw = BASE_MULTIPLIER as u64 + (1_900u64 * MAX_STAKED_HASHBEASTS as u64);
@@ -2241,6 +2468,88 @@ mod tests {
         assert!(validate_genesis_faction_cap(&mint_config, 3, 1).is_ok());
         assert!(validate_genesis_faction_cap(&mint_config, 3, 2).is_err());
     }
+
+    // ------------------------------------------------------------------------
+    // ceil_mul_div_u64
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn ceil_mul_div_exact_division() {
+        assert_eq!(ceil_mul_div_u64(10, 1, 2).unwrap(), 5);
+    }
+
+    #[test]
+    fn ceil_mul_div_needs_ceiling() {
+        assert_eq!(ceil_mul_div_u64(10, 1, 3).unwrap(), 4); // 10/3 = 3.33 → 4
+    }
+
+    #[test]
+    fn ceil_mul_div_zero_numerator() {
+        assert_eq!(ceil_mul_div_u64(0, 100, 3).unwrap(), 0);
+    }
+
+    #[test]
+    fn ceil_mul_div_division_by_zero_errors() {
+        assert!(ceil_mul_div_u64(10, 1, 0).is_err());
+    }
+
+    // ------------------------------------------------------------------------
+    // shares_known_parent
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn shares_known_parent_when_shared() {
+        let mut a = blank_hashbeast_metadata();
+        let mut b = blank_hashbeast_metadata();
+        a.mom = Pubkey::new_from_array([1u8; 32]);
+        b.dad = Pubkey::new_from_array([1u8; 32]);
+        assert!(shares_known_parent(&a, &b));
+    }
+
+    #[test]
+    fn shares_known_parent_when_no_shared() {
+        let a = blank_hashbeast_metadata();
+        let b = blank_hashbeast_metadata();
+        assert!(!shares_known_parent(&a, &b));
+    }
+
+    #[test]
+    fn shares_known_parent_ignores_default() {
+        let mut a = blank_hashbeast_metadata();
+        let mut b = blank_hashbeast_metadata();
+        a.mom = Pubkey::new_from_array([1u8; 32]);
+        b.mom = Pubkey::default();
+        b.dad = Pubkey::default();
+        assert!(!shares_known_parent(&a, &b));
+    }
+
+    // ------------------------------------------------------------------------
+    // metadata_rebirth_count
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn metadata_rebirth_count_prefers_field_when_higher() {
+        let mut meta = blank_hashbeast_metadata();
+        meta.rebirth_count = 5;
+        crate::genescience::set_rebirth_count(&mut meta.dna, 3).unwrap();
+        assert_eq!(metadata_rebirth_count(&meta), 5);
+    }
+
+    #[test]
+    fn metadata_rebirth_count_uses_dna_when_higher() {
+        let mut meta = blank_hashbeast_metadata();
+        meta.rebirth_count = 2;
+        crate::genescience::set_rebirth_count(&mut meta.dna, 4).unwrap();
+        assert_eq!(metadata_rebirth_count(&meta), 4);
+    }
+
+    #[test]
+    fn metadata_rebirth_count_equal_values() {
+        let mut meta = blank_hashbeast_metadata();
+        meta.rebirth_count = 3;
+        crate::genescience::set_rebirth_count(&mut meta.dna, 3).unwrap();
+        assert_eq!(metadata_rebirth_count(&meta), 3);
+    }
 }
 
 // ----------------------------------------------------------------------------------------
@@ -2318,9 +2627,18 @@ pub struct MintHashBeast<'info> {
     /// CHECK: Will be created via MPL Core CPI
     pub hashbeast_asset: UncheckedAccount<'info>,
 
-    /// Optional collection account for the HashBeast
-    /// CHECK: Optional collection
-    #[account(mut)]
+    /// Collection account for the HashBeast. Address-pinned to the official
+    /// Core collection recorded in `hashbeast_config.hashbeast_collection`
+    /// — without this binding, callers could mint NFT assets outside the
+    /// canonical collection, breaking identity / royalties / marketplace
+    /// gating. Kept `Option` (rather than required) only to preserve the
+    /// existing SDK signature; mint handlers add a runtime `require!(...)`
+    /// that the collection is present.
+    /// CHECK: Address-constrained to the canonical collection.
+    #[account(
+        mut,
+        address = hashbeast_config.hashbeast_collection @ ErrorCode::InvalidAccount,
+    )]
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
@@ -2340,6 +2658,7 @@ pub struct MintHashBeast<'info> {
     pub collection_authority: UncheckedAccount<'info>,
 
     /// CHECK: Metaplex Core program
+    #[account(address = MPL_CORE_PROGRAM_ID @ ErrorCode::InvalidMplCoreProgram)]
     pub mpl_core_program: UncheckedAccount<'info>,
 
     pub associated_token_program: Program<'info, AssociatedToken>,
@@ -2404,7 +2723,10 @@ pub struct BatchMintHashBeast<'info> {
     pub wsol_mint: UncheckedAccount<'info>,
 
     /// CHECK: HashBeast collection (Metaplex Core)
-    #[account(mut)]
+    #[account(
+        mut,
+        address = hashbeast_config.hashbeast_collection @ ErrorCode::InvalidAccount,
+    )]
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     /// CHECK: Collection authority PDA
@@ -2415,6 +2737,7 @@ pub struct BatchMintHashBeast<'info> {
     pub collection_authority: UncheckedAccount<'info>,
 
     /// CHECK: Metaplex Core program
+    #[account(address = MPL_CORE_PROGRAM_ID @ ErrorCode::InvalidMplCoreProgram)]
     pub mpl_core_program: UncheckedAccount<'info>,
 
     pub associated_token_program: Program<'info, AssociatedToken>,
@@ -2481,9 +2804,18 @@ pub struct AdminMintHashBeast<'info> {
     /// CHECK: Will be created via MPL Core CPI
     pub hashbeast_asset: UncheckedAccount<'info>,
 
-    /// Optional collection account for the HashBeast
-    /// CHECK: Optional collection
-    #[account(mut)]
+    /// Collection account for the HashBeast. Address-pinned to the official
+    /// Core collection recorded in `hashbeast_config.hashbeast_collection`
+    /// — without this binding, callers could mint NFT assets outside the
+    /// canonical collection, breaking identity / royalties / marketplace
+    /// gating. Kept `Option` (rather than required) only to preserve the
+    /// existing SDK signature; mint handlers add a runtime `require!(...)`
+    /// that the collection is present.
+    /// CHECK: Address-constrained to the canonical collection.
+    #[account(
+        mut,
+        address = hashbeast_config.hashbeast_collection @ ErrorCode::InvalidAccount,
+    )]
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
@@ -2503,6 +2835,7 @@ pub struct AdminMintHashBeast<'info> {
     pub collection_authority: UncheckedAccount<'info>,
 
     /// CHECK: Metaplex Core program
+    #[account(address = MPL_CORE_PROGRAM_ID @ ErrorCode::InvalidMplCoreProgram)]
     pub mpl_core_program: UncheckedAccount<'info>,
 
     pub system_program: Program<'info, System>,
@@ -2552,9 +2885,18 @@ pub struct WhitelistMintHashBeast<'info> {
     /// CHECK: Will be created via MPL Core CPI
     pub hashbeast_asset: UncheckedAccount<'info>,
 
-    /// Optional collection account for the HashBeast
-    /// CHECK: Optional collection
-    #[account(mut)]
+    /// Collection account for the HashBeast. Address-pinned to the official
+    /// Core collection recorded in `hashbeast_config.hashbeast_collection`
+    /// — without this binding, callers could mint NFT assets outside the
+    /// canonical collection, breaking identity / royalties / marketplace
+    /// gating. Kept `Option` (rather than required) only to preserve the
+    /// existing SDK signature; mint handlers add a runtime `require!(...)`
+    /// that the collection is present.
+    /// CHECK: Address-constrained to the canonical collection.
+    #[account(
+        mut,
+        address = hashbeast_config.hashbeast_collection @ ErrorCode::InvalidAccount,
+    )]
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
@@ -2593,27 +2935,37 @@ pub struct StakeHashBeast<'info> {
     )]
     pub player_data: Account<'info, PlayerData>,
 
-    #[account(mut)]
-    pub faction_state: Account<'info, FactionState>,
-
     #[account(
         mut,
-        seeds = [HODL_POOL_SEED.as_ref()],
-        bump
+        constraint = faction_state.faction_id == player_data.faction_id @ ErrorCode::InvalidFactionId
     )]
-    pub hodl_pool: Account<'info, HodlPool>,
+    pub faction_state: Account<'info, FactionState>,
 
     #[account(seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
     pub tax_config: Account<'info, TaxConfig>,
+
+    /// Read-only — anchors the `hashbeast_collection` address constraint to
+    /// the canonical collection set by admin.
+    #[account(seeds = [HASHBEAST_CONFIG_SEED.as_ref()], bump = hashbeast_config.bump)]
+    pub hashbeast_config: Box<Account<'info, HashBeastConfig>>,
 
     /// Metaplex Core asset (source of truth for ownership)
     #[account(mut)]
     /// CHECK: Verified via get_mpl_core_owner helper
     pub hashbeast_asset: UncheckedAccount<'info>,
 
-    /// Optional collection account for the HashBeast
-    /// CHECK: Optional collection
-    #[account(mut)]
+    /// Collection account for the HashBeast. Address-pinned to the official
+    /// Core collection recorded in `hashbeast_config.hashbeast_collection`
+    /// — without this binding, callers could mint NFT assets outside the
+    /// canonical collection, breaking identity / royalties / marketplace
+    /// gating. Kept `Option` (rather than required) only to preserve the
+    /// existing SDK signature; mint handlers add a runtime `require!(...)`
+    /// that the collection is present.
+    /// CHECK: Address-constrained to the canonical collection.
+    #[account(
+        mut,
+        address = hashbeast_config.hashbeast_collection @ ErrorCode::InvalidAccount,
+    )]
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
@@ -2633,6 +2985,7 @@ pub struct StakeHashBeast<'info> {
     pub hashbeast_custody_pda: UncheckedAccount<'info>,
 
     /// CHECK: Metaplex Core program
+    #[account(address = MPL_CORE_PROGRAM_ID @ ErrorCode::InvalidMplCoreProgram)]
     pub mpl_core_program: UncheckedAccount<'info>,
 
     #[account(mut)]
@@ -2651,27 +3004,37 @@ pub struct UnstakeHashBeast<'info> {
     )]
     pub player_data: Account<'info, PlayerData>,
 
-    #[account(mut)]
-    pub faction_state: Account<'info, FactionState>,
-
     #[account(
         mut,
-        seeds = [HODL_POOL_SEED.as_ref()],
-        bump
+        constraint = faction_state.faction_id == player_data.faction_id @ ErrorCode::InvalidFactionId
     )]
-    pub hodl_pool: Account<'info, HodlPool>,
+    pub faction_state: Account<'info, FactionState>,
 
     #[account(seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
     pub tax_config: Account<'info, TaxConfig>,
+
+    /// Read-only — anchors the `hashbeast_collection` address constraint to
+    /// the canonical collection set by admin.
+    #[account(seeds = [HASHBEAST_CONFIG_SEED.as_ref()], bump = hashbeast_config.bump)]
+    pub hashbeast_config: Box<Account<'info, HashBeastConfig>>,
 
     /// Metaplex Core asset (currently locked in custody PDA)
     #[account(mut)]
     /// CHECK: Verified via get_mpl_core_owner helper
     pub hashbeast_asset: UncheckedAccount<'info>,
 
-    /// Optional collection account for the HashBeast
-    /// CHECK: Optional collection
-    #[account(mut)]
+    /// Collection account for the HashBeast. Address-pinned to the official
+    /// Core collection recorded in `hashbeast_config.hashbeast_collection`
+    /// — without this binding, callers could mint NFT assets outside the
+    /// canonical collection, breaking identity / royalties / marketplace
+    /// gating. Kept `Option` (rather than required) only to preserve the
+    /// existing SDK signature; mint handlers add a runtime `require!(...)`
+    /// that the collection is present.
+    /// CHECK: Address-constrained to the canonical collection.
+    #[account(
+        mut,
+        address = hashbeast_config.hashbeast_collection @ ErrorCode::InvalidAccount,
+    )]
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     #[account(
@@ -2691,6 +3054,7 @@ pub struct UnstakeHashBeast<'info> {
     pub hashbeast_custody_pda: UncheckedAccount<'info>,
 
     /// CHECK: Metaplex Core program
+    #[account(address = MPL_CORE_PROGRAM_ID @ ErrorCode::InvalidMplCoreProgram)]
     pub mpl_core_program: UncheckedAccount<'info>,
 
     #[account(mut)]
@@ -2721,13 +3085,24 @@ pub struct RebirthHashBeast<'info> {
     #[account(mut)]
     pub hashbeast_asset: UncheckedAccount<'info>,
 
-    /// CHECK: Optional HashBeast collection account. Required by mpl-core whenever
-    /// the asset belongs to a collection (which all HashBeasts do post-genesis).
-    #[account(mut)]
+    /// Read-only config that pins the canonical HashBeast collection.
+    #[account(
+        seeds = [HASHBEAST_CONFIG_SEED.as_ref()],
+        bump = hashbeast_config.bump,
+    )]
+    pub hashbeast_config: Box<Account<'info, HashBeastConfig>>,
+
+    /// CHECK: HashBeast collection account. The Option wrapper matches the
+    /// mpl-core helper API, but the handler requires Some and Anchor
+    /// address-checks it against HashBeastConfig.
+    #[account(
+        mut,
+        address = hashbeast_config.hashbeast_collection @ ErrorCode::InvalidAccount,
+    )]
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     /// CHECK: Metaplex Core program
-    #[account(address = MPL_CORE_PROGRAM_ID)]
+    #[account(address = MPL_CORE_PROGRAM_ID @ ErrorCode::InvalidMplCoreProgram)]
     pub mpl_core_program: UncheckedAccount<'info>,
 
     /// Global inventory pool — counters bumped here. Same PDA acts as the
@@ -2774,22 +3149,23 @@ pub struct RebirthHashBeast<'info> {
     #[account(
         mut,
         seeds = [MINE_BTC_MINING_SEED.as_ref()],
-        bump = mine_btc_mining.bump,
+        bump = dbtc_mining.bump,
     )]
-    pub mine_btc_mining: Box<Account<'info, MineBtcMining>>,
+    pub dbtc_mining: Box<Account<'info, DegenBtcMining>>,
 
     #[account(
         mut,
-        seeds = [MINE_BTC_VAULT_SEED, mine_btc_mining.key().as_ref()],
+        seeds = [DEGEN_BTC_VAULT_SEED, dbtc_mining.key().as_ref()],
         bump,
         token::mint = token_mint,
         token::authority = vault_authority,
+        constraint = dbtc_token_vault.key() == dbtc_mining.dbtc_token_vault @ ErrorCode::InvalidAccount,
     )]
-    pub minebtc_token_vault: InterfaceAccount<'info, TokenAccount2022>,
+    pub dbtc_token_vault: InterfaceAccount<'info, TokenAccount2022>,
 
     #[account(
-        seeds = [MINE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
-        bump
+        seeds = [DEGEN_BTC_VAULT_AUTHORITY_SEED.as_ref()],
+        bump = dbtc_mining.vault_auth_bump
     )]
     /// CHECK: Vault authority PDA
     pub vault_authority: UncheckedAccount<'info>,
@@ -2801,7 +3177,10 @@ pub struct RebirthHashBeast<'info> {
     )]
     pub user_token_account: InterfaceAccount<'info, TokenAccount2022>,
 
-    #[account(address = minebtc_token_vault.mint)]
+    #[account(
+        address = dbtc_token_vault.mint,
+        constraint = token_mint.decimals == DBTC_DECIMALS @ ErrorCode::InvalidMint,
+    )]
     pub token_mint: InterfaceAccount<'info, Mint2022>,
 
     pub token_program: Program<'info, Token2022>,
@@ -2854,23 +3233,20 @@ pub struct BreedHashBeast<'info> {
     #[account(
         mut,
         seeds = [MINE_BTC_MINING_SEED.as_ref()],
-        bump = mine_btc_mining.bump,
+        bump = dbtc_mining.bump,
     )]
-    pub mine_btc_mining: Box<Account<'info, MineBtcMining>>,
+    pub dbtc_mining: Box<Account<'info, DegenBtcMining>>,
 
     #[account(
         mut,
-        seeds = [MINE_BTC_VAULT_SEED, mine_btc_mining.key().as_ref()],
+        seeds = [DEGEN_BTC_VAULT_SEED, dbtc_mining.key().as_ref()],
         bump,
-        token::mint = token_mint,
-        token::authority = vault_authority,
-        constraint = minebtc_token_vault.key() == mine_btc_mining.minebtc_token_vault @ ErrorCode::InvalidAccount,
     )]
-    pub minebtc_token_vault: Box<InterfaceAccount<'info, TokenAccount2022>>,
+    pub dbtc_token_vault: Box<InterfaceAccount<'info, TokenAccount2022>>,
 
     #[account(
-        seeds = [MINE_BTC_VAULT_AUTHORITY_SEED.as_ref()],
-        bump = mine_btc_mining.vault_auth_bump,
+        seeds = [DEGEN_BTC_VAULT_AUTHORITY_SEED.as_ref()],
+        bump = dbtc_mining.vault_auth_bump,
     )]
     /// CHECK: Vault authority PDA for the mining token vault.
     pub vault_authority: UncheckedAccount<'info>,
@@ -2882,11 +3258,7 @@ pub struct BreedHashBeast<'info> {
     )]
     pub user_token_account: Box<InterfaceAccount<'info, TokenAccount2022>>,
 
-    #[account(
-        mut,
-        address = minebtc_token_vault.mint,
-        constraint = token_mint.decimals == MINEBTC_DECIMALS @ ErrorCode::InvalidMint,
-    )]
+    #[account(mut)]
     pub token_mint: Box<InterfaceAccount<'info, Mint2022>>,
 
     /// CHECK: Mom NFT asset - Verified via get_mpl_core_owner
@@ -2926,7 +3298,9 @@ pub struct BreedHashBeast<'info> {
     )]
     pub offspring_metadata: Box<Account<'info, HashBeastMetadata>>,
 
-    /// CHECK: HashBeast collection
+    /// CHECK: HashBeast collection. Handler address-checks against
+    /// `hashbeast_config.hashbeast_collection` to keep generated account
+    /// validation below the SBF stack ceiling.
     #[account(mut)]
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
@@ -2935,6 +3309,7 @@ pub struct BreedHashBeast<'info> {
     pub collection_authority: UncheckedAccount<'info>,
 
     /// CHECK: Metaplex Core program
+    #[account(address = MPL_CORE_PROGRAM_ID @ ErrorCode::InvalidMplCoreProgram)]
     pub mpl_core_program: UncheckedAccount<'info>,
 
     pub token_program_2022: Program<'info, Token2022>,
