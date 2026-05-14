@@ -139,14 +139,10 @@ const COLOR_DIM = '\x1b[90m%s\x1b[0m';
         // 1. Create AMM Config (skip for official Raydium - use existing configs)
         await createAmmConfig(connection, cpProgram, deployer, deploymentData, deploymentPath, RAYDIUM_CP_PROGRAM_ID, useOfficialProgram);
         
-        // 2. Initialize Pool :: Automatically adds initial liquidity
+        // 2. Initialize Pool :: Automatically adds configured launch liquidity
         await initializePool(connection, cpProgram, deployer, deploymentData, deploymentPath, RAYDIUM_CP_PROGRAM_ID);
-        
-        // 3. Add Initial Liquidity
-        await addInitialLiquidity(connection, cpProgram, deployer, deploymentData, deploymentPath);
-        // return
-        
-        // 4. Burn LP Tokens (if configured)
+
+        // 3. Burn LP Tokens (if configured)
         if (config.raydium.burn_lp_tokens) {
             await burnLpTokens(connection, deployer, deploymentData, deploymentPath);
         }
@@ -214,8 +210,8 @@ function validateConfiguration() {
         if (!config.raydium.initial_sol_amount || config.raydium.initial_sol_amount <= 0) {
             errors.push('raydium.initial_sol_amount must be greater than 0');
         }
-        if (!config.raydium.initial_dbtc_percentage || config.raydium.initial_dbtc_percentage <= 0 || config.raydium.initial_dbtc_percentage > 100) {
-            errors.push('raydium.initial_dbtc_percentage must be between 0 and 100');
+        if (!Number.isInteger(config.raydium.initial_dbtc_amount) || config.raydium.initial_dbtc_amount <= 0) {
+            errors.push('raydium.initial_dbtc_amount must be a positive whole-token amount');
         }
         if (config.raydium.open_time === undefined) {
             errors.push('raydium.open_time is required (use 0 for immediate opening)');
@@ -305,9 +301,12 @@ async function setupDeployerAccount(connection) {
     const balance = await getSolanaBalance(connection, deployer.publicKey);
     console.log('\x1b[36m%s\x1b[0m', '💰 Deployer Balance:', balance / 1e9, 'SOL');
     
-    if (balance < config.raydium.create_pool_fee + config.raydium.initial_sol_amount) {
+    const poolWrapBufferLamports = 100000000;
+    const requiredLamports = config.raydium.create_pool_fee + config.raydium.initial_sol_amount + poolWrapBufferLamports;
+
+    if (balance < requiredLamports) {
         console.error('\x1b[31m%s\x1b[0m', '❌ Insufficient SOL balance for pool creation');
-        console.log('\x1b[33m%s\x1b[0m', `⚠️ Required: ${(config.raydium.create_pool_fee + config.raydium.initial_sol_amount) / 1e9} SOL`);
+        console.log('\x1b[33m%s\x1b[0m', `⚠️ Required: ${requiredLamports / 1e9} SOL`);
         console.log('\x1b[33m%s\x1b[0m', `⚠️ Available: ${balance / 1e9} SOL`);
         
         if (CLUSTER.includes('devnet')) {
@@ -315,7 +314,7 @@ async function setupDeployerAccount(connection) {
             try {
                 const shortfall = Math.max(
                     0,
-                    config.raydium.create_pool_fee + config.raydium.initial_sol_amount - balance
+                    requiredLamports - balance
                 );
                 const airdropAmount = config.dev?.airdrop_amount
                     ?? Math.max(shortfall + LAMPORTS_PER_SOL / 2, LAMPORTS_PER_SOL);
@@ -589,9 +588,10 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
         const currentWsolBalance = await connection.getTokenAccountBalance(creatorWsolAccount.address);
         console.log(COLOR_DIM, `🔍 Current WSOL balance: ${currentWsolBalance.value.uiAmount || 0} WSOL`);
 
-        // Calculate pool amounts from config
+        // Calculate pool amounts from config. DEGEN_BTC is specified as a whole-token
+        // amount so launch pricing is explicit and not coupled to total supply.
         const initialDbtcAmount = new BN(
-            Math.floor(config.token.initial_supply * Math.pow(10, config.token.decimals) * config.raydium.initial_dbtc_percentage / 100)
+            (BigInt(config.raydium.initial_dbtc_amount) * (10n ** BigInt(config.token.decimals))).toString()
         );
         const initialSolAmount = new BN(config.raydium.initial_sol_amount);
         
@@ -686,8 +686,9 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
             const dbtcBalance = await connection.getTokenAccountBalance(creatorDbtcAccount);
             console.log(COLOR_DIM, `🔍 Creator DEGEN_BTC balance: ${dbtcBalance.value.uiAmount} DEGEN_BTC`);
             
-            if (parseFloat(dbtcBalance.value.amount) < initialDbtcAmount.toNumber()) {
-                console.error(COLOR_ERROR, `❌ Insufficient DEGEN_BTC balance. Need: ${initialDbtcAmount.toNumber() / Math.pow(10, config.token.decimals)}, Have: ${dbtcBalance.value.uiAmount}`);
+            const dbtcBalanceAmount = new BN(dbtcBalance.value.amount);
+            if (dbtcBalanceAmount.lt(initialDbtcAmount)) {
+                console.error(COLOR_ERROR, `❌ Insufficient DEGEN_BTC balance. Need: ${config.raydium.initial_dbtc_amount}, Have: ${dbtcBalance.value.uiAmount}`);
                 throw new Error('Insufficient DEGEN_BTC balance');
             }
         } catch (error) {
@@ -867,6 +868,7 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
                 wrapTxid: wrapTxid,
                 initialDbtcAmount: initialDbtcAmount.toString(),
                 initialSolAmount: initialSolAmount.toString(),
+                initialDbtcWholeTokens: config.raydium.initial_dbtc_amount,
                 openTime: openTime,
                 timestamp: new Date().toISOString()
             };
@@ -904,244 +906,6 @@ async function initializePool(connection, cpProgram, deployer, deploymentData, d
         }
     } else {
         console.log(COLOR_INFO, 'ℹ️ DEGEN_BTC-SOL pool already exists');
-            }
-}
-
-/**
- * Adds additional liquidity to the pool (optional, for post-creation liquidity)
- * @param {Connection} connection - Solana connection
- * @param {Program} cpProgram - Raydium CP program instance
- * @param {Keypair} deployer - Deployer keypair
- * @param {Object} deploymentData - Deployment state data
- * @param {string} deploymentPath - Path to deployment file
- */
-async function addInitialLiquidity(connection, cpProgram, deployer, deploymentData, deploymentPath) {
-    // Check if already added
-    if (deploymentData.dbtc_sol_liquidity_added) {
-        console.log(COLOR_INFO, 'ℹ️ Liquidity already added to pool');
-        console.log(COLOR_INFO, '🔑 LP Tokens Received:', deploymentData.dbtc_sol_liquidity_added.lpTokensReceived);
-        return;
-    }
-
-    // Get DEGEN_BTC mint
-    const minebtcMint = new PublicKey(deploymentData.dbtc_mint_address);
-
-    // =================== [ ADDING LIQUIDITY TO POOL ] ===================
-    if (!deploymentData.dbtc_sol_liquidity_added) {
-        console.log(COLOR_STEP, '\n=================== [ ADDING LIQUIDITY TO POOL ] ===================');
-        console.log(COLOR_INFO, '💧 Adding liquidity to DEGEN_BTC-SOL pool...');
-        
-        // Get token accounts (recreate them since they were in pool creation scope)
-        const wsolMintKey = new PublicKey(WSOL_MINT);
-        const creatorWsolAccount = await getOrCreateAssociatedTokenAccount(
-            connection,
-            deployer,
-            wsolMintKey,
-            deployer.publicKey
-        );
-        
-        const creatorDbtcAccount = await getAssociatedTokenAddress(
-            minebtcMint,
-            deployer.publicKey,
-            false,
-            anchor_spl.TOKEN_2022_PROGRAM_ID
-        );
-        
-        // Get pool data from deployment
-        const poolData = deploymentData.dbtc_sol_pool_created;
-        const poolStatePDA = new PublicKey(poolData.poolStatePDA);
-        const lpMintPDA = new PublicKey(poolData.lpMintPDA);
-        const token0VaultPDA = new PublicKey(poolData.token0VaultPDA);
-        const token1VaultPDA = new PublicKey(poolData.token1VaultPDA);
-        const authorityPDA = new PublicKey(poolData.authorityPDA);
-        const isDbtcToken0 = poolData.isDbtcToken0;
-        
-        const creatorLpAccount = await getAssociatedTokenAddress(
-            lpMintPDA,
-            deployer.publicKey
-        );
-        
-        // Read the pool's CURRENT reserves + LP supply on-chain so the
-        // deposit ratio matches the pool exactly. Hardcoding amounts
-        // here used to fail with ExceededSlippage (Raydium 0x1775)
-        // whenever the create-pool seed ratio drifted from the chosen
-        // deepening size. The deposit ix takes `lp_amount` and derives
-        // needed_tokenN = lp_amount * reserveN / lp_supply, so we just
-        // size `lp_amount` to whatever fraction of the pool we want and
-        // pass the matching maxes (with a small fee + slippage cushion).
-        const targetSolBaseUnits = new BN("5000000000"); // deepen by 5 WSOL
-
-        const wsolMintInfo = wsolMintKey;
-        const token0VaultAcc = await anchor_spl.getAccount(
-            connection,
-            token0VaultPDA,
-            undefined,
-            isDbtcToken0 ? anchor_spl.TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID
-        );
-        const token1VaultAcc = await anchor_spl.getAccount(
-            connection,
-            token1VaultPDA,
-            undefined,
-            isDbtcToken0 ? TOKEN_PROGRAM_ID : anchor_spl.TOKEN_2022_PROGRAM_ID
-        );
-        const lpMintInfo = await anchor_spl.getMint(connection, lpMintPDA);
-        const lpSupply = new BN(lpMintInfo.supply.toString());
-        const token0Reserve = new BN(token0VaultAcc.amount.toString());
-        const token1Reserve = new BN(token1VaultAcc.amount.toString());
-        const wsolReserve = isDbtcToken0 ? token1Reserve : token0Reserve;
-        const dbtcReserve = isDbtcToken0 ? token0Reserve : token1Reserve;
-
-        if (wsolReserve.isZero() || dbtcReserve.isZero() || lpSupply.isZero()) {
-            throw new Error("Pool reserves / LP supply look empty — pool create probably failed.");
-        }
-
-        // lp_amount = targetSolBaseUnits / wsolReserve * lpSupply (proportional share)
-        const lpAmount = targetSolBaseUnits.mul(lpSupply).div(wsolReserve);
-        const requiredWsol = lpAmount.mul(wsolReserve).div(lpSupply);
-        const requiredDbtc = lpAmount.mul(dbtcReserve).div(lpSupply);
-
-        // Cushion: dBTC has a 0.1% Token-2022 transfer fee + we add 0.4%
-        // pure slippage. WSOL has no fee, so 0.5% slippage is plenty.
-        const maxWsol = requiredWsol.mul(new BN(1005)).div(new BN(1000));
-        const maxDbtc = requiredDbtc.mul(new BN(1015)).div(new BN(1000));
-
-        const liquidityAmount0 = isDbtcToken0 ? maxDbtc : maxWsol;
-        const liquidityAmount1 = isDbtcToken0 ? maxWsol : maxDbtc;
-
-        console.log(COLOR_DIM, `🔍 Pool ratio (live):`);
-        console.log(COLOR_DIM, `   WSOL reserve: ${wsolReserve.toString()} (${wsolReserve.toNumber() / 1e9} WSOL)`);
-        console.log(COLOR_DIM, `   DEGEN_BTC reserve: ${dbtcReserve.toString()} (${dbtcReserve.toNumber() / 1e6} dBTC)`);
-        console.log(COLOR_DIM, `   LP supply: ${lpSupply.toString()}`);
-        console.log(COLOR_DIM, `🔍 Computed deposit (target = 5 WSOL share):`);
-        console.log(COLOR_DIM, `   lp_amount: ${lpAmount.toString()}`);
-        console.log(COLOR_DIM, `   needed WSOL: ${requiredWsol.toString()} (${requiredWsol.toNumber() / 1e9} WSOL)`);
-        console.log(COLOR_DIM, `   needed dBTC: ${requiredDbtc.toString()} (${requiredDbtc.toNumber() / 1e6} dBTC)`);
-        console.log(COLOR_DIM, `   maxToken0 (with cushion): ${liquidityAmount0.toString()}`);
-        console.log(COLOR_DIM, `   maxToken1 (with cushion): ${liquidityAmount1.toString()}`);
-
-        // Check current balances
-        const wsolBalance = await anchor_spl.getAccount(connection, creatorWsolAccount.address, undefined, TOKEN_PROGRAM_ID);
-        const dbtcBalance = await anchor_spl.getAccount(connection, creatorDbtcAccount, undefined, anchor_spl.TOKEN_2022_PROGRAM_ID);
-
-        console.log(COLOR_DIM, `🔍 Current balances:`);
-        console.log(COLOR_DIM, `   WSOL: ${wsolBalance.amount.toString()} (${Number(wsolBalance.amount) / 1e9} WSOL)`);
-        console.log(COLOR_DIM, `   DEGEN_BTC: ${dbtcBalance.amount.toString()} (${Number(dbtcBalance.amount) / 1e6} dBTC)`);
-
-        // Top up WSOL if we don't have enough.
-        const wsolHave = new BN(wsolBalance.amount.toString());
-        if (wsolHave.lt(maxWsol)) {
-            const deficit = maxWsol.sub(wsolHave);
-            const additionalSol = deficit.add(new BN(1_000_000_000)); // +1 SOL buffer
-            console.log(COLOR_WARNING, `⚠️ Insufficient WSOL. Wrapping ${additionalSol.toString()} extra lamports...`);
-            const wrapTx = new Transaction().add(
-                SystemProgram.transfer({
-                    fromPubkey: deployer.publicKey,
-                    toPubkey: creatorWsolAccount.address,
-                    lamports: additionalSol.toNumber(),
-                }),
-                anchor_spl.createSyncNativeInstruction(creatorWsolAccount.address, TOKEN_PROGRAM_ID)
-            );
-            const wrapSig = await web3.sendAndConfirmTransaction(connection, wrapTx, [deployer]);
-            console.log(COLOR_SUCCESS, `✅ Wrapped ${additionalSol.toNumber() / 1e9} SOL → WSOL`);
-            console.log(COLOR_DIM, `🔗 Wrap Transaction: ${wrapSig}`);
-        }
-
-        const dbtcHave = new BN(dbtcBalance.amount.toString());
-        if (dbtcHave.lt(maxDbtc)) {
-            throw new Error(
-                `Insufficient DEGEN_BTC. Need ${maxDbtc.toString()} base units, have ${dbtcHave.toString()}.`
-            );
-        }
-        
-        // Determine token accounts based on token order
-        const token0Account = isDbtcToken0 ? creatorDbtcAccount : creatorWsolAccount.address;
-        const token1Account = isDbtcToken0 ? creatorWsolAccount.address : creatorDbtcAccount;
-        
-        // Prepare liquidity accounts
-        const liquidityAccounts = {
-            owner: deployer.publicKey,
-            authority: authorityPDA,
-            poolState: poolStatePDA,
-            ownerLpToken: creatorLpAccount,
-            token0Account: token0Account,
-            token1Account: token1Account,
-            token0Vault: token0VaultPDA,
-            token1Vault: token1VaultPDA,
-            tokenProgram: TOKEN_PROGRAM_ID,
-            tokenProgram2022: anchor_spl.TOKEN_2022_PROGRAM_ID,
-            vault0Mint: isDbtcToken0 ? minebtcMint : wsolMintKey,
-            vault1Mint: isDbtcToken0 ? wsolMintKey : minebtcMint,
-            lpMint: lpMintPDA,
-        };
-        
-        console.log(COLOR_DIM, `🔍 Liquidity accounts structure:`);
-        console.log(COLOR_DIM, `   owner: ${liquidityAccounts.owner.toString()}`);
-        console.log(COLOR_DIM, `   authority: ${liquidityAccounts.authority.toString()}`);
-        console.log(COLOR_DIM, `   poolState: ${liquidityAccounts.poolState.toString()}`);
-        console.log(COLOR_DIM, `   ownerLpToken: ${liquidityAccounts.ownerLpToken.toString()}`);
-        console.log(COLOR_DIM, `   token0Account: ${liquidityAccounts.token0Account.toString()}`);
-        console.log(COLOR_DIM, `   token1Account: ${liquidityAccounts.token1Account.toString()}`);
-        console.log(COLOR_DIM, `   token0Vault: ${liquidityAccounts.token0Vault.toString()}`);
-        console.log(COLOR_DIM, `   token1Vault: ${liquidityAccounts.token1Vault.toString()}`);
-        
-        console.log(COLOR_INFO, '🚀 Adding liquidity to pool...');
-        
-        try {
-            // Import helper function from helper.js
-            const { cpDepositLiquidity } = await import('./helper.js');
-            
-            // Use the deposit function from helper. lpAmount drives the
-            // pool-side math; maxToken0 / maxToken1 are the cushioned
-            // amounts we computed above (already include the dBTC
-            // transfer fee + slippage buffers).
-            const liquidityResult = await cpDepositLiquidity(
-                connection,
-                cpProgram,
-                deployer,
-                {
-                    lpAmount,
-                    maxToken0: liquidityAmount0,
-                    maxToken1: liquidityAmount1,
-                    accounts: liquidityAccounts,
-                }
-            );
-            
-            console.log(COLOR_SUCCESS, '✅ Liquidity added successfully!');
-            console.log(COLOR_DIM, `🔗 Transaction: ${liquidityResult.txid}`);
-            console.log(COLOR_DIM, `🔍 Explorer URL: https://explorer.solana.com/tx/${liquidityResult.txid}?cluster=${CLUSTER}`);
-            
-            // Check LP token balance
-            const lpBalance = await anchor_spl.getAccount(connection, creatorLpAccount, undefined, TOKEN_PROGRAM_ID);
-            console.log(COLOR_SUCCESS, `💧 LP tokens received: ${lpBalance.amount.toString()} (${Number(lpBalance.amount) / 1e9} LP)`);
-            
-            // Update deployment status (record both the math-derived
-            // amounts and the cushioned maxes for audit).
-            deploymentData.dbtc_sol_liquidity_added = {
-                timestamp: new Date().toISOString(),
-                lp_amount_minted: lpAmount.toString(),
-                required_wsol: requiredWsol.toString(),
-                required_dbtc: requiredDbtc.toString(),
-                max_token0: liquidityAmount0.toString(),
-                max_token1: liquidityAmount1.toString(),
-                lpTokensReceived: lpBalance.amount.toString(),
-                txid: liquidityResult.txid,
-            };
-                
-                fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
-            console.log(COLOR_SUCCESS, '✅ Liquidity deployment status updated');
-                
-            } catch (error) {
-            console.error(COLOR_ERROR, `❌ Error adding liquidity: ${error.message}`);
-            if (error.logs) {
-                console.error(COLOR_ERROR, '📝 Transaction logs:');
-                error.logs.forEach((log, index) => {
-                    console.error(COLOR_ERROR, `[${index}] ${log}`);
-                });
-            }
-                throw error;
-        }
-    } else {
-        console.log(COLOR_INFO, 'ℹ️ Liquidity already added to pool');
             }
 }
 
@@ -1327,9 +1091,9 @@ function printCompletionSummary(deploymentData) {
     console.log('\x1b[36m%s\x1b[0m', `  • Pool Type: Raydium CP-Swap`);
     console.log('\x1b[36m%s\x1b[0m', `  • Trade Fee: ${config.raydium.trade_fee_rate / 10000}%`);
     console.log('\x1b[36m%s\x1b[0m', `  • Initial SOL: ${config.raydium.initial_sol_amount / 1e9} SOL`);
-    if (deploymentData.raydium_pool_initialized) {
-        console.log('\x1b[36m%s\x1b[0m', `  • Initial DEGEN_BTC: ${deploymentData.raydium_pool_initialized.pool_dbtc_readable}`);
-        console.log('\x1b[36m%s\x1b[0m', `  • DEGEN_BTC Percentage: ${deploymentData.raydium_pool_initialized.dbtc_percentage_for_pool}% of total supply`);
+    if (deploymentData.dbtc_sol_pool_created) {
+        const pool = deploymentData.dbtc_sol_pool_created;
+        console.log('\x1b[36m%s\x1b[0m', `  • Initial DEGEN_BTC: ${pool.initialDbtcWholeTokens ?? formatBaseUnits(pool.initialDbtcAmount, config.token.decimals)}`);
     }
     if (config.raydium.burn_lp_tokens) {
         console.log('\x1b[32m%s\x1b[0m', `  • LP Tokens: Will be BURNED (permanent liquidity lock)`);
@@ -1339,10 +1103,10 @@ function printCompletionSummary(deploymentData) {
         if (deploymentData.raydium_amm_config_created) {
         console.log('\x1b[90m%s\x1b[0m', `   AMM Config: ${deploymentData.raydium_amm_config_created.amm_config_pda}`);
         }
-    if (deploymentData.raydium_pool_initialized) {
-        console.log('\x1b[90m%s\x1b[0m', `   Pool State: ${deploymentData.raydium_pool_initialized.pool_state_pda}`);
-        console.log('\x1b[90m%s\x1b[0m', `   Token 0: ${deploymentData.raydium_pool_initialized.token_0_mint}`);
-        console.log('\x1b[90m%s\x1b[0m', `   Token 1: ${deploymentData.raydium_pool_initialized.token_1_mint}`);
+    if (deploymentData.dbtc_sol_pool_created) {
+        console.log('\x1b[90m%s\x1b[0m', `   Pool State: ${deploymentData.dbtc_sol_pool_created.poolStatePDA}`);
+        console.log('\x1b[90m%s\x1b[0m', `   Token 0: ${deploymentData.dbtc_sol_pool_created.token0Mint}`);
+        console.log('\x1b[90m%s\x1b[0m', `   Token 1: ${deploymentData.dbtc_sol_pool_created.token1Mint}`);
         }
     
     // Show LP token burning status
@@ -1362,4 +1126,17 @@ function printCompletionSummary(deploymentData) {
     
     console.log('\x1b[35m%s\x1b[0m', '========================================================================================');
     console.log('\x1b[36m%s\x1b[0m', '📁 Pool configuration saved to:', path.resolve(__dirname, config.deployment.paths.deployments_dir, `${CLUSTER}.json`));
+}
+
+function formatBaseUnits(amount, decimals) {
+    const value = BigInt(amount);
+    const scale = 10n ** BigInt(decimals);
+    const whole = value / scale;
+    const fraction = value % scale;
+
+    if (fraction === 0n) {
+        return whole.toString();
+    }
+
+    return `${whole}.${fraction.toString().padStart(decimals, '0').replace(/0+$/, '')}`;
 }

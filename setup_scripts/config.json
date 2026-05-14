@@ -36,8 +36,8 @@
         "fund_fee_rate": 25000,
         "create_pool_fee": 150000000,
         "creator_fee_rate": 0,
-        "initial_sol_amount": 100000000,
-        "initial_dbtc_percentage": 1,
+        "initial_sol_amount": 1000000000,
+        "initial_dbtc_amount": 275000,
         "open_time": 0,
         "burn_lp_tokens": true
     },

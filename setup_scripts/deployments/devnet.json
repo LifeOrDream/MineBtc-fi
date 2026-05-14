@@ -80,5 +80,50 @@
     "new_update_authority": null,
     "removal_signature": "57ohDJxmHMoSod5J2kae8CBk5TX1adoGcRxhYg6hVzqDzsbr9AqqFnW4x9fHRnr5yKQw3tXeLJmE4Dwp8jHgjL6y",
     "timestamp": "2026-05-14T19:30:50.429Z"
+  },
+  "raydium_amm_config_created": {
+    "amm_config_pda": "QrHrtqbk3U8q9nQuvXPuQvV416naDgiPbZAVmSveCfU",
+    "raydium_program_id": "5pVzujKAMdyrMhFfzkJUWqdH6mvUPAWCskXAvE2dSMeZ",
+    "config_index": 3,
+    "trade_fee_rate": 10000,
+    "create_pool_fee": "150000000",
+    "creation_signature": "w2Q5nfxaznkgxxCDGiJ9GK6Mi2nS6viG9yfWoUzPjGRhfPUsdBx7pm8Nk8DuRD82JCL2YGJMLMr6MPiaAjVjj8x",
+    "pda_bump": 253,
+    "status": "created",
+    "is_official_raydium": false,
+    "timestamp": "2026-05-14T19:49:10.363Z"
+  },
+  "dbtc_sol_pool_created": {
+    "poolStatePDA": "6BgijTsnQhFYkyD9rY4hZz4p9UmA7Gy4nMEDZuqrH3sL",
+    "lpMintPDA": "C6LqtUEQRwqVzty19m6Mx9FUmroQQJ4V6KB33JR8RcaH",
+    "token0VaultPDA": "9j1ucekKxFY1NVefgeK4UDRRe1xwSMHiVtUtt3qyGpRH",
+    "token1VaultPDA": "Aq5wudGE462heWCW8uUhiDL7VikEUUnBiBFFvGDXdv8i",
+    "authorityPDA": "6aFL9di632s4gmtkwUforbefM6frqi58ZpPckYShypk3",
+    "observationStatePDA": "GGvzBMSAGuR7TBFv1D5xgcvTKTgQfKukJX9sFruapSsg",
+    "token0Mint": "So11111111111111111111111111111111111111112",
+    "token1Mint": "D2mVprFrTkj9pH2rwteU9a82dJ1PNNf4MLPYVQUupPUn",
+    "isDbtcToken0": false,
+    "txid": "4dMJ6mAtJme5mJHBTt75SRNBWvX9tcnS7kYUQXC1SssCU5wDsyU7hiFEYa3KfXrFbJTfvMSwC8UkuZWzMxM8AeWj",
+    "wrapTxid": "5K9kZSSxqN39rWdHjYzo4aHzfy7GW6ZxiLy4dvQpMhPtERcyYV9aeHhKZNRZZ65kTJruXhAGtKe2MjmRLA2aU6WP",
+    "initialDbtcAmount": "275000000000",
+    "initialSolAmount": "1000000000",
+    "initialDbtcWholeTokens": 275000,
+    "openTime": 0,
+    "timestamp": "2026-05-14T19:49:18.038Z"
+  },
+  "lp_tokens_burned": {
+    "pool_state": "6BgijTsnQhFYkyD9rY4hZz4p9UmA7Gy4nMEDZuqrH3sL",
+    "lp_mint": "C6LqtUEQRwqVzty19m6Mx9FUmroQQJ4V6KB33JR8RcaH",
+    "deployer_lp_account": "2QusP8orxpmqmRL5a6ZD4XddtjPan2rU7vWQZwqYGmLn",
+    "burn_all_lp_tokens": true,
+    "burned_amount": "16574830215",
+    "burned_amount_readable": "16.574830215 LP",
+    "burn_signature": "27VmoxwaezGVMujP9k35QZV6T1r1xjq2g6xM8c5TjE7Kim1VgL3YxW4pnUna6mevbAauabQmvn2V8pqyjFGvjuXd",
+    "burn_purpose": "Permanent liquidity lock - cannot remove initial liquidity",
+    "dbtc_locked_amount": "275000000000",
+    "sol_locked_amount": "1000000000",
+    "status": "burned_successfully",
+    "permanent_lock": true,
+    "timestamp": "2026-05-14T19:49:19.853Z"
   }
 }
