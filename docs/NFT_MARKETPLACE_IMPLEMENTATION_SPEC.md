@@ -91,12 +91,16 @@ inventory listings are excluded.
 `SaleHistory` is a 32-entry ringbuffer of qualifying user-to-user sales.
 
 `FloorHistory` is a 7-entry daily anchor ringbuffer. Snapshots use the median of
-recent qualifying sales when at least three samples exist; otherwise they fall
-back to the median of the live floor queue. Zero-anchor snapshots are rejected.
+recent qualifying sales only when at least 17 samples exist. Sale anchors are
+capped by the registered queue median when cheaper sell-side supply exists, and
+the first anchor is capped to the marketplace minimum even if early samples are
+higher. After that, upward moves are capped by the previous anchor. With sparse
+sales, queue data can move the anchor down, but listing-only data cannot raise an
+existing anchor. Zero-anchor snapshots are rejected.
 
 ### Lootbox Data
 
-Each country has a `LootboxQueue` PDA with five packed asset slots.
+Each country has a `LootboxQueue` PDA with ten packed asset slots.
 
 Each winner has a `LootboxClaim` PDA at `[b"lootbox-claim", user]`. Reward
 claiming can reserve an asset, and `claim_lootbox_nft` can be called later by
@@ -138,12 +142,15 @@ enough to be tracked.
 Registers an existing marketplace listing into `FloorQueue`. The instruction
 binds the listing to the cached marketplace config, verifies the listing PDA,
 requires the listed asset to match a real HashBeast metadata PDA, and rejects
-program-owned listings.
+program-owned listings. It also verifies the asset is still owned by the
+marketplace escrow PDA, so stale raw listing accounts cannot poison the queue.
 
 `record_floor_snapshot`
 
 Records one daily floor anchor. It requires at least one usable sample and an
-anchor at or above the sweep minimum before paying a keeper reward.
+anchor at or above the sweep minimum before paying a keeper reward. Sources:
+0=sale median, 1=queue fallback, 2=sale capped by queue, 3=first snapshot capped
+to marketplace minimum, 4=capped by prior anchor.
 
 `sweep_floor_lowest`
 
@@ -152,6 +159,7 @@ that one stale entry and exits successfully. If the head is live, the protocol
 buys it only when:
 
 - the latest anchor is nonzero and above the sweep minimum,
+- the latest anchor is fresh enough for floor-support decisions,
 - price is no more than `anchor * 1.05`,
 - the buy fits the per-transaction vault cap,
 - the sweep vault keeps its minimum reserve after the buy and keeper reward.
@@ -161,7 +169,8 @@ After the buy, the asset is handled in a single transaction:
 - country lootbox queue has space: create a lootbox `RebornEntry` and push it
   without resetting the NFT,
 - deep bearish floor trend: burn it,
-- otherwise: relist from inventory at formula price.
+- otherwise: relist from inventory at formula price, clamped to the marketplace
+  minimum.
 
 `expire_program_listing`
 
@@ -212,8 +221,12 @@ Current constants:
 - `SWEEP_ATTRACTIVE_BPS = 500`
 - `SWEEP_MAX_PCT_BPS = 500`
 - `SWEEP_MIN_ANCHOR_LAMPORTS = 0.01 SOL`
+- `FLOOR_ANCHOR_MAX_AGE_SECS = 48 hours`
+- `FLOOR_ANCHOR_MAX_UPWARD_MOVE_BPS = 2500`
+- `MIN_SALES_FOR_ANCHOR = 17`
 - `MIN_SWEEP_RESERVE_LAMPORTS = 0.05 SOL`
 - `KEEPER_REWARD_LAMPORTS = 0.0005 SOL`
+- `STALE_PURGE_KEEPER_REWARD_LAMPORTS = 0.00002 SOL`
 
 Keeper payments always preserve `MIN_SWEEP_RESERVE_LAMPORTS`.
 

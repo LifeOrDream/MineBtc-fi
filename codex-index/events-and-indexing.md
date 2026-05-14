@@ -75,7 +75,7 @@ The backend should index contract events and also reconcile PDA state where even
 - `InventoryAssetRelisted` — sweep or expire relisted at formula markup; reports original_buy_price, new_list_price, markup_bps, trend_bps, expire_count.
 - `InventoryAssetBurned` — burn reason (0=trend crash, 1=max_expires, 2=recycle queue full).
 - `UserSaleRecorded` — qualifying user-to-user sale entered `SaleHistory`.
-- `FloorSnapshotRecorded` — daily snapshot wrote anchor (source: 0=sale-median, 1=queue-median fallback) + sample count.
+- `FloorSnapshotRecorded` — daily snapshot wrote anchor + sample count. Source: 0=sale median, 1=queue fallback, 2=sale capped by queue, 3=first snapshot capped to marketplace min, 4=capped by prior anchor.
 - `ProgramListingExpired` — 7-day TTL fired on a stuck program listing.
 - `LootboxQueuePush` — recycle / sweep / expire-cascade pushed an asset into a country lootbox queue.
 - `LootboxNftClaimed` — reserved drop delivered to the recorded winner.

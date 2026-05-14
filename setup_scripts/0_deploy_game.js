@@ -6,6 +6,12 @@ import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 import { Keypair, Connection, LAMPORTS_PER_SOL } from "@solana/web3.js";
+import {
+  readJsonIfExists,
+  resolveRaydiumProgramId,
+  setIdlAddress,
+  syncRaydiumProgramId,
+} from "./raydium_id_sync.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -378,6 +384,32 @@ function initSbpfEnvironment() {
   // Note: Ensure Solana CLI is v2.x (matching crates) before building
 }
 
+function syncRaydiumForMinebtcBuild() {
+  const configPath = path.join(__dirname, "config.json");
+  const config = readJsonIfExists(configPath) || {};
+  const cluster = config.network?.cluster || "localnet";
+  const deploymentPath = path.join(DEPLOYMENTS_DIR, `${cluster}.json`);
+  const deploymentData = readJsonIfExists(deploymentPath) || {};
+  const raydiumProgramId = resolveRaydiumProgramId(config, deploymentData, {
+    requireCustomDeployment: true,
+  });
+  const deployerPubkey = getDeployerPublicKey();
+
+  syncRaydiumProgramId({
+    rootDir: ROOT_DIR,
+    setupDir: __dirname,
+    config,
+    deploymentData,
+    programId: raydiumProgramId,
+    deployerPubkey,
+    updateConfig: false,
+  });
+
+  console.log(
+    `\x1b[32m✅ MineBTC will compile against Raydium CP-Swap ${raydiumProgramId}\x1b[0m`,
+  );
+}
+
 function cleanBuild(programConfig) {
   console.log(`\x1b[36m🧹 Cleaning ${programConfig.displayName}...\x1b[0m`);
   try {
@@ -563,7 +595,7 @@ function deployProgram(programConfig, walletPath) {
     );
     if (fs.existsSync(idlPath)) {
       const idlContent = JSON.parse(fs.readFileSync(idlPath, "utf8"));
-      idlContent.address = deployedProgramId;
+      setIdlAddress(idlContent, deployedProgramId);
       fs.writeFileSync(idlPath, JSON.stringify(idlContent, null, 2));
       console.log(`\x1b[32m   IDL updated: ${deployedProgramId}\x1b[0m`);
     }
@@ -731,6 +763,7 @@ async function main() {
 
     checkPrerequisites();
     initSbpfEnvironment();
+    syncRaydiumForMinebtcBuild();
 
     console.log(`\x1b[36m\n📋 Step 1: Generating keypairs...\x1b[0m`);
     const programAddresses = {};

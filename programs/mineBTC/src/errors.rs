@@ -293,6 +293,9 @@ pub enum ErrorCode {
     #[msg("Sweep anchor is below the minimum sweep threshold (no recent volume)")]
     SweepAnchorTooLow,
 
+    #[msg("Floor anchor is stale; record a fresh floor snapshot before using floor support")]
+    FloorAnchorStale,
+
     #[msg("Floor entry data does not match the live marketplace listing")]
     StaleFloorEntry,
 

@@ -4,7 +4,9 @@ use mpl_core::accounts::BaseAssetV1;
 use crate::errors::MarketError;
 use crate::events::ListingReclaimed;
 use crate::log_fn;
-use crate::state::{Listing, MarketplaceConfig, LISTING_SEED, MARKETPLACE_CONFIG_SEED};
+use crate::state::{
+    Listing, MarketplaceConfig, ESCROW_SEED, LISTING_SEED, MARKETPLACE_CONFIG_SEED,
+};
 
 #[derive(Accounts)]
 pub struct ReclaimStaleListing<'info> {
@@ -23,12 +25,23 @@ pub struct ReclaimStaleListing<'info> {
         close = caller,
         seeds = [LISTING_SEED, marketplace_config.key().as_ref(), asset.key().as_ref()],
         bump = listing.bump,
+        has_one = asset @ MarketError::InvalidAsset,
     )]
     pub listing: Account<'info, Listing>,
 
-    /// CHECK: Asset account. We read its owner to verify the listing is stale.
+    /// CHECK: Asset account. We read its owner to verify the listing is no
+    /// longer escrowed by this marketplace.
     #[account(mut)]
     pub asset: AccountInfo<'info>,
+
+    /// CHECK: Escrow PDA for this listing. A normal live listing has the
+    /// mpl-core asset owner set to this PDA. The listing is reclaimable only
+    /// after the asset is no longer owned by escrow.
+    #[account(
+        seeds = [ESCROW_SEED, marketplace_config.key().as_ref(), asset.key().as_ref()],
+        bump,
+    )]
+    pub escrow: UncheckedAccount<'info>,
 
     /// CHECK: mpl-core program. Verified against cached config.
     #[account(
@@ -46,9 +59,12 @@ pub fn handler(ctx: Context<ReclaimStaleListing>) -> Result<()> {
     let asset_data: BaseAssetV1 =
         BaseAssetV1::try_from(asset_info).map_err(|_| MarketError::InvalidAsset)?;
 
-    // Stale if the current asset owner is no longer the listing seller.
+    // A live marketplace listing escrows the asset, so the current owner
+    // should be the escrow PDA, not the seller. The listing is stale only if
+    // the asset has somehow left escrow while the listing account still
+    // exists.
     require!(
-        asset_data.owner != ctx.accounts.listing.seller,
+        asset_data.owner != ctx.accounts.escrow.key(),
         MarketError::ListingNotStale
     );
 

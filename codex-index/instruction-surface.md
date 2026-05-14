@@ -37,9 +37,9 @@ Canonical source: `programs/mineBTC/src/lib.rs` and `programs/mineBTC/src/instru
 
 - `list_user_nft(price)`, `cancel_user_listing()`, `update_user_listing_price(new_price)` — user-signed wrappers that keep the on-chain `FloorQueue` in sync with `degenbtc_market` listings.
 - `buy_user_listing()` — permissionless wrapper around `degenbtc_market::buy_listing`; records qualifying user-to-user sales into `SaleHistory` (5-min minimum listing age).
-- `register_floor_listing()` — anyone can push an existing user listing into the sorted floor queue (top 20 cheapest, program listings excluded).
+- `register_floor_listing()` — anyone can push an existing user listing into the sorted floor queue (top 20 cheapest, program listings excluded, listing PDA + escrow ownership verified).
 - `sweep_floor_lowest()` — anyone can buy queue.entries[0]; the contract auto-disposes the asset (push to country lootbox queue if space, else relist at formula markup, else burn if 7-day floor crashed below threshold) and pays a keeper bounty out of `inventory_sweep_vault`.
-- `record_floor_snapshot()` — daily snapshot ix; computes anchor as median of qualifying user-to-user sales, falling back to floor-queue median if low volume.
+- `record_floor_snapshot()` — daily snapshot ix; uses qualified sale median only with 17 samples, caps the first anchor to marketplace min, caps later upward moves by queue/prior anchor, and only lets queue fallback downshift the anchor.
 - `expire_program_listing()` — 7-day TTL re-disposition of stuck program-owned listings; progressive markup discount per strike, force-burn after `MAX_EXPIRES`.
 - `handle_inventory_proceeds()` — permissionless 50/50 split of accrued inventory_pda lamports between `inventory_sweep_vault` and `sol_treasury`.
 - `inventory_finalize_sale()` — permissionless cleanup; verifies asset's owner is no longer `inventory_pda` via on-chain mpl-core read, closes the `RebornEntry`.

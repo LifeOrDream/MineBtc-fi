@@ -26,8 +26,8 @@
  *   ── game cranker ──
  *     startRound(roundId)
  *     endRound()                // reveals entropy + picks winner
- *     endRoundFactionRewards()  // pays stakers, advances faction-war mining
- *     settleFactionWar()        // permissionless after LP-burn count tick
+ *     settleRound()             // pays stakers, folds round into faction-war cycle
+ *     settleFactionWar()        // permissionless after LP-burn cycle boundary
  *
  *   ── NFT marketplace cranker ──
  *     recordFloorSnapshot()
@@ -48,6 +48,7 @@ const { AnchorProvider, BN, Program, Wallet } = anchorPkg;
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { resolveRaydiumProgramId, setIdlAddress } from "./raydium_id_sync.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -66,17 +67,28 @@ const deployment = JSON.parse(
     "utf8",
   ),
 );
-const minebtcIdl = JSON.parse(
+const minebtcIdl = setIdlAddress(
+  JSON.parse(
   fs.readFileSync(
     path.resolve(__dirname, config.deployment.paths.minebtc_idl),
     "utf8",
+    ),
   ),
+  deployment.MINE_BTC_PROGRAM_ID,
 );
-const raydiumIdl = JSON.parse(
+const raydiumProgramId = new PublicKey(
+  resolveRaydiumProgramId(config, deployment, {
+    requireCustomDeployment: true,
+  }),
+);
+const raydiumIdl = setIdlAddress(
+  JSON.parse(
   fs.readFileSync(
     path.resolve(__dirname, config.deployment.paths.raydium_idl),
     "utf8",
+    ),
   ),
+  raydiumProgramId,
 );
 const walletKeypair = Keypair.fromSecretKey(
   new Uint8Array(
@@ -147,6 +159,21 @@ const [floorHistoryPda] = PublicKey.findProgramAddressSync(
   [Buffer.from("floor-history")], pid);
 const [inventorySweepVaultPda] = PublicKey.findProgramAddressSync(
   [Buffer.from("inventory-sweep-vault")], pid);
+const marketplaceConfigAddress =
+  deployment.inventory_pool_initialized?.marketplace_config
+  ?? deployment.degenbtc_marketplace_initialized?.marketplace_config_pda;
+const marketplaceConfigPda = marketplaceConfigAddress
+  ? new PublicKey(marketplaceConfigAddress)
+  : null;
+const marketplaceProgramAddress =
+  deployment.inventory_pool_initialized?.marketplace_program
+  ?? deployment.degenbtc_marketplace_initialized?.program_id;
+const marketplaceProgramId = marketplaceProgramAddress
+  ? new PublicKey(marketplaceProgramAddress)
+  : null;
+const factionWarSolVaultPda = deployment.war_sol_vault_pda
+  ? new PublicKey(deployment.war_sol_vault_pda)
+  : PublicKey.findProgramAddressSync([Buffer.from("faction-war-sol-vault")], pid)[0];
 // `dbtc_vault` is the dBTC token vault owned by the mining authority.
 const [dbtcTokenVaultPda] = PublicKey.findProgramAddressSync(
   [Buffer.from("dbtc_vault"), mineBtcMiningPda.toBuffer()], pid);
@@ -157,14 +184,15 @@ const factionTreasuryVault = new PublicKey(
 );
 
 // Raydium pool addresses — dBTC/SOL CP-swap pool
-const raydiumProgramId = new PublicKey(deployment.RAYDIUM_CP_PROGRAM_ID);
 const raydiumPoolState = new PublicKey(deployment.dbtc_sol_pool_created.poolStatePDA);
 const raydiumAmmConfig = new PublicKey(deployment.raydium_amm_config_created.amm_config_pda);
 const raydiumAuthority = new PublicKey(deployment.dbtc_sol_pool_created.authorityPDA);
 const raydiumObservationState = new PublicKey(deployment.dbtc_sol_pool_created.observationStatePDA);
 const raydiumLpMint = new PublicKey(deployment.dbtc_sol_pool_created.lpMintPDA);
-const solVaultPda = new PublicKey(deployment.dbtc_sol_pool_created.token0VaultPDA);  // token0 = WSOL
-const dbtcVaultPda = new PublicKey(deployment.dbtc_sol_pool_created.token1VaultPDA); // token1 = dBTC
+const poolToken0Vault = new PublicKey(deployment.dbtc_sol_pool_created.token0VaultPDA);
+const poolToken1Vault = new PublicKey(deployment.dbtc_sol_pool_created.token1VaultPDA);
+const solVaultPda = deployment.dbtc_sol_pool_created.isDbtcToken0 ? poolToken1Vault : poolToken0Vault;
+const dbtcVaultPda = deployment.dbtc_sol_pool_created.isDbtcToken0 ? poolToken0Vault : poolToken1Vault;
 
 // ════════════════════════════════════════════════════════════════════
 //  HELPERS
@@ -194,6 +222,10 @@ function deriveGameSessionPda(roundId) {
 function deriveFactionWarStatePda(factionWarId) {
   return PublicKey.findProgramAddressSync(
     [Buffer.from("faction-war"), u64Buffer(factionWarId)], pid)[0];
+}
+function deriveFactionWarSettlementPda(factionWarId) {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("faction-war-settlement"), u64Buffer(factionWarId)], pid)[0];
 }
 function deriveFactionStatePda(factionId) {
   const name = config.factions[factionId]?.name;
@@ -251,7 +283,7 @@ async function send(tx, computeUnits = 400_000) {
 
 async function fetchFactionWarId() {
   const cfg = await program.account.factionWarConfig.fetch(factionWarConfigPda);
-  return cfg.currentFactionWarId.toNumber();
+  return cfg.currentWarId.toNumber();
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -260,7 +292,7 @@ async function fetchFactionWarId() {
 
 async function printState() {
   banner("ECONOMY STATE");
-  const mining = await program.account.mineBtcMining.fetch(mineBtcMiningPda);
+  const mining = await program.account.degenBtcMining.fetch(mineBtcMiningPda);
   const buybacks = await program.account.buybacksAccount.fetch(buybacksAccountPda);
   const gc = await program.account.globalConfig.fetch(globalConfigPda);
   const fw = await program.account.factionWarConfig.fetch(factionWarConfigPda);
@@ -277,7 +309,7 @@ async function printState() {
   console.log(`  lp_operation_pending   : ${mining.lpOperationPending}`);
   console.log(`  recent_price           : ${mining.recentPrice.toString()}`);
   console.log(`  track_price            : ${mining.trackPrice.toString()}`);
-  console.log(`  dbtc_per_round     : ${mining.mineBtcPerRound.toString()}`);
+  console.log(`  dbtc_per_round     : ${mining.dbtcPerRound.toString()}`);
   console.log(`  last_rate_update       : ${mining.lastRateUpdate.toString()} (${new Date(Number(mining.lastRateUpdate) * 1000).toISOString()})`);
   console.log(`  --- treasuries ---`);
   console.log(`  sol_treasury           : ${lam(treasuryBal)} SOL`);
@@ -287,7 +319,7 @@ async function printState() {
   console.log(`  --- sol_fee_config ---`);
   console.log(`  protocol_fee/buyback/stakers/cycle/nftMM = ${gc.solFeeConfig.protocolFeePct}/${gc.solFeeConfig.buybackPct}/${gc.solFeeConfig.stakersPct}/${gc.solFeeConfig.cycleSolSplitPct}/${gc.solFeeConfig.nftMarketMakingPct}%`);
   console.log(`  --- faction war ---`);
-  console.log(`  current_war_id : ${fw.currentFactionWarId.toString()}`);
+  console.log(`  current_war_id : ${fw.currentWarId.toString()}`);
 }
 
 async function printGameState() {
@@ -383,18 +415,18 @@ async function snapshotPrice() {
     WSOL_MINT, vaultAuthorityPda, true, TOKEN_PROGRAM_ID);
 
   const tx = await program.methods.snapshotPrice().accounts({
-    mineBtcMining: mineBtcMiningPda,
+    dbtcMining: mineBtcMiningPda,
     globalConfig: globalConfigPda,
     raydiumProgram: raydiumProgramId,
     poolState: raydiumPoolState,
     ammConfig: raydiumAmmConfig,
     authorityPda: vaultAuthorityPda,
     raydiumAuthority,
-    minebtcVault: dbtcVaultPda,
+    dbtcVault: dbtcVaultPda,
     solVault: solVaultPda,
-    minebtcTokenAccount: dbtcTokenVaultPda,
+    dbtcTokenAccount: dbtcTokenVaultPda,
     solTokenAccount,
-    minebtcMint: dbtcMint,
+    degenbtcMint: dbtcMint,
     solMint: WSOL_MINT,
     observationState: raydiumObservationState,
     tokenProgram2022: TOKEN_2022_PROGRAM_ID,
@@ -419,8 +451,8 @@ async function snapshotPrice() {
 async function updateRate() {
   banner("UPDATE RATE");
   const tx = await program.methods.updateRate().accounts({
-    mineBtcMining: mineBtcMiningPda,
-    factionWarConfig: factionWarConfigPda,
+    dbtcMining: mineBtcMiningPda,
+    warConfig: factionWarConfigPda,
   }).transaction();
 
   const sig = await send(tx, 200_000);
@@ -441,18 +473,20 @@ async function addLpAndBurn() {
     raydiumLpMint, vaultAuthorityPda, true, TOKEN_PROGRAM_ID);
 
   const tx = await program.methods.addLpAndBurn(new BN(0)).accounts({
-    mineBtcMining: mineBtcMiningPda,
+    dbtcMining: mineBtcMiningPda,
     globalConfig: globalConfigPda,
+    globalGameState: globalGameStatePda,
+    warConfig: factionWarConfigPda,
     authority: walletKeypair.publicKey,
     raydiumProgram: raydiumProgramId,
     poolState: raydiumPoolState,
     authorityPda: vaultAuthorityPda,
     raydiumAuthority,
-    minebtcVault: dbtcVaultPda,
+    dbtcVault: dbtcVaultPda,
     solVault: solVaultPda,
-    minebtcTokenAccount: dbtcTokenVaultPda,
+    dbtcTokenAccount: dbtcTokenVaultPda,
     solTokenAccount,
-    minebtcMint: dbtcMint,
+    degenbtcMint: dbtcMint,
     solMint: WSOL_MINT,
     lpTokenAccount,
     lpMint: raydiumLpMint,
@@ -529,7 +563,7 @@ async function crankHarvestFees() {
     }));
     try {
       const tx = await program.methods.crankHarvestFees().accounts({
-        minebtcMint: dbtcMint,
+        degenbtcMint: dbtcMint,
         tokenProgram2022: TOKEN_2022_PROGRAM_ID,
       }).remainingAccounts(remaining).transaction();
       const sig = await send(tx, 200_000);
@@ -556,14 +590,14 @@ async function crankDistributeTax() {
   const factionWarStatePda = deriveFactionWarStatePda(factionWarId);
 
   const tx = await program.methods.crankDistributeTax(new BN(factionWarId)).accounts({
-    minebtcMint: dbtcMint,
+    degenbtcMint: dbtcMint,
     withdrawWithheldAuthority: withdrawWithheldAuthorityPda,
     withdrawAuthorityTokenAccount: withdrawAuthAta,
     factionTreasuryVault,
-    minebtcTokenVault: dbtcTokenVaultPda,
+    dbtcTokenVault: dbtcTokenVaultPda,
     taxConfig: taxConfigPda,
-    factionWarConfig: factionWarConfigPda,
-    factionWarState: factionWarStatePda,
+    warConfig: factionWarConfigPda,
+    warState: factionWarStatePda,
     caller: walletKeypair.publicKey,
     tokenProgram2022: TOKEN_2022_PROGRAM_ID,
     systemProgram: SystemProgram.programId,
@@ -594,7 +628,8 @@ async function startRound(roundId) {
     globalConfig: globalConfigPda,
     globalGameState: globalGameStatePda,
     gameSession: deriveGameSessionPda(roundId),
-    factionWarConfig: factionWarConfigPda,
+    warConfig: factionWarConfigPda,
+    warState: deriveFactionWarStatePda(await fetchFactionWarId()),
     authority: walletKeypair.publicKey,
     systemProgram: SystemProgram.programId,
   }).transaction();
@@ -613,7 +648,7 @@ async function endRound() {
 
   const tx = await program.methods.endRound().accounts({
     gameSession: deriveGameSessionPda(roundId),
-    mineBtcMining: mineBtcMiningPda,
+    dbtcMining: mineBtcMiningPda,
     globalGameState: globalGameStatePda,
     globalConfig: globalConfigPda,
     slotHashes: SYSVAR_SLOT_HASHES_PUBKEY,
@@ -631,11 +666,11 @@ async function endRound() {
   return { roundId, sig, session };
 }
 
-async function endRoundFactionRewards() {
+async function settleRound() {
   const gs = await program.account.globalGameSate.fetch(globalGameStatePda);
   const roundId = gs.currentRoundId?.toNumber() ?? 0;
   if (roundId <= 0) throw new Error("no active round");
-  banner(`END ROUND FACTION REWARDS · round ${roundId}`);
+  banner(`SETTLE ROUND · round ${roundId}`);
 
   const session = await program.account.gameSession.fetch(deriveGameSessionPda(roundId));
   if (session.winningFactionId == null) {
@@ -644,22 +679,20 @@ async function endRoundFactionRewards() {
   const factionWarId = await fetchFactionWarId();
   const factionStatePda = deriveFactionStatePda(session.winningFactionId);
 
-  const tx = await program.methods.endRoundFactionRewards(new BN(factionWarId)).accounts({
+  const tx = await program.methods.settleRound(new BN(factionWarId)).accounts({
     globalGameState: globalGameStatePda,
-    globalConfig: globalConfigPda,
     gameSession: deriveGameSessionPda(roundId),
-    mineBtcMining: mineBtcMiningPda,
-    taxConfig: taxConfigPda,
     factionState: factionStatePda,
     solRewardsVault: solRewardsVaultPda,
-    factionWarConfig: factionWarConfigPda,
-    factionWarState: deriveFactionWarStatePda(factionWarId),
+    warConfig: factionWarConfigPda,
+    warState: deriveFactionWarStatePda(factionWarId),
+    dbtcMining: mineBtcMiningPda,
     authority: walletKeypair.publicKey,
     systemProgram: SystemProgram.programId,
   }).transaction();
 
   const sig = await send(tx, 1_000_000);
-  ok(`faction rewards: ${sig}`);
+  ok(`settle_round: ${sig}`);
   console.log(`   ${explorer(sig)}`);
 
   const txInfo = await connection.getTransaction(sig,
@@ -669,32 +702,8 @@ async function endRoundFactionRewards() {
 }
 
 async function distributeJackpotRewards() {
-  const gs = await program.account.globalGameSate.fetch(globalGameStatePda);
-  const roundId = gs.currentRoundId?.toNumber() ?? 0;
-  if (roundId <= 0) throw new Error("no active round");
-  banner(`DISTRIBUTE JACKPOT · round ${roundId}`);
-
-  const session = await program.account.gameSession.fetch(deriveGameSessionPda(roundId));
-  if (!session.jackpotHit) {
-    console.log("ℹ️  No jackpot hit this round — skipping");
-    return { roundId, skipped: true };
-  }
-
-  const tx = await program.methods.distributeJackpotRewards(new BN(roundId)).accounts({
-    globalGameState: globalGameStatePda,
-    gameSession: deriveGameSessionPda(roundId),
-    globalConfig: globalConfigPda,
-    authority: walletKeypair.publicKey,
-  }).transaction();
-
-  const sig = await send(tx, 400_000);
-  ok(`distribute_jackpot_rewards: ${sig}`);
-  console.log(`   ${explorer(sig)}`);
-
-  const txInfo = await connection.getTransaction(sig,
-    { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
-  logEvents(txInfo);
-  return { roundId, sig };
+  warn("distribute_jackpot_rewards was removed; jackpot settlement is part of settle_round.");
+  return { skipped: true };
 }
 
 async function settleFactionWar() {
@@ -705,14 +714,16 @@ async function settleFactionWar() {
   const gs = await program.account.globalGameSate.fetch(globalGameStatePda);
   const roundId = gs.currentRoundId?.toNumber() ?? 0;
 
-  const tx = await program.methods.settleFactionWar().accounts({
-    factionWarConfig: factionWarConfigPda,
-    factionWarState: factionWarStatePda,
+  const tx = await program.methods.settleWar().accounts({
+    warConfig: factionWarConfigPda,
+    warState: factionWarStatePda,
+    warSettlement: deriveFactionWarSettlementPda(factionWarId),
     taxConfig: taxConfigPda,
-    mineBtcMining: mineBtcMiningPda,
+    dbtcMining: mineBtcMiningPda,
     globalConfig: globalConfigPda,
-    globalGameState: globalGameStatePda,
-    gameSession: deriveGameSessionPda(roundId),
+    factionWarSolVault: factionWarSolVaultPda,
+    solTreasury: solTreasuryPda,
+    systemProgram: SystemProgram.programId,
     cranker: walletKeypair.publicKey,
   }).transaction();
 
@@ -732,11 +743,35 @@ async function settleFactionWar() {
 
 async function recordFloorSnapshot() {
   banner("RECORD FLOOR SNAPSHOT");
+  if (!marketplaceConfigPda) {
+    throw new Error("Marketplace config PDA missing. Run 3_init_mineBTC.js through marketplace/inventory init first.");
+  }
+  if (!marketplaceProgramId) {
+    throw new Error("Marketplace program ID missing. Run 3_init_mineBTC.js through marketplace/inventory init first.");
+  }
+  const floorQueue = await program.account.floorQueue.fetch(floorQueuePda);
+  const queueCount = Number(floorQueue.entriesCount ?? 0);
+  let queueMedianListing = null;
+  let queueMedianAsset = null;
+  let queueMedianEscrow = null;
+  if (queueCount > 0) {
+    const entry = floorQueue.entries[Math.floor(queueCount / 2)];
+    queueMedianListing = entry.listing;
+    queueMedianAsset = entry.asset;
+    [queueMedianEscrow] = PublicKey.findProgramAddressSync(
+      [Buffer.from("escrow"), marketplaceConfigPda.toBuffer(), queueMedianAsset.toBuffer()],
+      marketplaceProgramId,
+    );
+  }
   const tx = await program.methods.recordFloorSnapshot().accounts({
     caller: walletKeypair.publicKey,
     inventoryPool: inventoryPoolPda,
     floorQueue: floorQueuePda,
     saleHistory: saleHistoryPda,
+    marketplaceConfig: marketplaceConfigPda,
+    queueMedianListing,
+    queueMedianAsset,
+    queueMedianEscrow,
     floorHistory: floorHistoryPda,
     inventorySweepVault: inventorySweepVaultPda,
     systemProgram: SystemProgram.programId,
@@ -775,8 +810,8 @@ async function main() {
   // await startRound();             // auto-picks current+1; pass an id to override
 
   // await endRound();                // reveals entropy + picks winner
-  // await distributeJackpotRewards(); // only if jackpot_hit == true; pays ALL bettors on jackpot faction
-  // await endRoundFactionRewards();  // pays stakers, advances faction-war mining
+  // await distributeJackpotRewards(); // removed; jackpot handling is inside settleRound()
+  // await settleRound();             // pays stakers, advances faction-war mining
 
   // await settleFactionWar();        // permissionless, gated by LP-burn count
 

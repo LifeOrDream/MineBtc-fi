@@ -115,7 +115,7 @@ Canonical source: `programs/mineBTC/src/state.rs`.
   - One per HashBeast currently held by `inventory_pda`. Tracks status (Lootbox=0, Listed=1), origin (Reborn=0, Swept=1), `original_buy_price` (anchor for relist markup math), `expire_count` (strike count, max `MAX_EXPIRES`), faction_id, quality_score, listing_price.
 
 - `LootboxQueue` PDA `[lootbox-queue, faction_id]`
-  - Per-country lootbox queue; 5-slot packed array of asset pubkeys; recycle / sweep flows push, loser-roll claims pop.
+  - Per-country lootbox queue; 10-slot packed array of asset pubkeys; recycle / sweep flows push, loser-roll claims pop.
 
 - `LootboxClaim` PDA `[lootbox-claim, user]`
   - Per-user reservation when a losing claim's roll wins; `claim_lootbox_nft` consumes it.

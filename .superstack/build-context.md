@@ -8,7 +8,7 @@ outstanding findings vs. what has been resolved. Update via `/review` or
 {
   "review": {
     "security_score": "B+",
-    "quality_score": "B+",
+    "quality_score": "A-",
     "findings": [
       {
         "severity": "P2",
@@ -18,7 +18,7 @@ outstanding findings vs. what has been resolved. Update via `/review` or
       }
     ],
     "ready_for_mainnet": false,
-    "notes": "2026-05-14 follow-up audit of game.rs, faction_war.rs, economy.rs, user.rs, and related HashBeast collection custody paths. Previous P0/P1 findings are fixed in current code: POL SOL movement is bound to the configured Raydium pool and canonical WSOL ATA; snapshot_price has minimum output/deviation guards; mutation counters saturate; war claim payout enforces HB score invariants; and HashBeast stake/unstake now require the bound collection account. This pass also boxed AddLpAndBurn account wrappers to remove the program-owned try_accounts SBF stack warning. cargo check -p minebtc, cargo test -p minebtc (159/159), anchor build --program-name minebtc, cargo build-sbf --manifest-path programs/mineBTC/Cargo.toml, and git diff --check pass. Mainnet readiness is held only on the remaining upstream mpl-core stack warning; devnet iteration is acceptable."
+    "notes": "2026-05-14 marketplace/floor/lootbox audit pass. Fixed base marketplace stale reclaim to check escrow ownership instead of seller ownership; tightened MineBTC floor wrappers around listing PDA, escrow PDA, collection, and asset binding; hardened floor snapshots with 17-sale minimum, day-zero marketplace-min bootstrap, queue/prior-anchor upward caps, and live median-entry escrow validation; added fresh-anchor guards for sweep/relist decisions; clamped program relists to marketplace min; made rebirth/lootbox delivery require the canonical HashBeast collection; and updated marketplace docs/index notes. cargo check -p minebtc -p degenbtc_market, cargo test -p minebtc -p degenbtc_market (160 total tests), anchor build, node --check setup_scripts/do_txs.js, and targeted git diff --check pass. Mainnet readiness is held only on the remaining upstream mpl-core stack warning; devnet iteration is acceptable."
   },
   "debug": {
     "issues_resolved": [

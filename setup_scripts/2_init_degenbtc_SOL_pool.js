@@ -53,6 +53,7 @@ import fs from 'fs';
 import path from 'path';
 import { getSolanaBalance, updateDeploymentStatus } from './helper.js';
 import { fileURLToPath } from 'url';
+import { resolveRaydiumProgramId, setIdlAddress } from './raydium_id_sync.js';
 
 // ES Module compatibility
 const __filename = fileURLToPath(import.meta.url);
@@ -102,10 +103,14 @@ const COLOR_DIM = '\x1b[90m%s\x1b[0m';
     // Validate prerequisites
     validatePrerequisites(deploymentData);
     
-    // Get Raydium program ID - use official mainnet program from config if specified
-    const RAYDIUM_CP_PROGRAM_ID = config.raydium.use_official_program 
-        ? new PublicKey(config.raydium.program_id)
-        : new PublicKey(deploymentData.RAYDIUM_CP_PROGRAM_ID);
+    // Get the exact Raydium program ID that MineBTC is compiled to accept.
+    // On devnet this comes from 0_deploy_raydium.js and must match
+    // raydium_cp_swap::ID inside the MineBTC build.
+    const RAYDIUM_CP_PROGRAM_ID = new PublicKey(
+        resolveRaydiumProgramId(config, deploymentData, {
+            requireCustomDeployment: true,
+        })
+    );
     const useOfficialProgram = config.raydium.use_official_program;
     console.log('\x1b[36m%s\x1b[0m', '🔑 Raydium CP Program:', RAYDIUM_CP_PROGRAM_ID.toBase58());
     console.log('\x1b[36m%s\x1b[0m', '🔑 Using Official Raydium:', useOfficialProgram ? 'YES' : 'NO (custom deployed)');
@@ -121,8 +126,14 @@ const COLOR_DIM = '\x1b[90m%s\x1b[0m';
         process.exit(1);
     }
     
-    const cpIdl = JSON.parse(fs.readFileSync(cpIdlPath, 'utf8'));
+    const cpIdl = setIdlAddress(
+        JSON.parse(fs.readFileSync(cpIdlPath, 'utf8')),
+        RAYDIUM_CP_PROGRAM_ID
+    );
     const cpProgram = new Program(cpIdl, provider);
+    if (!cpProgram.programId.equals(RAYDIUM_CP_PROGRAM_ID)) {
+        throw new Error(`Raydium IDL/program mismatch: Program=${cpProgram.programId.toBase58()} expected=${RAYDIUM_CP_PROGRAM_ID.toBase58()}`);
+    }
     
     try {
         // 1. Create AMM Config (skip for official Raydium - use existing configs)
@@ -356,9 +367,12 @@ function validatePrerequisites(deploymentData) {
     
     const errors = [];
     
-    // Only require deployed Raydium if not using official program
-    if (!config.raydium.use_official_program && !deploymentData.RAYDIUM_CP_PROGRAM_ID) {
-        errors.push('Raydium CP program not deployed - run 0_deploy_raydium.js first or set use_official_program: true');
+    try {
+        resolveRaydiumProgramId(config, deploymentData, {
+            requireCustomDeployment: true,
+        });
+    } catch (error) {
+        errors.push(error.message);
     }
     
     if (!deploymentData.dbtc_mint_address) {

@@ -6,6 +6,7 @@ import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 import { Keypair } from "@solana/web3.js";
+import { readJsonIfExists, setIdlAddress, syncRaydiumProgramId } from "./raydium_id_sync.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -84,50 +85,16 @@ function createNewKeypair() {
 }
 
 function updateRaydiumCode(programId, deployerPubkey) {
-  console.log(`\x1b[33m📝 Updating Raydium source code...\x1b[0m`);
-
-  let libContent = fs.readFileSync(RAYDIUM_LIB_PATH, "utf8");
-
-  // Update declare_id
-  libContent = libContent.replace(
-    /declare_id!\("([^"]+)"\);/g,
-    `declare_id!("${programId}");`
-  );
-  console.log(`\x1b[32m   ✅ Updated declare_id! to: ${programId}\x1b[0m`);
-
-  // Update admin::ID for devnet
-  const adminRegex =
-    /(pub mod admin \{[\s\S]*?#\[cfg\(feature = "devnet"\)\]\s*pub const ID: Pubkey = pubkey!\(")([^"]+)("\);)/;
-  if (libContent.match(adminRegex)) {
-    libContent = libContent.replace(adminRegex, `$1${deployerPubkey}$3`);
-    console.log(
-      `\x1b[32m   ✅ Updated admin::ID (devnet): ${deployerPubkey}\x1b[0m`
-    );
-  }
-
-  // Update create_pool_fee_reveiver::ID for devnet
-  const feeRegex =
-    /(pub mod create_pool_fee_reveiver \{[\s\S]*?#\[cfg\(feature = "devnet"\)\]\s*pub const ID: Pubkey = pubkey!\(")([^"]+)("\);)/;
-  if (libContent.match(feeRegex)) {
-    libContent = libContent.replace(feeRegex, `$1${deployerPubkey}$3`);
-    console.log(
-      `\x1b[32m   ✅ Updated create_pool_fee_reveiver::ID (devnet): ${deployerPubkey}\x1b[0m`
-    );
-  }
-
-  fs.writeFileSync(RAYDIUM_LIB_PATH, libContent);
-
-  // Also update Raydium Anchor.toml
-  const anchorTomlPath = path.join(RAYDIUM_DIR, "Anchor.toml");
-  if (fs.existsSync(anchorTomlPath)) {
-    let anchorContent = fs.readFileSync(anchorTomlPath, "utf8");
-    anchorContent = anchorContent.replace(
-      /raydium_cp_swap\s*=\s*"([^"]+)"/g,
-      `raydium_cp_swap = "${programId}"`
-    );
-    fs.writeFileSync(anchorTomlPath, anchorContent);
-    console.log(`\x1b[32m   ✅ Updated Raydium Anchor.toml\x1b[0m`);
-  }
+  const configPath = path.join(__dirname, "config.json");
+  const config = readJsonIfExists(configPath) || { network: { cluster: "localnet" }, raydium: {} };
+  syncRaydiumProgramId({
+    rootDir: ROOT_DIR,
+    setupDir: __dirname,
+    config,
+    programId,
+    deployerPubkey,
+    updateConfig: true,
+  });
 }
 
 function buildRaydium(secretKey) {
@@ -276,7 +243,7 @@ function generateIdl(programId) {
     if (!idlContent.instructions || idlContent.instructions.length === 0) {
       throw new Error("IDL template is empty");
     }
-    idlContent.address = programId;
+    setIdlAddress(idlContent, programId);
     fs.writeFileSync(idlPath, JSON.stringify(idlContent, null, 2));
     console.log(`\x1b[32m✅ IDL address updated: ${programId}\x1b[0m`);
   } catch (error) {
@@ -395,12 +362,12 @@ async function main() {
       console.log(
         `\x1b[33m⚠️  Program already deployed at: ${existingProgramId}\x1b[0m`
       );
-      console.log(`\x1b[36m📝 Generating/updating IDL only...\x1b[0m`);
+      console.log(`\x1b[36m📝 Syncing Raydium ids + regenerating IDL...\x1b[0m`);
 
-      // Only generate IDL for existing deployment
+      updateRaydiumCode(existingProgramId, deployerPubkey);
       generateIdl(existingProgramId);
 
-      console.log(`\x1b[32m\n✅ IDL generation complete!\x1b[0m`);
+      console.log(`\x1b[32m\n✅ Raydium id sync complete!\x1b[0m`);
       console.log(`\x1b[32m   Program ID: ${existingProgramId}\x1b[0m`);
       return;
     }

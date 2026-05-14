@@ -1005,7 +1005,9 @@ pub struct UserSaleRecorded {
 #[event]
 pub struct FloorSnapshotRecorded {
     pub anchor_price: u64,
-    pub source: u8, // 0 = sale-median, 1 = queue-median fallback
+    /// 0 = sale median, 1 = queue median fallback, 2 = sale capped by queue,
+    /// 3 = first snapshot capped to marketplace min, 4 = capped by prior anchor.
+    pub source: u8,
     pub samples: u32,
     pub timestamp: i64,
 }

@@ -16,14 +16,18 @@ const { AnchorProvider, BN, Program, Wallet } = anchorPkg;
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { setIdlAddress } from "./raydium_id_sync.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, "config.json"), "utf8"));
 const dep = JSON.parse(fs.readFileSync(path.join(__dirname, "deployments", "devnet.json"), "utf8"));
-const idl = JSON.parse(
+const idl = setIdlAddress(
+  JSON.parse(
   fs.readFileSync(path.resolve(__dirname, cfg.deployment.paths.minebtc_idl), "utf8")
+  ),
+  dep.MINE_BTC_PROGRAM_ID,
 );
 const wallet = Keypair.fromSecretKey(
   new Uint8Array(
@@ -71,7 +75,7 @@ const tx = await program.methods
   .endRound()
   .accounts({
     gameSession,
-    mineBtcMining,
+    dbtcMining: mineBtcMining,
     globalGameState,
     globalConfig,
     slotHashes: SYSVAR_SLOT_HASHES_PUBKEY,

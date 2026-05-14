@@ -324,14 +324,25 @@ pub const SALE_QUALIFY_MIN_LISTING_AGE_SECS: i64 = 5 * 60;
 /// Window for "recent qualifying sales" when computing a snapshot anchor.
 pub const SALE_RECENT_WINDOW_SECS: i64 = 24 * 60 * 60;
 /// Minimum count of qualifying sales required before sale-median anchors;
-/// below this, snapshot falls back to floor-queue median.
-pub const MIN_SALES_FOR_ANCHOR: usize = 3;
+/// below this, snapshot falls back to the registered floor queue. Set above
+/// half the ringbuffer so a manipulator must control a true majority of the
+/// recent sale samples before the median can move upward.
+pub const MIN_SALES_FOR_ANCHOR: usize = 17;
 
 // ----- Floor history tunables -----
 /// 7-day rolling snapshot ringbuffer.
 pub const FLOOR_HISTORY_SIZE: usize = 7;
 /// Minimum seconds between snapshots (24h).
 pub const FLOOR_SNAPSHOT_INTERVAL_SECS: i64 = 24 * 60 * 60;
+/// Maximum age at which sweep/relist logic is allowed to trust the current
+/// floor anchor. If snapshot cranking stalls beyond this, floor support stops
+/// buying or repricing rather than spending against stale data.
+pub const FLOOR_ANCHOR_MAX_AGE_SECS: i64 = 48 * 60 * 60;
+/// Maximum upward move per snapshot when a previous anchor exists. Downward
+/// moves are uncapped so panic-listing data can immediately make sweeps more
+/// conservative; upward moves are capped to stop thin wash-trade bursts from
+/// rapidly raising the vault's buy ceiling.
+pub const FLOOR_ANCHOR_MAX_UPWARD_MOVE_BPS: u16 = 2_500;
 
 // ----- Markup formula constants -----
 /// Baseline markup applied to relists in flat market.
@@ -2184,8 +2195,8 @@ impl RebornEntry {
 //                  and by `sweep_floor_lowest` for the 1.05× price ceiling.
 //
 // See `instructions/marketplace_cpi.rs` for the manipulation-resistance
-// analysis (5min listing-age qualifier × median-of-32 × ±100% clamp × 24h
-// interval = brute anchor manipulation is loss-leading).
+// analysis (5min listing-age qualifier × 17-sale minimum × queue/prior-anchor
+// caps × 24h interval = brute anchor manipulation is loss-leading).
 
 /// One entry in the on-chain sorted-floor queue. Tracks a user-listed asset
 /// (program-owned listings are explicitly excluded — sweep buying the
@@ -2392,7 +2403,7 @@ pub struct LootboxQueue {
 }
 
 impl LootboxQueue {
-    /// 8 (disc) + 1 + 1 + 5*32 + 1 = 171 bytes.
+    /// 8 (disc) + 1 + 1 + LOOTBOX_QUEUE_SIZE*32 + 1.
     pub const LEN: usize = DISCRIMINATOR_SIZE + 1 + 1 + (LOOTBOX_QUEUE_SIZE * 32) + 1;
 }
 

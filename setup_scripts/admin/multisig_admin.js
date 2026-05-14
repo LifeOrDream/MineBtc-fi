@@ -2,7 +2,7 @@
  * Multisig Admin Script (2-of-3)
  *
  * This script executes admin functions on the minebtc program using a multisig authority.
- * Currently supports: add_cranker_bot
+ * Currently supports: set_pause
  * Requires 2 of 3 signatures to execute.
  *
  * Environment Variables Required:
@@ -10,19 +10,17 @@
  * - MULTISIG2: Mnemonic phrase for signer 2
  * - MULTISIG3: Mnemonic phrase for signer 3
  * - MULTISIG_ADDRESS: (Optional) Existing multisig authority address
- * - BOT_PUBKEY: The public key of the cranker bot to add (for add_cranker_bot)
+ * - PAUSED: Optional true/false value for set_pause
  *
  * Usage:
- *   node multisig_admin.js add_cranker_bot <bot_pubkey>
+ *   node multisig_admin.js set_pause true
  */
 
 import {
   Connection,
   PublicKey,
   Transaction,
-  sendAndConfirmTransaction,
   Keypair,
-  SystemProgram,
 } from "@solana/web3.js";
 import { createMultisig, getMultisig } from "@solana/spl-token";
 import * as bip39 from "bip39";
@@ -32,7 +30,8 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import pkg from "@coral-xyz/anchor";
-const { AnchorProvider, Program, Wallet, setProvider } = pkg;
+import { setIdlAddress } from "../raydium_id_sync.js";
+const { AnchorProvider, Program, setProvider } = pkg;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -74,8 +73,11 @@ if (fs.existsSync(deploymentPath)) {
 }
 
 // Load IDL
-const idlPath = path.resolve(__dirname, config.deployment.paths.minebtc_idl);
-const IDL_MINEBTC = JSON.parse(fs.readFileSync(idlPath, "utf-8"));
+const idlPath = path.resolve(PROJECT_ROOT, "setup_scripts", config.deployment.paths.minebtc_idl);
+const rawMinebtcIdl = JSON.parse(fs.readFileSync(idlPath, "utf-8"));
+const IDL_MINEBTC = deploymentFile.MINE_BTC_PROGRAM_ID
+  ? setIdlAddress(rawMinebtcIdl, deploymentFile.MINE_BTC_PROGRAM_ID)
+  : rawMinebtcIdl;
 
 // ====================================================================
 // CONFIGURATION
@@ -83,7 +85,7 @@ const IDL_MINEBTC = JSON.parse(fs.readFileSync(idlPath, "utf-8"));
 
 // Get command line arguments
 const command = process.argv[2];
-const botPubkeyArg = process.env.BOT_PUBKEY || process.argv[3];
+const commandArg = process.argv[3];
 
 // Multisig configuration (2-of-3)
 const MULTISIG_M = 2;
@@ -210,33 +212,30 @@ const getKeypairFromMnemonic = (mnemonic, label = "mnemonic") => {
       throw new Error(
         "No command specified. Usage: node multisig_admin.js <command> [args]\n" +
           "Available commands:\n" +
-          "  add_cranker_bot <bot_pubkey> - Add a cranker bot to the whitelist"
+          "  set_pause <true|false> - Pause or unpause MineBTC gameplay"
       );
     }
 
-    if (command === "add_cranker_bot") {
-      if (!botPubkeyArg) {
+    if (command === "set_pause") {
+      const pausedArg = process.env.PAUSED ?? commandArg;
+      if (!["true", "false"].includes(String(pausedArg).toLowerCase())) {
         throw new Error(
-          "BOT_PUBKEY not provided. Set BOT_PUBKEY environment variable or pass as argument.\n" +
-            "Usage: node multisig_admin.js add_cranker_bot <bot_pubkey>"
+          "PAUSED not provided. Set PAUSED=true/false or pass an argument.\n" +
+            "Usage: node multisig_admin.js set_pause true"
         );
       }
 
-      const botPubkey = new PublicKey(botPubkeyArg);
-      console.log(`\n🤖 Adding cranker bot: ${botPubkey.toString()}`);
+      const paused = String(pausedArg).toLowerCase() === "true";
+      console.log(`\n⏸️ Setting MineBTC pause state: ${paused}`);
 
       // --- 5. Load Program and PDAs ---
       const programId = new PublicKey(deploymentFile.MINE_BTC_PROGRAM_ID);
       const globalConfigPDA = new PublicKey(
         deploymentFile.minebtc_program_initialized.globalConfig_address
       );
-      const globalGameStatePDA = new PublicKey(
-        deploymentFile.game_state_initialized.global_game_state_pda
-      );
 
       console.log(`   Program ID: ${programId.toString()}`);
       console.log(`   Global Config PDA: ${globalConfigPDA.toString()}`);
-      console.log(`   Global Game State PDA: ${globalGameStatePDA.toString()}`);
 
       // Create a dummy wallet for provider (we'll sign manually)
       const dummyWallet = {
@@ -250,7 +249,12 @@ const getKeypairFromMnemonic = (mnemonic, label = "mnemonic") => {
       });
       setProvider(provider);
 
-      const minebtcProgram = new Program(IDL_MINEBTC, programId, provider);
+      const minebtcProgram = new Program(IDL_MINEBTC, provider);
+      if (!minebtcProgram.programId.equals(programId)) {
+        throw new Error(
+          `IDL program ID (${minebtcProgram.programId.toString()}) does not match deployment (${programId.toString()})`
+        );
+      }
 
       // --- 6. Build Signers Array from Multisig ---
       const multisigSigners = [];
@@ -276,8 +280,8 @@ const getKeypairFromMnemonic = (mnemonic, label = "mnemonic") => {
         );
       }
 
-      // --- 7. Build add_cranker_bot Instruction ---
-      console.log("\nBuilding add_cranker_bot instruction...");
+      // --- 7. Build set_pause Instruction ---
+      console.log("\nBuilding set_pause instruction...");
 
       // Fetch GlobalConfig to check ext_authority
       const globalConfig = await minebtcProgram.account.globalConfig.fetch(
@@ -316,13 +320,11 @@ const getKeypairFromMnemonic = (mnemonic, label = "mnemonic") => {
       }
 
       // Build the instruction with the appropriate authority signer
-      const addBotIx = await minebtcProgram.methods
-        .addCrankerBot(botPubkey)
+      const setPauseIx = await minebtcProgram.methods
+        .setPause(paused)
         .accounts({
-          globalGameState: globalGameStatePDA,
           globalConfig: globalConfigPDA,
           authority: authoritySigner.publicKey,
-          systemProgram: SystemProgram.programId,
         })
         .instruction();
 
@@ -332,7 +334,7 @@ const getKeypairFromMnemonic = (mnemonic, label = "mnemonic") => {
         extAuthority.equals(multisigAddress) &&
         !authoritySigner.publicKey.equals(multisigAddress)
       ) {
-        const authorityKeyIndex = addBotIx.keys.findIndex((key) =>
+        const authorityKeyIndex = setPauseIx.keys.findIndex((key) =>
           key.pubkey.equals(authoritySigner.publicKey)
         );
         if (authorityKeyIndex !== -1) {
@@ -346,7 +348,7 @@ const getKeypairFromMnemonic = (mnemonic, label = "mnemonic") => {
 
       // --- 8. Create and Sign Transaction ---
       console.log("\nCreating transaction...");
-      const transaction = new Transaction().add(addBotIx);
+      const transaction = new Transaction().add(setPauseIx);
       transaction.feePayer = signer1.publicKey;
 
       const { blockhash, lastValidBlockHeight } =
@@ -410,7 +412,7 @@ const getKeypairFromMnemonic = (mnemonic, label = "mnemonic") => {
 
       console.log("\n✅ Transaction Successful!");
       console.log(`   Signature: ${signature}`);
-      console.log(`   Bot added: ${botPubkey.toString()}`);
+      console.log(`   Paused: ${paused}`);
       const explorerUrl =
         CLUSTER === "mainnet-beta"
           ? `https://explorer.solana.com/tx/${signature}`

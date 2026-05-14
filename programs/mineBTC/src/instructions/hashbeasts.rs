@@ -85,10 +85,14 @@
 //!
 //! ## Rebirth
 //!
-//! `rebirth_hashbeast` lets an owner burn a HashBeast and receive a new one
-//! with carry-over rebirth_count + 1. This is a deflationary lever that
-//! tightens supply over time. The new asset's DNA is freshly rolled; the
-//! original is burned via mpl-core CPI.
+//! `rebirth_hashbeast` lets an owner cash out the asset's accumulated degenBTC
+//! and recycle the same Core asset into protocol inventory. If the faction
+//! lootbox queue and inventory cap have room, metadata is reset in-place:
+//! fresh DNA, default gameplay state, and `rebirth_count + 1`, then the asset
+//! transfers to `inventory_pda` for future loser-roll delivery. If the queue
+//! is full or the asset has reached the 7-rebirth cap, the asset is burned
+//! instead. Rebirth requires the canonical HashBeast collection account, just
+//! like mint paths, so collection identity stays intact through recycling.
 //!
 //! ## Passive staking (`stake_hashbeast` / `unstake_hashbeast`)
 //!
@@ -135,7 +139,6 @@ use anchor_spl::token::Token;
 use anchor_spl::token_2022::{self, Burn, Token2022, TransferChecked};
 use anchor_spl::token_interface::{Mint as Mint2022, TokenAccount as TokenAccount2022};
 use mpl_core::ID as MPL_CORE_PROGRAM_ID;
-
 
 use crate::events::*;
 use crate::instructions::helper;
@@ -1526,14 +1529,15 @@ pub fn int_unstake_hashbeast(ctx: Context<UnstakeHashBeast>) -> Result<()> {
 ///
 /// Behavior:
 /// 1. Pays the user any `accumulated_val` they had earned.
-/// 2. If the NFT has already hit `MAX_REBIRTH_COUNT`, burns it.
+/// 2. If the NFT has hit `MAX_REBIRTH_COUNT`, or the queue/inventory path is
+///    full, burns the asset.
 /// 3. Otherwise increments rebirth_count, rerolls fresh DNA, and resets
 ///    gameplay state: multiplier, xp, accumulated_val, breed_count, cooldown,
 ///    and parent lineage.
 /// 4. Transfers the mpl-core asset from the user to `inventory_pda` (= the
 ///    `InventoryPool` account, which doubles as the global custody address).
-/// 5. If the country's lootbox queue has room, initializes a `RebornEntry`
-///    with status Lootbox and pushes the asset into that queue.
+/// 5. Initializes a fresh `RebornEntry` with status Lootbox and pushes the
+///    asset into that faction's queue.
 /// 6. Bumps inventory pool counters and emits `HashBeastReborn`.
 pub fn int_rebirth_hashbeast(ctx: Context<RebirthHashBeast>) -> Result<()> {
     crate::log_fn!("hashbeasts", "int_rebirth_hashbeast");
@@ -1557,6 +1561,10 @@ pub fn int_rebirth_hashbeast(ctx: Context<RebirthHashBeast>) -> Result<()> {
     require!(
         metadata.incubated_player_data == Pubkey::default(),
         ErrorCode::HashBeastAlreadyAtGuard
+    );
+    require!(
+        ctx.accounts.hashbeast_collection.is_some(),
+        ErrorCode::InvalidAccount
     );
 
     msg!(
@@ -1669,7 +1677,7 @@ pub fn int_rebirth_hashbeast(ctx: Context<RebirthHashBeast>) -> Result<()> {
                 original_buy_price: 0,
                 expire_count: 0,
             };
-            crate::instructions::helper::init_pda_account_if_needed::<RebornEntry>(
+            let was_created = crate::instructions::helper::init_pda_account_if_needed::<RebornEntry>(
                 &ctx.accounts.user.to_account_info(),
                 &entry_info,
                 &ctx.accounts.system_program.to_account_info(),
@@ -1677,6 +1685,7 @@ pub fn int_rebirth_hashbeast(ctx: Context<RebirthHashBeast>) -> Result<()> {
                 RebornEntry::LEN,
                 &blank,
             )?;
+            require!(was_created, ErrorCode::InvalidState);
         }
 
         // Push asset into the next slot in the country queue.
@@ -3026,9 +3035,20 @@ pub struct RebirthHashBeast<'info> {
     #[account(mut)]
     pub hashbeast_asset: UncheckedAccount<'info>,
 
-    /// CHECK: Optional HashBeast collection account. Required by mpl-core whenever
-    /// the asset belongs to a collection (which all HashBeasts do post-genesis).
-    #[account(mut)]
+    /// Read-only config that pins the canonical HashBeast collection.
+    #[account(
+        seeds = [HASHBEAST_CONFIG_SEED.as_ref()],
+        bump = hashbeast_config.bump,
+    )]
+    pub hashbeast_config: Box<Account<'info, HashBeastConfig>>,
+
+    /// CHECK: HashBeast collection account. The Option wrapper matches the
+    /// mpl-core helper API, but the handler requires Some and Anchor
+    /// address-checks it against HashBeastConfig.
+    #[account(
+        mut,
+        address = hashbeast_config.hashbeast_collection @ ErrorCode::InvalidAccount,
+    )]
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     /// CHECK: Metaplex Core program
