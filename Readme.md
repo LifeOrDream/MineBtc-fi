@@ -32,9 +32,9 @@ This repo contains the contracts for the MineBTC game economy.
 
 | Doc | What it covers |
 |---|---|
-| [GAMEPLAY.md](./GAMEPLAY.md) | 60-second rounds, country directions, jackpots, autominers, faction-war cycles, reward claims, and mutation rolls. |
-| [ECONOMY.md](./ECONOMY.md) | degenBTC emissions, SOL routing, buybacks, protocol-owned liquidity, transfer tax, staking, HODL tax, and market-making funding. |
-| [NFTS.md](./NFTS.md) | HashBeast DNA, mutation, breeding, rebirth, lootboxes, marketplace wrapping, floor anchor, sweeps, relists, and burns. |
+| [docs/GAMEPLAY.md](./docs/GAMEPLAY.md) | 60-second rounds, country directions, jackpots, autominers, faction-war cycles, reward claims, and mutation rolls. |
+| [docs/ECONOMY.md](./docs/ECONOMY.md) | degenBTC emissions, SOL routing, buybacks, protocol-owned liquidity, transfer tax, staking, HODL tax, and market-making funding. |
+| [docs/NFTS.md](./docs/NFTS.md) | HashBeast DNA, mutation, breeding, rebirth, lootboxes, marketplace wrapping, floor anchor, sweeps, relists, and burns. |
 
 Primary source files:
 

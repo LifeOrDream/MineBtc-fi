@@ -4,11 +4,16 @@ Parameters
 
 Licensor:             LifeOrDream Labs
 Licensed Work:        MineBTC (c) 2025-2026 LifeOrDream Labs
+                      The Licensed Work consists of the on-chain Solana
+                      programs (mineBTC and degenbtc_market), their setup
+                      scripts, the SDK, and the protocol documentation
+                      published in this repository.
 Additional Use Grant: None
-Change Date:          2028-02-16
+Change Date:          2030-05-14
 Change License:       Apache License, Version 2.0
 
-For the full text of the Business Source License 1.1, see https://spdx.org/licenses/BUSL-1.1.html
+For the full text of the Business Source License 1.1, see
+https://spdx.org/licenses/BUSL-1.1.html
 
 ---
 
@@ -20,7 +25,11 @@ The Licensor hereby grants you the right to copy, modify, create derivative
 works, redistribute, and make non-production use of the Licensed Work.
 
 Production use of the Licensed Work, or any part thereof, is not permitted
-without a commercial license from the Licensor.
+without a commercial license from the Licensor. "Production use" includes
+(but is not limited to): deploying the Licensed Work, or any substantial
+derivative thereof, to any Solana cluster other than `localnet` or
+`devnet`; offering it as a paid or revenue-generating service; or
+integrating it into a product that generates revenue.
 
 On the Change Date above, the Licensed Work will become available under the
 Change License (Apache License 2.0), and all rights under this License will
