@@ -1,26 +1,24 @@
+//! # Staking instructions
+//!
+//! Passive staking lets a player lock degenBTC or LP tokens into their home
+//! faction for hashpower. Lockup duration can scale a position up to 3x, and
+//! passively staked HashBeasts can scale the player's staking hashpower up to
+//! another 3x, for a 9x maximum effective setup.
+//!
+//! Reward lanes are deliberately separate:
+//! - SOL staking rewards come from round staker fees and are paid directly.
+//! - Passive-staking degenBTC comes from faction reward indexes and is paid by
+//!   `claim_staking_rewards`.
+//! - Gameplay-earned degenBTC is withdrawn through the HODL-tax path in
+//!   `withdraw_dbtc_rewards`; passive-staking degenBTC never enters that pool.
+//!
+//! This is a high-value accounting surface. Token vault accounts are pinned to
+//! canonical PDAs and authorities so reward withdrawals cannot accidentally use
+//! attacker-created token accounts or non-canonical vaults.
+
 use anchor_lang::prelude::*;
 use anchor_lang::system_program::System;
 use anchor_spl::token::{self, Token};
-
-// # Staking Instructions
-//
-// Passive staking has three layers:
-// - A user opens degenBTC or LP lockup positions in their home faction.
-// - Lockup duration can add up to 3x weighted hashpower.
-// - The player's staked HashBeasts can add another 3x passive hashpower multiplier.
-// - The maxed-out staking setup is therefore capped at 9x total.
-//
-// Reward sources:
-// - **SOL staking rewards** come from the round staker-fee lane and are paid out directly.
-// - **degenBTC staking rewards** come from round mining distribution indexes and are
-//   claimed directly with SOL staking rewards, outside the HODL-tax path.
-// - **HODL tax redistribution** happens when a player withdraws gameplay-earned degenBTC
-//   rewards: a configurable fee is taken from the eligible gameplay portion and re-indexed
-//   across the remaining unclaimed gameplay rewards. Passive staking degenBTC is excluded.
-//
-// This file is intentionally verbose in its logs because the staking flows are one of the
-// highest-value accounting surfaces in the program.
-//
 
 use crate::errors::ErrorCode;
 use crate::events::*;
@@ -1283,7 +1281,7 @@ pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()
         );
         let vault_authority_seeds = &[
             DEGEN_BTC_VAULT_AUTHORITY_SEED.as_ref(),
-            &[ctx.bumps.dbtc_vault_authority],
+            &[ctx.accounts.dbtc_mining.vault_auth_bump],
         ];
         let signer = &[&vault_authority_seeds[..]];
 
@@ -1455,7 +1453,7 @@ pub fn int_withdraw_dbtc_rewards(ctx: Context<WithdrawDbtcRewards>) -> Result<()
         // Get PDA signer seeds for the degenBTC vault authority
         let vault_authority_seeds = &[
             DEGEN_BTC_VAULT_AUTHORITY_SEED.as_ref(),
-            &[ctx.bumps.dbtc_vault_authority],
+            &[ctx.accounts.dbtc_mining.vault_auth_bump],
         ];
         let signer = &[&vault_authority_seeds[..]];
 
@@ -1896,6 +1894,7 @@ pub struct UnstakeMineBtc<'info> {
         seeds = [DEGENBTC_CUSTODIAN_SEED.as_ref()],
         bump,
         constraint = dbtc_custodian.mint == degenbtc_mint.key() @ ErrorCode::InvalidParameters,
+        constraint = dbtc_custodian.owner == dbtc_custodian_authority.key() @ ErrorCode::Unauthorized,
     )]
     /// Token-2022 account that holds staked MINE_BTC (global for all factions)
     pub dbtc_custodian: Box<InterfaceAccount<'info, TokenAccount2022>>,
@@ -2036,6 +2035,7 @@ pub struct UnstakeLpTokens<'info> {
         seeds = [LIQUIDITY_CUSTODIAN_SEED.as_ref()],
         bump,
         constraint = liquidity_custodian.mint == lp_mint.key() @ ErrorCode::InvalidParameters,
+        constraint = liquidity_custodian.owner == liquidity_custodian_authority.key() @ ErrorCode::Unauthorized,
     )]
     /// Token account that holds staked LP tokens for this faction
     pub liquidity_custodian: Box<Account<'info, token::TokenAccount>>,
@@ -2105,12 +2105,14 @@ pub struct ClaimStakingRewards<'info> {
         seeds = [DEGEN_BTC_VAULT_SEED.as_ref(), dbtc_mining.key().as_ref()],
         bump,
         constraint = dbtc_token_vault.mint == degenbtc_mint.key() @ ErrorCode::InvalidMint,
+        constraint = dbtc_token_vault.key() == dbtc_mining.dbtc_token_vault @ ErrorCode::InvalidAccount,
+        constraint = dbtc_token_vault.owner == dbtc_vault_authority.key() @ ErrorCode::Unauthorized,
     )]
     pub dbtc_token_vault: InterfaceAccount<'info, TokenAccount2022>,
 
     #[account(
         seeds = [DEGEN_BTC_VAULT_AUTHORITY_SEED.as_ref()],
-        bump
+        bump = dbtc_mining.vault_auth_bump
     )]
     /// CHECK: Authority of the token vault (PDA that signs for token transfers)
     pub dbtc_vault_authority: UncheckedAccount<'info>,
@@ -2173,6 +2175,7 @@ pub struct WithdrawDbtcRewards<'info> {
 
     /// CHECK: degenBTC mining state (needed for vault PDA derivation)
     #[account(
+        mut,
         seeds = [MINE_BTC_MINING_SEED.as_ref()],
         bump
     )]
@@ -2184,12 +2187,14 @@ pub struct WithdrawDbtcRewards<'info> {
         seeds = [DEGEN_BTC_VAULT_SEED.as_ref(), dbtc_mining.key().as_ref()],
         bump,
         constraint = dbtc_token_vault.mint == degenbtc_mint.key() @ ErrorCode::InvalidMint,
+        constraint = dbtc_token_vault.key() == dbtc_mining.dbtc_token_vault @ ErrorCode::InvalidAccount,
+        constraint = dbtc_token_vault.owner == dbtc_vault_authority.key() @ ErrorCode::Unauthorized,
     )]
     pub dbtc_token_vault: InterfaceAccount<'info, TokenAccount2022>,
 
     #[account(
         seeds = [DEGEN_BTC_VAULT_AUTHORITY_SEED.as_ref()],
-        bump
+        bump = dbtc_mining.vault_auth_bump
     )]
     /// CHECK: Authority of the token vault (PDA that signs for token transfers)
     pub dbtc_vault_authority: UncheckedAccount<'info>,

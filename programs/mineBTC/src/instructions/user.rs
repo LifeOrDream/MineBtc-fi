@@ -1,22 +1,21 @@
-// # User Instructions
-//
-// User-facing interactions: betting, autominers, round claims, gameplay hashbeasts, and story events.
-//
-// ## Key Functions
-//
-// - `initialize_player`: Creates a new player account and assigns them to a faction.
-// - `join_bets`: Places one or more faction-direction bets for the current round.
-// - `claim_round_rewards`: Claims winnings from completed rounds.
-// - `init_autominer`: Sets up an automated recurring faction-direction betting system.
-// - `execute_autominer_bet`: Executes an autominer bet (keeper function).
-//
-// A single bet placement feeds both round-level rewards (SOL + dBTC) and the
-// faction-war cycle-level prediction pools.
-//
+//! # User instructions
+//!
+//! User-facing game actions: player onboarding, manual bets, autominers, round
+//! reward claims, gameplay HashBeast locking, and claim-time story events.
+//!
+//! A single bet is a country + direction prediction. The same bet powers:
+//! - round rewards, where one country + direction is resolved randomly; and
+//! - faction-war cycle accounting, where the oracle-set country movements
+//!   settle epoch-style prediction rewards.
+//!
+//! Keep this file fail-closed: reward math must reject malformed bet vectors,
+//! SOL transfers must match calculated payouts, and optional HashBeast metadata
+//! must be proven to be the canonical PDA before syncing NFT progression.
 
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::keccak;
 use anchor_lang::system_program::{transfer, Transfer};
+use mpl_core::ID as MPL_CORE_PROGRAM_ID;
 
 use crate::errors::ErrorCode;
 use crate::events::*;
@@ -1010,7 +1009,7 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
 
     let mutation_type = if claim_won && user_bet.mutation_type == 0 {
         if let Some(roll) =
-            build_round_claim_mutation_roll(user_bet, game_session, player_data.faction_id)
+            build_round_claim_mutation_roll(user_bet, game_session, player_data.faction_id)?
         {
             let faction_id = roll.faction_id;
             let mutation_type = roll_claim_mutation(
@@ -1045,6 +1044,10 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
 
     // Transfer SOL winnings directly to user from prize pot vault
     if total_sol_reward > 0 {
+        require_sol_prize_pot_can_pay(
+            &ctx.accounts.sol_prize_pot_vault.to_account_info(),
+            total_sol_reward,
+        )?;
         msg!(
             "   Transferring {} SOL winnings from prize pot to user",
             total_sol_reward as f64 / 1e9
@@ -1154,7 +1157,7 @@ pub fn internal_claim_autominer_rewards(
 
     let mutation_type = if claim_won && user_bet.mutation_type == 0 {
         if let Some(roll) =
-            build_round_claim_mutation_roll(user_bet, game_session, player_data.faction_id)
+            build_round_claim_mutation_roll(user_bet, game_session, player_data.faction_id)?
         {
             let faction_id = roll.faction_id;
             let mutation_type = roll_claim_mutation(
@@ -1238,8 +1241,11 @@ pub fn internal_claim_autominer_rewards(
     // In ticket mode, funded SOL is keeper compensation reserve; ticket balance still gates execution.
     if autominer_vault.can_reload && autominer_vault.use_ticket.is_some() {
         let reserve_per_round = get_ticket_caller_compensation();
+        require!(reserve_per_round > 0, ErrorCode::InvalidState);
         let rounds_to_add = total_sol_reward / reserve_per_round;
         let leftover_sol = total_sol_reward % reserve_per_round;
+        let rounds_to_add_u32 =
+            u32::try_from(rounds_to_add).map_err(|_| ErrorCode::ArithmeticOverflow)?;
 
         msg!("🔄 Ticket mode reload, processing SOL rewards...");
         msg!(
@@ -1249,8 +1255,17 @@ pub fn internal_claim_autominer_rewards(
         msg!("   Rounds to add: {}", rounds_to_add);
         msg!("   Leftover SOL: {} lamports", leftover_sol);
 
+        if total_sol_reward > 0 {
+            require_sol_prize_pot_can_pay(
+                &ctx.accounts.sol_prize_pot_vault.to_account_info(),
+                total_sol_reward,
+            )?;
+        }
+
         if rounds_to_add > 0 {
-            let sol_for_rounds = rounds_to_add * reserve_per_round;
+            let sol_for_rounds = rounds_to_add
+                .checked_mul(reserve_per_round)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
             helper::transfer_from_sol_prize_pot_vault(
                 &ctx.accounts.sol_prize_pot_vault.to_account_info(),
                 &ctx.accounts.autominer_custody.to_account_info(),
@@ -1264,7 +1279,7 @@ pub fn internal_claim_autominer_rewards(
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
             autominer_vault.rounds_remaining = autominer_vault
                 .rounds_remaining
-                .checked_add(rounds_to_add as u32)
+                .checked_add(rounds_to_add_u32)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
         }
 
@@ -1280,7 +1295,7 @@ pub fn internal_claim_autominer_rewards(
 
         emit!(AutominerReloaded {
             autominer_vault: autominer_vault.key(),
-            rounds_to_add: rounds_to_add as u32,
+            rounds_to_add: rounds_to_add_u32,
             sol_for_rounds: total_sol_reward
                 .checked_sub(leftover_sol)
                 .ok_or(ErrorCode::ArithmeticOverflow)?,
@@ -1297,13 +1312,22 @@ pub fn internal_claim_autominer_rewards(
         let sol_per_round = autominer_vault.sol_per_round;
         let rounds_to_add = total_sol_reward / sol_per_round;
         let leftover_sol = total_sol_reward % sol_per_round;
+        let rounds_to_add_u32 =
+            u32::try_from(rounds_to_add).map_err(|_| ErrorCode::ArithmeticOverflow)?;
 
         msg!("   SOL per round: {} lamports", sol_per_round);
         msg!("   Rounds to add: {}", rounds_to_add);
         msg!("   Leftover SOL: {} lamports", leftover_sol);
 
+        require_sol_prize_pot_can_pay(
+            &ctx.accounts.sol_prize_pot_vault.to_account_info(),
+            total_sol_reward,
+        )?;
+
         if rounds_to_add > 0 {
-            let sol_for_rounds = rounds_to_add * sol_per_round;
+            let sol_for_rounds = rounds_to_add
+                .checked_mul(sol_per_round)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
 
             // Transfer SOL from prize pot to autominer custody
             helper::transfer_from_sol_prize_pot_vault(
@@ -1321,12 +1345,12 @@ pub fn internal_claim_autominer_rewards(
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
             autominer_vault.rounds_remaining = autominer_vault
                 .rounds_remaining
-                .checked_add(rounds_to_add as u32)
+                .checked_add(rounds_to_add_u32)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
 
             emit!(AutominerReloaded {
                 autominer_vault: autominer_vault.key(),
-                rounds_to_add: rounds_to_add as u32,
+                rounds_to_add: rounds_to_add_u32,
                 sol_for_rounds,
                 leftover_sol,
                 timestamp: Clock::get()?.unix_timestamp,
@@ -1353,6 +1377,10 @@ pub fn internal_claim_autominer_rewards(
     } else if total_sol_reward > 0 {
         // No reload (or no sol_per_round) - transfer all SOL to owner
         msg!("   Reload disabled, transferring all SOL to owner...");
+        require_sol_prize_pot_can_pay(
+            &ctx.accounts.sol_prize_pot_vault.to_account_info(),
+            total_sol_reward,
+        )?;
         helper::transfer_from_sol_prize_pot_vault(
             &ctx.accounts.sol_prize_pot_vault.to_account_info(),
             &ctx.accounts.owner_wallet.to_account_info(),
@@ -1975,7 +2003,7 @@ fn internal_process_bets<'info>(
             &player_data.referral_code,
             referrer_rewards.as_deref(),
         )?;
-        let rr = referrer_rewards.expect("validated above");
+        let rr = referrer_rewards.ok_or(ErrorCode::ReferralRewardsAccountRequired)?;
         let remaining_cap = MAX_REFERRER_SOL_LIFETIME.saturating_sub(rr.total_sol_earned);
         let referrer_cut = total_referral_cut.min(remaining_cap);
         if referrer_cut > 0 {
@@ -2268,11 +2296,16 @@ fn calculate_round_rewards(
     user_bet: &UserGameBet,
     game_session: &GameSession,
 ) -> Result<(u64, u64)> {
+    require_user_game_bet_vectors_aligned(user_bet)?;
     let mut total_sol_reward = 0u64;
     let mut total_dbtc_reward = 0u64;
 
     for (idx, &faction_id) in user_bet.faction_ids.iter().enumerate() {
-        let direction = user_bet.directions.get(idx).copied().unwrap_or(0);
+        let direction = user_bet
+            .directions
+            .get(idx)
+            .copied()
+            .ok_or(ErrorCode::InvalidState)?;
         let faction_index = faction_id as usize;
         let direction_index = direction as usize;
         require!(faction_index < NUM_FACTIONS, ErrorCode::InvalidFactionId);
@@ -2280,8 +2313,16 @@ fn calculate_round_rewards(
             direction_index < PredictionDirection::COUNT,
             ErrorCode::InvalidState
         );
-        let points_bet_on_faction = user_bet.points_bets.get(idx).copied().unwrap_or(0);
-        let wgtd_points_bet_on_faction = user_bet.wgtd_points_bets.get(idx).copied().unwrap_or(0);
+        let points_bet_on_faction = user_bet
+            .points_bets
+            .get(idx)
+            .copied()
+            .ok_or(ErrorCode::InvalidState)?;
+        let wgtd_points_bet_on_faction = user_bet
+            .wgtd_points_bets
+            .get(idx)
+            .copied()
+            .ok_or(ErrorCode::InvalidState)?;
 
         msg!(
             "     Faction {} (direction {}): Points: {} SOL, Wgtd: {} DegenBTC",
@@ -2389,11 +2430,12 @@ fn build_round_claim_mutation_roll(
     user_bet: &UserGameBet,
     game_session: &GameSession,
     _player_faction_id: u8,
-) -> Option<ClaimMutationRoll> {
+) -> Result<Option<ClaimMutationRoll>> {
+    require_user_game_bet_vectors_aligned(user_bet)?;
     let winning_faction = game_session.winning_faction_id;
     let winning_faction_index = winning_faction as usize;
     if winning_faction_index >= NUM_FACTIONS {
-        return None;
+        return Ok(None);
     }
 
     let mut exact_sol = 0u64;
@@ -2402,23 +2444,37 @@ fn build_round_claim_mutation_roll(
         if faction_id != winning_faction {
             continue;
         }
-        let sol = user_bet.sol_bets.get(idx).copied().unwrap_or(0);
-        let direction = user_bet.directions.get(idx).copied().unwrap_or(0);
+        let sol = user_bet
+            .sol_bets
+            .get(idx)
+            .copied()
+            .ok_or(ErrorCode::InvalidState)?;
+        let direction = user_bet
+            .directions
+            .get(idx)
+            .copied()
+            .ok_or(ErrorCode::InvalidState)?;
         if direction == game_session.winning_direction {
-            exact_sol = exact_sol.saturating_add(sol);
+            exact_sol = exact_sol
+                .checked_add(sol)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
         } else {
-            same_faction_sol = same_faction_sol.saturating_add(sol);
+            same_faction_sol = same_faction_sol
+                .checked_add(sol)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
         }
     }
 
-    let stake = exact_sol.saturating_add(same_faction_sol / 4);
+    let stake = exact_sol
+        .checked_add(same_faction_sol / 4)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     if stake == 0 {
-        return None;
+        return Ok(None);
     }
 
     let chance_boost_bps = if exact_sol > 0 { 12_000u64 } else { 5_000u64 };
 
-    Some(ClaimMutationRoll {
+    Ok(Some(ClaimMutationRoll {
         faction_id: winning_faction_index,
         stake,
         // Additive volume — the country's accumulated SOL bets since its
@@ -2434,7 +2490,7 @@ fn build_round_claim_mutation_roll(
         faction_mutation_count: game_session.mutations_per_faction[winning_faction_index],
         cycle_rounds_elapsed: 1,
         cycle_mutations_triggered: game_session.total_mutations_this_round as u16,
-    })
+    }))
 }
 
 fn record_round_claim_mutation(
@@ -2504,8 +2560,8 @@ fn update_player_rewards(
 ///     - `war_state.gameplay_scores[winner]` += bonus / 2 (50% penalty)
 ///     - All other counters skipped. No HB-bonus credit, no MVP candidacy,
 ///       no `user.mutation_score` growth. The mercenary's contribution
-///       moves the foreign country up the leaderboard but doesn't entitle
-///       them to a share of that country's loyalty pools.
+///       moves the foreign country up the leaderboard but does not earn
+///       that country's HashBeast-bonus or MVP pools.
 ///
 /// The hashbeast itself (DNA / XP / multiplier) is updated upstream in
 /// `sync_claim_hashbeast_state` regardless of home / foreign — that's the
@@ -2574,7 +2630,7 @@ fn apply_mutation_bonus_score<'info>(
         return Ok(());
     }
 
-    let user_wgtd = total_wgtd_points_for_faction(user_bet, winner);
+    let user_wgtd = total_wgtd_points_for_faction(user_bet, winner)?;
     if user_wgtd == 0 {
         return Ok(());
     }
@@ -2728,7 +2784,7 @@ pub fn maybe_run_loser_lootbox_roll(
         );
         return Ok(());
     }
-    let user_wgtd_on_home = total_wgtd_points_for_faction(user_bet, player_data.faction_id);
+    let user_wgtd_on_home = total_wgtd_points_for_faction(user_bet, player_data.faction_id)?;
     if user_wgtd_on_home == 0 {
         msg!("🎟  [loser_roll] skipped: no wgtd_points bet on home faction");
         return Ok(());
@@ -2929,12 +2985,24 @@ fn sync_claim_hashbeast_state<'info>(
         return Ok(());
     }
 
-    require!(
-        hashbeast_metadata.is_some()
-            && hashbeast_metadata.as_ref().unwrap().mint == expected_hashbeast,
+    let hashbeast_metadata = hashbeast_metadata.ok_or(ErrorCode::HashBeastMetadataNotFound)?;
+    require_keys_eq!(
+        hashbeast_metadata.mint,
+        expected_hashbeast,
         ErrorCode::HashBeastMetadataNotFound
     );
-    let hashbeast_metadata = hashbeast_metadata.unwrap();
+    let (expected_metadata_pda, _) = Pubkey::find_program_address(
+        &[
+            HASHBEAST_METADATA_SEED.as_ref(),
+            expected_hashbeast.as_ref(),
+        ],
+        &crate::ID,
+    );
+    require_keys_eq!(
+        hashbeast_metadata.key(),
+        expected_metadata_pda,
+        ErrorCode::InvalidAccount
+    );
     if accumulated_add > 0 {
         hashbeast_metadata.accumulated_val = hashbeast_metadata
             .accumulated_val
@@ -3228,13 +3296,53 @@ fn mutation_accum_pct(mutation_type: u8) -> u64 {
 /// Returns the user's total weighted points bet on a single faction across
 /// all directions. This is the metric used for both round-end score
 /// accumulation (round-wide) and mutation-bonus base (per-user).
-fn total_wgtd_points_for_faction(user_bet: &UserGameBet, faction_id: u8) -> u64 {
-    user_bet
-        .faction_ids
-        .iter()
-        .zip(user_bet.wgtd_points_bets.iter())
-        .filter_map(|(&fid, &amount)| (fid == faction_id).then_some(amount))
-        .fold(0u64, |acc, amount| acc.saturating_add(amount))
+fn total_wgtd_points_for_faction(user_bet: &UserGameBet, faction_id: u8) -> Result<u64> {
+    require_user_game_bet_vectors_aligned(user_bet)?;
+    let mut total = 0u64;
+    for (idx, &fid) in user_bet.faction_ids.iter().enumerate() {
+        if fid == faction_id {
+            let amount = user_bet
+                .wgtd_points_bets
+                .get(idx)
+                .copied()
+                .ok_or(ErrorCode::InvalidState)?;
+            total = total
+                .checked_add(amount)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+        }
+    }
+    Ok(total)
+}
+
+fn require_user_game_bet_vectors_aligned(user_bet: &UserGameBet) -> Result<()> {
+    let len = user_bet.faction_ids.len();
+    require!(
+        user_bet.directions.len() == len
+            && user_bet.sol_bets.len() == len
+            && user_bet.points_bets.len() == len
+            && user_bet.wgtd_points_bets.len() == len,
+        ErrorCode::InvalidState
+    );
+    require!(
+        len <= UserGameBet::MAX_POSITIONS_PER_BET,
+        ErrorCode::InvalidParameters
+    );
+    Ok(())
+}
+
+fn require_sol_prize_pot_can_pay(vault: &AccountInfo<'_>, amount: u64) -> Result<()> {
+    if amount == 0 {
+        return Ok(());
+    }
+    let rent_floor = Rent::get()?.minimum_balance(vault.data_len());
+    let required_balance = rent_floor
+        .checked_add(amount)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    require!(
+        vault.lamports() >= required_balance,
+        ErrorCode::InsufficientFunds
+    );
+    Ok(())
 }
 
 fn mutation_bonus_weight(mutation_type: u8) -> u64 {
@@ -3379,7 +3487,8 @@ pub struct InitAutominer<'info> {
 
     #[account(
         seeds = [PLAYER_DATA_SEED.as_ref(), user_wallet.key().as_ref()],
-        bump
+        bump,
+        constraint = player_data.owner == user_wallet.key() @ ErrorCode::Unauthorized
     )]
     pub player_data: Account<'info, PlayerData>,
 
@@ -3400,7 +3509,8 @@ pub struct JoinBets<'info> {
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), authority.key().as_ref()],
-        bump = player_data.bump
+        bump = player_data.bump,
+        constraint = player_data.owner == authority.key() @ ErrorCode::Unauthorized
     )]
     pub player_data: Box<Account<'info, PlayerData>>,
 
@@ -3512,7 +3622,8 @@ pub struct ExecuteAutominerBet<'info> {
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), autominer_vault.owner.as_ref()],
-        bump
+        bump,
+        constraint = player_data.owner == autominer_vault.owner @ ErrorCode::Unauthorized
     )]
     pub player_data: Box<Account<'info, PlayerData>>,
 
@@ -3534,7 +3645,11 @@ pub struct ExecuteAutominerBet<'info> {
     pub user_game_bet: Box<Account<'info, UserGameBet>>,
 
     /// CHECK: SOL treasury PDA
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [SOL_TREASURY_SEED.as_ref()],
+        bump
+    )]
     pub sol_treasury: UncheckedAccount<'info>,
 
     /// CHECK: SOL rewards vault (staker fees go here)
@@ -3606,7 +3721,8 @@ pub struct UpdateAutominer<'info> {
 
     #[account(
         seeds = [PLAYER_DATA_SEED.as_ref(), autominer_vault.owner.as_ref()],
-        bump
+        bump,
+        constraint = player_data.owner == autominer_vault.owner @ ErrorCode::Unauthorized
     )]
     pub player_data: Account<'info, PlayerData>,
 
@@ -3636,7 +3752,8 @@ pub struct StopAutominer<'info> {
 
     #[account(
         seeds = [PLAYER_DATA_SEED.as_ref(), autominer_vault.owner.as_ref()],
-        bump
+        bump,
+        constraint = player_data.owner == autominer_vault.owner @ ErrorCode::Unauthorized
     )]
     pub player_data: Account<'info, PlayerData>,
 
@@ -3660,7 +3777,8 @@ pub struct ClaimRoundRewards<'info> {
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), user_wallet.key().as_ref()],
-        bump = player_data.bump
+        bump = player_data.bump,
+        constraint = player_data.owner == user_wallet.key() @ ErrorCode::Unauthorized
     )]
     pub player_data: Box<Account<'info, PlayerData>>,
 
@@ -3784,7 +3902,8 @@ pub struct ClaimAutominerRewards<'info> {
     #[account(
         mut,
         seeds = [PLAYER_DATA_SEED.as_ref(), autominer_vault.owner.as_ref()],
-        bump = player_data.bump
+        bump = player_data.bump,
+        constraint = player_data.owner == autominer_vault.owner @ ErrorCode::Unauthorized
     )]
     pub player_data: Box<Account<'info, PlayerData>>,
 
@@ -3882,7 +4001,10 @@ pub struct UseHashBeastForGameplay<'info> {
     )]
     pub player_data: Account<'info, PlayerData>,
 
-    #[account(mut)]
+    #[account(
+        mut,
+        constraint = faction_state.faction_id == player_data.faction_id @ ErrorCode::InvalidFactionId
+    )]
     pub faction_state: Account<'info, FactionState>,
 
     /// Read-only — anchors the `hashbeast_collection` address constraint to
@@ -3925,6 +4047,7 @@ pub struct UseHashBeastForGameplay<'info> {
     pub war_config: Box<Account<'info, FactionWarConfig>>,
 
     /// CHECK: Metaplex Core program
+    #[account(address = MPL_CORE_PROGRAM_ID @ ErrorCode::InvalidMplCoreProgram)]
     pub mpl_core_program: UncheckedAccount<'info>,
 
     #[account(mut)]
@@ -3960,7 +4083,10 @@ pub struct WithdrawHashBeastFromGameplay<'info> {
     )]
     pub player_data: Account<'info, PlayerData>,
 
-    #[account(mut)]
+    #[account(
+        mut,
+        constraint = faction_state.faction_id == player_data.faction_id @ ErrorCode::InvalidFactionId
+    )]
     pub faction_state: Account<'info, FactionState>,
 
     /// Read-only — anchors the `hashbeast_collection` address constraint to
@@ -3998,6 +4124,7 @@ pub struct WithdrawHashBeastFromGameplay<'info> {
     pub war_config: Box<Account<'info, FactionWarConfig>>,
 
     /// CHECK: Metaplex Core program
+    #[account(address = MPL_CORE_PROGRAM_ID @ ErrorCode::InvalidMplCoreProgram)]
     pub mpl_core_program: UncheckedAccount<'info>,
 
     #[account(mut)]

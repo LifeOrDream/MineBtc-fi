@@ -883,6 +883,27 @@ fn split_staker_lane_rewards(
     result
 }
 
+fn require_canonical_faction_state(
+    global_config: &GlobalConfig,
+    faction_state_key: Pubkey,
+    faction_id: usize,
+) -> Result<()> {
+    let faction_name = global_config
+        .supported_factions
+        .get(faction_id)
+        .ok_or(ErrorCode::InvalidFactionId)?;
+    let (expected_faction_state, _) = Pubkey::find_program_address(
+        &[FACTION_STATE_SEED.as_ref(), faction_name.as_bytes()],
+        &crate::id(),
+    );
+    require_keys_eq!(
+        faction_state_key,
+        expected_faction_state,
+        ErrorCode::InvalidAccount
+    );
+    Ok(())
+}
+
 #[inline(never)]
 fn track_war_round_completion(
     war_config: &mut FactionWarConfig,
@@ -1052,6 +1073,11 @@ pub fn int_settle_round<'info>(accounts: &mut SettleRound<'info>, war_id: u64) -
         faction_state.faction_id == winning_faction_id,
         ErrorCode::InvalidFactionId
     );
+    require_canonical_faction_state(
+        &accounts.global_config,
+        faction_state.key(),
+        winning_faction_index,
+    )?;
 
     // degenBTC rewards to be distributed among stakers (50% to degenBTC stakers, 50% to LP stakers)
     let dbtc_staker_rewards = game_session.faction_stakers;
@@ -1449,8 +1475,15 @@ pub struct SettleRound<'info> {
     )]
     pub game_session: Box<Account<'info, GameSession>>,
 
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+    )]
+    pub global_config: Box<Account<'info, GlobalConfig>>,
+
     /// Winning faction state (for updating staker rewards and jackpot payout)
-    /// CHECK: Validated manually that faction_id matches winning_faction_id
+    /// Validated manually against the winning faction ID and canonical
+    /// `[FACTION_STATE_SEED, supported_factions[winning_faction_id]]` PDA.
     #[account(mut)]
     pub faction_state: Box<Account<'info, FactionState>>,
 

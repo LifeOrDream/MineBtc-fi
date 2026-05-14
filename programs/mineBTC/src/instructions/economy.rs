@@ -217,6 +217,21 @@ fn require_snapshot_price_in_bounds(current_price: u64, recent_price: u64) -> Re
     Ok(())
 }
 
+fn clamp_i64_to_i32(value: i64) -> i32 {
+    value.clamp(i32::MIN as i64, i32::MAX as i64) as i32
+}
+
+fn should_snapshot_cycle_end_round(
+    war_config: &FactionWarConfig,
+    current_round_id: u64,
+    lp_operations_count: u32,
+) -> bool {
+    war_config.cycle_end_round_id == 0
+        && war_config.last_processed_round_id != 0
+        && current_round_id >= war_config.last_processed_round_id
+        && lp_operations_count >= war_config.settle_at_lp_op_count
+}
+
 fn gross_up_for_token2022_fee<'info>(
     mint_account_info: &AccountInfo<'info>,
     desired_post_fee_amount: u64,
@@ -1002,7 +1017,7 @@ pub fn update_rate_internal(ctx: Context<UpdateRate>) -> Result<()> {
     emit!(DistributionRateUpdated {
         old_rate,
         new_rate: dbtc_mining.dbtc_per_round,
-        price_change_pct: price_change_pct as i32,
+        price_change_pct: clamp_i64_to_i32(price_change_pct),
         current_price: new_avg_price,
         avg_price_4h: new_avg_price,
         track_price: dbtc_mining.track_price,
@@ -1431,15 +1446,18 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
         // Capture the cycle's final round_id when the LP-burn threshold is
         // crossed. Once non-zero, this blocks new rounds (start_round) and
         // gates settle_war (which requires the boundary round to be folded).
-        // Guard: only capture when at least one round has been started. If
-        // the threshold somehow crosses before any round (e.g. lp ops fire
-        // very early), we wait — leaving cycle_end_round_id at 0 lets rounds
-        // continue starting, and the next LP burn after a round has played
-        // captures correctly.
-        if war_config.cycle_end_round_id == 0
-            && current_round_id > 0
-            && dbtc_mining.pol_stats.lp_operations_count >= war_config.settle_at_lp_op_count
-        {
+        // Guard: only capture here once at least one round has been processed
+        // in THIS cycle. `current_round_id > 0` is not enough because the
+        // global round counter survives across wars; right after init_war it
+        // still points at the previous cycle's boundary round. If an LP burn
+        // crosses before the first new-cycle round settles, leave
+        // cycle_end_round_id at 0 and let track_war_round_completion lazily
+        // capture the first settled round instead.
+        if should_snapshot_cycle_end_round(
+            war_config,
+            current_round_id,
+            dbtc_mining.pol_stats.lp_operations_count,
+        ) {
             war_config.cycle_end_round_id = current_round_id;
             msg!(
                 "🪖 [add_lp_and_burn] cycle settle threshold crossed (lp_ops={} >= {}); cycle_end_round_id={}",
@@ -1765,7 +1783,8 @@ fn calculate_price_change_pct(old_price: u64, new_price: u64) -> (i64, i64) {
         0
     };
 
-    (change_pct as i64, direction)
+    let bounded_change_pct = change_pct.clamp(i64::MIN as i128, i64::MAX as i128) as i64;
+    (bounded_change_pct, direction)
 }
 
 // ----------------------------------------------------------------------------------------
@@ -2079,4 +2098,60 @@ pub struct AddLpAndBurn<'info> {
     pub buybacks_account: Box<Account<'info, BuybacksAccount>>,
 
     pub system_program: Program<'info, System>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_war_config() -> FactionWarConfig {
+        FactionWarConfig {
+            bump: 0,
+            current_war_id: 7,
+            rewards_sol_vault_bump: 0,
+            settle_at_lp_op_count: 11,
+            prev_ranks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+            last_processed_round_id: 0,
+            cycle_end_round_id: 0,
+            sol_volume_since_last_win: [0; NUM_FACTIONS],
+            mining_multiplier_bps: DEFAULT_MINING_MULTIPLIER_BPS,
+            multiplier_increase_bps: DEFAULT_MULTIPLIER_INCREASE_BPS,
+            multiplier_decrease_bps: DEFAULT_MULTIPLIER_DECREASE_BPS,
+            multiplier_min_bps: DEFAULT_MULTIPLIER_MIN_BPS,
+            multiplier_max_bps: DEFAULT_MULTIPLIER_MAX_BPS,
+        }
+    }
+
+    #[test]
+    fn lp_cycle_end_snapshot_waits_for_current_cycle_round_processing() {
+        let war_config = test_war_config();
+
+        assert!(
+            !should_snapshot_cycle_end_round(&war_config, 99, 11),
+            "global current_round_id may still belong to the previous cycle"
+        );
+    }
+
+    #[test]
+    fn lp_cycle_end_snapshot_allows_processed_current_cycle() {
+        let mut war_config = test_war_config();
+        war_config.last_processed_round_id = 99;
+
+        assert!(should_snapshot_cycle_end_round(&war_config, 99, 11));
+        assert!(should_snapshot_cycle_end_round(&war_config, 100, 11));
+        assert!(!should_snapshot_cycle_end_round(&war_config, 98, 11));
+        assert!(!should_snapshot_cycle_end_round(&war_config, 100, 10));
+
+        war_config.cycle_end_round_id = 99;
+        assert!(!should_snapshot_cycle_end_round(&war_config, 100, 12));
+    }
+
+    #[test]
+    fn price_change_clamps_large_positive_values() {
+        let (change, direction) = calculate_price_change_pct(1, u64::MAX);
+
+        assert_eq!(change, i64::MAX);
+        assert_eq!(direction, 1);
+        assert_eq!(clamp_i64_to_i32(change), i32::MAX);
+    }
 }

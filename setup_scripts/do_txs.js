@@ -686,6 +686,7 @@ async function settleRound() {
   const tx = await program.methods.settleRound(new BN(factionWarId)).accounts({
     globalGameState: globalGameStatePda,
     gameSession: deriveGameSessionPda(roundId),
+    globalConfig: globalConfigPda,
     factionState: factionStatePda,
     solRewardsVault: solRewardsVaultPda,
     warConfig: factionWarConfigPda,

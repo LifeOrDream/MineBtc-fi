@@ -191,7 +191,7 @@ use crate::state::*;
 // ========================================================================================
 
 pub fn compute_rankings_into(
-    scores: &[i64; NUM_FACTIONS],
+    scores: &[u64; NUM_FACTIONS],
     round_wins: &[u16; NUM_FACTIONS],
     active_factions: usize,
     ranks: &mut [u8; NUM_FACTIONS],
@@ -653,6 +653,19 @@ fn split_sol_mvp_residual(
     ))
 }
 
+fn split_sol_mvp_residual_with_dbtc_guard(
+    sol_mvp_total: u64,
+    mvp_dbtc_allocated: u64,
+    mvp_user: &[Pubkey; NUM_FACTIONS],
+    final_ranks: &[u8; NUM_FACTIONS],
+    active_factions: usize,
+) -> Result<(u64, u64)> {
+    if mvp_dbtc_allocated == 0 {
+        return Ok((0, sol_mvp_total));
+    }
+    split_sol_mvp_residual(sol_mvp_total, mvp_user, final_ranks, active_factions)
+}
+
 /// Per-user SOL share for a lane. The claim path uses this to scale the
 /// lane's SOL pool by the user's dBTC share of the same lane:
 ///   `user_sol = sol_lane_pool × user_dbtc_lane / total_dbtc_lane`
@@ -758,20 +771,22 @@ pub fn compute_base_reward_pools(
     // dBTC base + HB: absolute rank-weighted distribution to eligibles only.
     // Non-eligibles' slices stay 0 in settlement → claim never pays them out
     // → dBTC simply remains in the mining vault. No cascade.
-    let _ = distribute_rank_weighted_absolute(
+    let base_dbtc_residual = distribute_rank_weighted_absolute(
         base_pool_total,
         &war_settlement.final_ranks,
         &eligible_base,
         active_factions,
         &mut war_settlement.base_reward_pools,
     )?;
-    let _ = distribute_rank_weighted_absolute(
+    let hb_dbtc_residual = distribute_rank_weighted_absolute(
         hashbeast_pool_total,
         &war_settlement.final_ranks,
         &eligible_hashbeast,
         active_factions,
         &mut war_settlement.hashbeast_reward_pools,
     )?;
+    let base_dbtc_allocated = base_pool_total.saturating_sub(base_dbtc_residual);
+    let hb_dbtc_allocated = hashbeast_pool_total.saturating_sub(hb_dbtc_residual);
 
     // SOL base + HB: same shape. Capture residuals — caller drains to treasury.
     // We don't persist per-faction SOL arrays since the claim path scales each
@@ -779,20 +794,28 @@ pub fn compute_base_reward_pools(
     // already excludes non-eligible factions.
     let mut sol_base_tmp = [0u64; NUM_FACTIONS];
     let mut sol_hb_tmp = [0u64; NUM_FACTIONS];
-    let sol_base_residual = distribute_rank_weighted_absolute(
-        sol_base_total,
-        &war_settlement.final_ranks,
-        &eligible_base,
-        active_factions,
-        &mut sol_base_tmp,
-    )?;
-    let sol_hb_residual = distribute_rank_weighted_absolute(
-        sol_hb_total,
-        &war_settlement.final_ranks,
-        &eligible_hashbeast,
-        active_factions,
-        &mut sol_hb_tmp,
-    )?;
+    let sol_base_residual = if base_dbtc_allocated == 0 {
+        sol_base_total
+    } else {
+        distribute_rank_weighted_absolute(
+            sol_base_total,
+            &war_settlement.final_ranks,
+            &eligible_base,
+            active_factions,
+            &mut sol_base_tmp,
+        )?
+    };
+    let sol_hb_residual = if hb_dbtc_allocated == 0 {
+        sol_hb_total
+    } else {
+        distribute_rank_weighted_absolute(
+            sol_hb_total,
+            &war_settlement.final_ranks,
+            &eligible_hashbeast,
+            active_factions,
+            &mut sol_hb_tmp,
+        )?
+    };
 
     war_settlement.sol_base_pool = sol_base_total.saturating_sub(sol_base_residual);
     war_settlement.sol_hb_pool = sol_hb_total.saturating_sub(sol_hb_residual);
@@ -980,7 +1003,13 @@ pub fn finalize_war_settlement(
         war_state.total_dbtc_mined_in_rounds
     );
 
-    let total_gameplay_score: u64 = war_state.gameplay_scores.iter().take(active_factions).sum();
+    let total_gameplay_score: u64 = war_state
+        .gameplay_scores
+        .iter()
+        .take(active_factions)
+        .copied()
+        .try_fold(0u64, |acc, v| acc.checked_add(v))
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "⚔️ [faction_war.finalize_war_settlement] total_gameplay_score={}",
         total_gameplay_score
@@ -1023,17 +1052,9 @@ pub fn finalize_war_settlement(
             war_config.mining_multiplier_bps,
         )?;
 
-        let mut gameplay_scores_i64 = [0i64; NUM_FACTIONS];
-        for (i, score) in gameplay_scores_i64
-            .iter_mut()
-            .enumerate()
-            .take(active_factions)
-        {
-            *score = war_state.gameplay_scores[i] as i64;
-        }
         let mut final_ranks = [0u8; NUM_FACTIONS];
         compute_rankings_into(
-            &gameplay_scores_i64,
+            &war_state.gameplay_scores,
             &war_state.round_wins,
             active_factions,
             &mut final_ranks,
@@ -1061,21 +1082,23 @@ pub fn finalize_war_settlement(
             pool_share_from_bps(war_state.dbtc_mined_this_war, tuning.war_mvp_reward_bps)?;
 
         // dBTC MVP allocation (per-faction bonuses written into settlement).
-        let _mvp_dbtc_residual = distribute_mvp_pool(
+        let mvp_dbtc_residual = distribute_mvp_pool(
             mvp_pool_total,
             &war_state.mvp_user,
             &final_ranks,
             active_factions,
             &mut war_settlement.mvp_bonus,
         )?;
+        let mvp_dbtc_allocated = mvp_pool_total.saturating_sub(mvp_dbtc_residual);
 
         // SOL MVP — eligible share stays on settlement; residual drains.
         // `sol_mvp_pool` was set by `compute_base_reward_pools` to the full
         // pre-eligibility-shrink slice; replace it with the eligible amount
         // here so claim-time scaling stays self-consistent.
         let sol_mvp_total = war_settlement.sol_mvp_pool;
-        let (sol_mvp_eligible, mvp_sol_residual) = split_sol_mvp_residual(
+        let (sol_mvp_eligible, mvp_sol_residual) = split_sol_mvp_residual_with_dbtc_guard(
             sol_mvp_total,
+            mvp_dbtc_allocated,
             &war_state.mvp_user,
             &final_ranks,
             active_factions,
@@ -1388,27 +1411,29 @@ pub fn claim_war_rewards_internal(ctx: Context<ClaimFactionWarRewards>, war_id: 
     let mut mvp_bonus_amount = 0u64;
     for fid in 0..active_factions {
         if war_state.mvp_user[fid] == owner_key {
-            mvp_bonus_amount = war_settlement.mvp_bonus[fid];
+            let faction_mvp_bonus = war_settlement.mvp_bonus[fid];
             msg!(
                 "🏆 [faction_war.claim_war_rewards_internal] MVP match fid={} mvp_bonus_amount={}",
                 fid,
-                mvp_bonus_amount
+                faction_mvp_bonus
             );
-            if mvp_bonus_amount > 0 {
+            if faction_mvp_bonus > 0 {
+                mvp_bonus_amount = mvp_bonus_amount
+                    .checked_add(faction_mvp_bonus)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?;
                 let old_total = total_reward;
                 total_reward = total_reward
-                    .checked_add(mvp_bonus_amount)
+                    .checked_add(faction_mvp_bonus)
                     .ok_or(ErrorCode::ArithmeticOverflow)?;
                 msg!(
                     "🏆 [faction_war.claim_war_rewards_internal] MVP Bonus claimed: faction={} rank={} bonus={} total_reward: {} -> {}",
                     fid,
                     war_settlement.final_ranks[fid] + 1,
-                    mvp_bonus_amount,
+                    faction_mvp_bonus,
                     old_total,
                     total_reward
                 );
             }
-            break;
         }
     }
 
@@ -1810,7 +1835,7 @@ mod tests {
     #[test]
     fn rankings_basic_order() {
         let mut ranks = [0u8; NUM_FACTIONS];
-        let scores = [100i64, 200, 50, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let scores = [100u64, 200, 50, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         let round_wins = [1u16, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         compute_rankings_into(&scores, &round_wins, 3, &mut ranks).unwrap();
         // Sorted by score desc: 200 (idx 1), 100 (idx 0), 50 (idx 2)
@@ -1822,7 +1847,7 @@ mod tests {
     #[test]
     fn rankings_tiebreak_by_round_wins() {
         let mut ranks = [0u8; NUM_FACTIONS];
-        let scores = [100i64, 100, 100, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let scores = [100u64, 100, 100, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         let round_wins = [1u16, 3, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         compute_rankings_into(&scores, &round_wins, 3, &mut ranks).unwrap();
         assert_eq!(ranks[0], 2);
@@ -1833,7 +1858,7 @@ mod tests {
     #[test]
     fn rankings_tiebreak_by_faction_id() {
         let mut ranks = [0u8; NUM_FACTIONS];
-        let scores = [100i64; NUM_FACTIONS];
+        let scores = [100u64; NUM_FACTIONS];
         let round_wins = [1u16; NUM_FACTIONS];
         compute_rankings_into(&scores, &round_wins, 3, &mut ranks).unwrap();
         assert_eq!(ranks[0], 0);
@@ -1842,14 +1867,27 @@ mod tests {
     }
 
     #[test]
-    fn rankings_negative_scores() {
+    fn rankings_handles_scores_above_i64_max() {
         let mut ranks = [0u8; NUM_FACTIONS];
-        let scores = [-50i64, 100, -100, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let scores = [
+            i64::MAX as u64 + 1,
+            u64::MAX - 1,
+            u64::MAX,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+        ];
         let round_wins = [0u16; NUM_FACTIONS];
         compute_rankings_into(&scores, &round_wins, 3, &mut ranks).unwrap();
-        assert_eq!(ranks[0], 1);
-        assert_eq!(ranks[1], 0);
-        assert_eq!(ranks[2], 2);
+        assert_eq!(ranks[0], 2);
+        assert_eq!(ranks[1], 1);
+        assert_eq!(ranks[2], 0);
     }
 
     // ------------------------------------------------------------------------
@@ -2159,6 +2197,41 @@ mod tests {
         assert_eq!(settlement.sol_mvp_pool, 0);
         assert!(settlement.base_reward_pools.iter().all(|&p| p == 0));
         assert!(settlement.hashbeast_reward_pools.iter().all(|&p| p == 0));
+    }
+
+    #[test]
+    fn base_reward_pools_drain_sol_lane_when_dbtc_lane_rounds_to_zero() {
+        let mut war_state = FactionWarState::blank();
+        war_state.faction_count = 3;
+        war_state.dbtc_mined_this_war = 1;
+        war_state.sol_reward_pool = 1_000_000;
+        war_state.faction_direction_totals[0][2] = 100;
+
+        let mut settlement = FactionWarSettlement::blank();
+        settlement.final_ranks = [0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        settlement.resolved_directions[0] = PredictionDirection::Up.as_index() as u8;
+
+        let tuning = default_test_tuning();
+        let residual = compute_base_reward_pools(&war_state, &mut settlement, &tuning).unwrap();
+
+        assert_eq!(settlement.base_reward_pools.iter().sum::<u64>(), 0);
+        assert_eq!(settlement.sol_base_pool, 0);
+        assert_eq!(settlement.sol_hb_pool, 0);
+        assert_eq!(settlement.sol_mvp_pool, 200_000);
+        assert_eq!(residual, 800_000);
+    }
+
+    #[test]
+    fn mvp_sol_drains_when_mvp_dbtc_rounds_to_zero() {
+        let mut mvp_user = no_mvps();
+        mvp_user[0] = user(42);
+        let final_ranks = [0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+        let (eligible, residual) =
+            split_sol_mvp_residual_with_dbtc_guard(200_000, 0, &mvp_user, &final_ranks, 3).unwrap();
+
+        assert_eq!(eligible, 0);
+        assert_eq!(residual, 200_000);
     }
 
     /// Per-faction non-eligibility produces a SOL residual.

@@ -1663,8 +1663,9 @@ pub struct FactionWarConfig {
     /// - `settle_war` requires this to be non-zero AND
     ///   `last_processed_round_id == cycle_end_round_id` (boundary round
     ///   already folded into war_state).
-    /// - Reset to `0` inside `finalize_war_settlement` so the next war
-    ///   starts fresh.
+    /// - Stays non-zero after `finalize_war_settlement` so `start_round`
+    ///   remains blocked until `initialize_war_internal` creates the next
+    ///   war PDAs, then resets to `0` there so the next war starts fresh.
     pub cycle_end_round_id: u64,
 
     /// Per-country additive SOL volume accumulated since each country's last

@@ -216,6 +216,27 @@ fn proportional_post_fee_share(
     .map_err(|_| ErrorCode::ArithmeticOverflow.into())
 }
 
+fn require_canonical_faction_state(
+    global_config: &GlobalConfig,
+    faction_state_key: Pubkey,
+    faction_id: usize,
+) -> Result<()> {
+    let faction_name = global_config
+        .supported_factions
+        .get(faction_id)
+        .ok_or(ErrorCode::InvalidFactionId)?;
+    let (expected_faction_state, _) = Pubkey::find_program_address(
+        &[FACTION_STATE_SEED.as_ref(), faction_name.as_bytes()],
+        &crate::id(),
+    );
+    require_keys_eq!(
+        faction_state_key,
+        expected_faction_state,
+        ErrorCode::InvalidAccount
+    );
+    Ok(())
+}
+
 #[inline(never)]
 pub fn internal_crank_distribute_tax<'info>(
     accounts: &mut CrankDistributeTax<'info>,
@@ -487,6 +508,11 @@ pub fn internal_claim_faction_treasury_for_faction_war(
         ErrorCode::InvalidFactionId
     );
     require!(
+        active_factions <= ctx.accounts.global_config.supported_factions.len(),
+        ErrorCode::InvalidFactionId
+    );
+    require_canonical_faction_state(&ctx.accounts.global_config, fs.key(), fid as usize)?;
+    require!(
         (fid as usize) < NUM_FACTIONS && (fid as u32) < u16::BITS,
         ErrorCode::InvalidFactionId
     );
@@ -505,6 +531,7 @@ pub fn internal_claim_faction_treasury_for_faction_war(
 
     // Determine this faction's rank from faction_war final_ranks
     let rank = war_settlement.final_ranks[fid as usize] as usize;
+    require!(rank < active_factions, ErrorCode::InvalidState);
 
     // --- 80% rank-weighted: rank_points = active_factions - rank ---
     // #1 gets the most points, #last gets 1 point. Everyone gets something.
@@ -813,6 +840,9 @@ pub struct ClaimFactionTreasuryForFactionWar<'info> {
 
     #[account(mut)]
     pub faction_state: Box<Account<'info, FactionState>>,
+
+    #[account(seeds = [GLOBAL_CONFIG_SEED], bump = global_config.bump)]
+    pub global_config: Box<Account<'info, GlobalConfig>>,
 
     pub degenbtc_mint: Box<InterfaceAccount<'info, Mint>>,
 

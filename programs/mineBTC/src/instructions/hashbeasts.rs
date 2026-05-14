@@ -101,10 +101,10 @@
 //! `PASSIVE_HASHBEAST_STAKING_MAX_MULTIPLIER` (3x). Stake also bumps
 //! `faction_state.hashbeasts_staked_count` (faction loyalty signal).
 //!
-//! Unstaking pulls the asset back to the owner and subtracts the multiplier.
-//! Two-step: `request_unstake` sets a `unstake_request_at`, actual unstake
-//! becomes valid after `UNSTAKE_DELAY_SECS`. This prevents stake-flip
-//! attacks where someone front-runs faction-war settle.
+//! Unstaking pulls the asset back to the owner and subtracts the multiplier
+//! after first syncing pending staking rewards at the pre-unstake hashpower.
+//! There is no passive-unstake delay in the current account model; gameplay
+//! HashBeast withdrawal has its own next-faction-war unlock gate in `user.rs`.
 //!
 //! ## Tickets
 //!
@@ -740,6 +740,10 @@ pub fn int_admin_mint_hashbeast(
         ctx.accounts.hashbeast_collection.is_some(),
         ErrorCode::InvalidAccount
     );
+    require!(
+        ctx.accounts.hashbeast_asset.is_signer,
+        ErrorCode::Unauthorized
+    );
 
     // Verify recipient matches instruction parameter
     require!(
@@ -1138,6 +1142,10 @@ pub fn int_stake_hashbeast(ctx: Context<StakeHashBeast>) -> Result<()> {
     );
     require!(
         player_data.staked_hashbeasts.len() < MAX_STAKED_HASHBEASTS,
+        ErrorCode::InvalidParameters
+    );
+    require!(
+        !player_data.staked_hashbeasts.contains(&hashbeast_mint),
         ErrorCode::InvalidParameters
     );
     require!(
@@ -1774,13 +1782,6 @@ pub fn int_breed_hashbeasts(ctx: Context<BreedHashBeast>) -> Result<()> {
     crate::log_fn!("hashbeasts", "int_breed_hashbeasts");
     require!(!ctx.accounts.global_config.is_paused, ErrorCode::GamePaused);
 
-    // Breed mints a new asset; the canonical collection account must be
-    // supplied so MPL Core attaches it to the collection (Accounts struct
-    // address-pins it when present).
-    require!(
-        ctx.accounts.hashbeast_collection.is_some(),
-        ErrorCode::InvalidAccount
-    );
     // Block self-breeding: passing the same asset as mom and dad would
     // increment breed_count only once (second metadata mutation overwrites
     // the first on serialize), bypassing the two-parent requirement.
@@ -1789,6 +1790,39 @@ pub fn int_breed_hashbeasts(ctx: Context<BreedHashBeast>) -> Result<()> {
         ErrorCode::InvalidParameters
     );
     let hashbeast_config = &mut ctx.accounts.hashbeast_config;
+    // Breed mints a new asset; the canonical collection account must be
+    // supplied so MPL Core attaches it to the collection. This is checked in
+    // the handler rather than as an Anchor account constraint to keep
+    // BreedHashBeast::try_accounts under the SBF stack ceiling.
+    let hashbeast_collection = ctx
+        .accounts
+        .hashbeast_collection
+        .as_ref()
+        .ok_or(ErrorCode::InvalidAccount)?;
+    require_keys_eq!(
+        hashbeast_collection.key(),
+        hashbeast_config.hashbeast_collection,
+        ErrorCode::InvalidAccount
+    );
+    require_keys_eq!(
+        ctx.accounts.dbtc_token_vault.key(),
+        ctx.accounts.dbtc_mining.dbtc_token_vault,
+        ErrorCode::InvalidAccount
+    );
+    require_keys_eq!(
+        ctx.accounts.dbtc_token_vault.mint,
+        ctx.accounts.token_mint.key(),
+        ErrorCode::InvalidMint
+    );
+    require_keys_eq!(
+        ctx.accounts.dbtc_token_vault.owner,
+        ctx.accounts.vault_authority.key(),
+        ErrorCode::Unauthorized
+    );
+    require!(
+        ctx.accounts.token_mint.decimals == DBTC_DECIMALS,
+        ErrorCode::InvalidMint
+    );
     let mom = &mut ctx.accounts.mom_metadata;
     let dad = &mut ctx.accounts.dad_metadata;
     let clock = Clock::get()?;
@@ -2187,6 +2221,10 @@ fn add_tickets_to_player(
     ticket_tier_index: u8,
     price: u64,
 ) -> Result<u64> {
+    require!(
+        player_data.free_tickets.len() == player_data.free_tickets_remaining.len(),
+        ErrorCode::InvalidState
+    );
     require!(
         (ticket_tier_index as usize) < hashbeast_mint_config.ticket_tiers.len(),
         ErrorCode::InvalidParameters
@@ -2685,7 +2723,10 @@ pub struct BatchMintHashBeast<'info> {
     pub wsol_mint: UncheckedAccount<'info>,
 
     /// CHECK: HashBeast collection (Metaplex Core)
-    #[account(mut)]
+    #[account(
+        mut,
+        address = hashbeast_config.hashbeast_collection @ ErrorCode::InvalidAccount,
+    )]
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     /// CHECK: Collection authority PDA
@@ -2794,6 +2835,7 @@ pub struct AdminMintHashBeast<'info> {
     pub collection_authority: UncheckedAccount<'info>,
 
     /// CHECK: Metaplex Core program
+    #[account(address = MPL_CORE_PROGRAM_ID @ ErrorCode::InvalidMplCoreProgram)]
     pub mpl_core_program: UncheckedAccount<'info>,
 
     pub system_program: Program<'info, System>,
@@ -2893,7 +2935,10 @@ pub struct StakeHashBeast<'info> {
     )]
     pub player_data: Account<'info, PlayerData>,
 
-    #[account(mut)]
+    #[account(
+        mut,
+        constraint = faction_state.faction_id == player_data.faction_id @ ErrorCode::InvalidFactionId
+    )]
     pub faction_state: Account<'info, FactionState>,
 
     #[account(seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
@@ -2940,6 +2985,7 @@ pub struct StakeHashBeast<'info> {
     pub hashbeast_custody_pda: UncheckedAccount<'info>,
 
     /// CHECK: Metaplex Core program
+    #[account(address = MPL_CORE_PROGRAM_ID @ ErrorCode::InvalidMplCoreProgram)]
     pub mpl_core_program: UncheckedAccount<'info>,
 
     #[account(mut)]
@@ -2958,7 +3004,10 @@ pub struct UnstakeHashBeast<'info> {
     )]
     pub player_data: Account<'info, PlayerData>,
 
-    #[account(mut)]
+    #[account(
+        mut,
+        constraint = faction_state.faction_id == player_data.faction_id @ ErrorCode::InvalidFactionId
+    )]
     pub faction_state: Account<'info, FactionState>,
 
     #[account(seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
@@ -3005,6 +3054,7 @@ pub struct UnstakeHashBeast<'info> {
     pub hashbeast_custody_pda: UncheckedAccount<'info>,
 
     /// CHECK: Metaplex Core program
+    #[account(address = MPL_CORE_PROGRAM_ID @ ErrorCode::InvalidMplCoreProgram)]
     pub mpl_core_program: UncheckedAccount<'info>,
 
     #[account(mut)]
@@ -3052,7 +3102,7 @@ pub struct RebirthHashBeast<'info> {
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
     /// CHECK: Metaplex Core program
-    #[account(address = MPL_CORE_PROGRAM_ID)]
+    #[account(address = MPL_CORE_PROGRAM_ID @ ErrorCode::InvalidMplCoreProgram)]
     pub mpl_core_program: UncheckedAccount<'info>,
 
     /// Global inventory pool — counters bumped here. Same PDA acts as the
@@ -3109,12 +3159,13 @@ pub struct RebirthHashBeast<'info> {
         bump,
         token::mint = token_mint,
         token::authority = vault_authority,
+        constraint = dbtc_token_vault.key() == dbtc_mining.dbtc_token_vault @ ErrorCode::InvalidAccount,
     )]
     pub dbtc_token_vault: InterfaceAccount<'info, TokenAccount2022>,
 
     #[account(
         seeds = [DEGEN_BTC_VAULT_AUTHORITY_SEED.as_ref()],
-        bump
+        bump = dbtc_mining.vault_auth_bump
     )]
     /// CHECK: Vault authority PDA
     pub vault_authority: UncheckedAccount<'info>,
@@ -3126,7 +3177,10 @@ pub struct RebirthHashBeast<'info> {
     )]
     pub user_token_account: InterfaceAccount<'info, TokenAccount2022>,
 
-    #[account(address = dbtc_token_vault.mint)]
+    #[account(
+        address = dbtc_token_vault.mint,
+        constraint = token_mint.decimals == DBTC_DECIMALS @ ErrorCode::InvalidMint,
+    )]
     pub token_mint: InterfaceAccount<'info, Mint2022>,
 
     pub token_program: Program<'info, Token2022>,
@@ -3187,9 +3241,6 @@ pub struct BreedHashBeast<'info> {
         mut,
         seeds = [DEGEN_BTC_VAULT_SEED, dbtc_mining.key().as_ref()],
         bump,
-        token::mint = token_mint,
-        token::authority = vault_authority,
-        constraint = dbtc_token_vault.key() == dbtc_mining.dbtc_token_vault @ ErrorCode::InvalidAccount,
     )]
     pub dbtc_token_vault: Box<InterfaceAccount<'info, TokenAccount2022>>,
 
@@ -3207,11 +3258,7 @@ pub struct BreedHashBeast<'info> {
     )]
     pub user_token_account: Box<InterfaceAccount<'info, TokenAccount2022>>,
 
-    #[account(
-        mut,
-        address = dbtc_token_vault.mint,
-        constraint = token_mint.decimals == DBTC_DECIMALS @ ErrorCode::InvalidMint,
-    )]
+    #[account(mut)]
     pub token_mint: Box<InterfaceAccount<'info, Mint2022>>,
 
     /// CHECK: Mom NFT asset - Verified via get_mpl_core_owner
@@ -3251,7 +3298,9 @@ pub struct BreedHashBeast<'info> {
     )]
     pub offspring_metadata: Box<Account<'info, HashBeastMetadata>>,
 
-    /// CHECK: HashBeast collection
+    /// CHECK: HashBeast collection. Handler address-checks against
+    /// `hashbeast_config.hashbeast_collection` to keep generated account
+    /// validation below the SBF stack ceiling.
     #[account(mut)]
     pub hashbeast_collection: Option<UncheckedAccount<'info>>,
 
@@ -3260,6 +3309,7 @@ pub struct BreedHashBeast<'info> {
     pub collection_authority: UncheckedAccount<'info>,
 
     /// CHECK: Metaplex Core program
+    #[account(address = MPL_CORE_PROGRAM_ID @ ErrorCode::InvalidMplCoreProgram)]
     pub mpl_core_program: UncheckedAccount<'info>,
 
     pub token_program_2022: Program<'info, Token2022>,
