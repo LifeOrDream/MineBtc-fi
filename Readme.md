@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://minebtc.fun">
-    <img src="./docs/images/logo.png" alt="MineBTC" width="128" />
+    <img src="./docs/images/degenbtc-logo-blink.svg" alt="MineBTC" width="128" />
   </a>
 </p>
 
