@@ -17,9 +17,10 @@
     "token": {
         "name": "degenBTC",
         "symbol": "dBTC",
-        "description": "$dBTC is the native token of MineBTC \u2014 a degen country-arena game on Solana. Players pick a country and direction, bet SOL on 60-second rounds, trigger operator-NFT story events, and climb the story-event leaderboard over faction-war cycles tied to the economy's LP burn. 2.1B fixed supply, 0.1% transfer tax (Token-2022), deflationary by design.",
-        "metadata_uri": "https://assets.minebtc.fun/btc",
-        "image": "https://assets.minebtc.fun/btc-logo.png",
+        "description": "Casino-speed country wars where SOL bets mine degenBTC and wake up on-chain HashBeasts.",
+        "metadata_uri": "https://gateway.irys.xyz/EtvQAJH2KoGmJdVEEn2wPiTsmVYrTeLPVax882zMWBC9",
+        "image": "https://gateway.irys.xyz/GpxgscWN3w3DSY71QiSFX6bR9DD1tPGD3cGXmu74gVdu",
+        "animation_url": "https://gateway.irys.xyz/21StrtbPGnXRaYjmmzqJUjux8pm8JJxAKxdgXaT8hdCM",
         "external_url": "https://minebtc.fun",
         "decimals": 6,
         "initial_supply": 2100000000,
@@ -27,7 +28,7 @@
         "max_transfer_fee_amount": 1000000
     },
     "raydium": {
-        "program_id": "89ViWKvGiRtvbstz2fT4h1ec6eu7buPm4Xamm7KNqQC2",
+        "program_id": "5pVzujKAMdyrMhFfzkJUWqdH6mvUPAWCskXAvE2dSMeZ",
         "use_official_program": false,
         "amm_config_index": 3,
         "trade_fee_rate": 10000,

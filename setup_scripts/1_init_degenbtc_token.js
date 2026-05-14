@@ -12,6 +12,7 @@
  * 4. Remove mint authority (make token non-mintable)
  * 5. Set withdraw withheld authority to program PDA
  * 6. Freeze transfer fee config authority (make transfer tax immutable)
+ * 7. Remove metadata update authority (make metadata immutable)
  *
  * SAFETY FEATURES:
  * - All operations are idempotent (can be safely re-run)
@@ -46,7 +47,11 @@ import {
   AuthorityType,
   getMint,
 } from "@solana/spl-token";
-import { createInitializeInstruction, pack } from "@solana/spl-token-metadata";
+import {
+  createInitializeInstruction,
+  createUpdateAuthorityInstruction,
+  pack,
+} from "@solana/spl-token-metadata";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -75,7 +80,9 @@ const TOKEN_METADATA = {
   description: config.token.description,
   metadata_uri: config.token.metadata_uri || config.token.uri || config.token.image,
   image: config.token.image,
+  animation_url: config.token.animation_url,
   external_url: config.token.external_url,
+  assets: config.token.metadata_assets || {},
 };
 
 // ============================================================================
@@ -173,6 +180,14 @@ const TOKEN_METADATA = {
       deploymentPath
     );
 
+    // 7. Remove metadata update authority
+    await removeMetadataUpdateAuthority(
+      connection,
+      deployer,
+      deploymentData,
+      deploymentPath
+    );
+
     // Print completion summary
     printCompletionSummary(deploymentData);
   } catch (error) {
@@ -184,6 +199,86 @@ const TOKEN_METADATA = {
 // ============================================================================
 // ========== VALIDATION FUNCTIONS ===========================================
 // ============================================================================
+
+function urlPathname(uri) {
+  try {
+    const url = new URL(uri);
+    return url.pathname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function resolveAssetPath(assetPath) {
+  return path.resolve(__dirname, assetPath);
+}
+
+function validateLocalMetadataAssets(errors) {
+  const { local_json, local_image, local_animation } = TOKEN_METADATA.assets;
+
+  if (!local_json && !local_image && !local_animation) {
+    return;
+  }
+
+  if (TOKEN_METADATA.assets.canonical_image_format !== "png") {
+    errors.push("metadata_assets.canonical_image_format must be png for production token metadata");
+  }
+
+  if (local_image) {
+    const imagePath = resolveAssetPath(local_image);
+    if (!fs.existsSync(imagePath)) {
+      errors.push(`Local token image does not exist: ${local_image}`);
+    } else if (path.extname(imagePath).toLowerCase() !== ".png") {
+      errors.push("Local canonical token image must be a PNG");
+    }
+  }
+
+  if (local_animation) {
+    const animationPath = resolveAssetPath(local_animation);
+    if (!fs.existsSync(animationPath)) {
+      errors.push(`Local token animation does not exist: ${local_animation}`);
+    }
+  }
+
+  if (!local_json) {
+    return;
+  }
+
+  const metadataPath = resolveAssetPath(local_json);
+  if (!fs.existsSync(metadataPath)) {
+    errors.push(`Local token metadata JSON does not exist: ${local_json}`);
+    return;
+  }
+
+  try {
+    const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
+    for (const field of ["name", "symbol", "description", "image", "external_url"]) {
+      if (!metadata[field]) {
+        errors.push(`Local token metadata JSON is missing "${field}"`);
+      }
+    }
+    if (metadata.name !== TOKEN_METADATA.name) {
+      errors.push("Local token metadata name does not match config.token.name");
+    }
+    if (metadata.symbol !== TOKEN_METADATA.symbol) {
+      errors.push("Local token metadata symbol does not match config.token.symbol");
+    }
+    if (metadata.description !== TOKEN_METADATA.description) {
+      errors.push("Local token metadata description does not match config.token.description");
+    }
+    if (metadata.image !== TOKEN_METADATA.image) {
+      errors.push("Local token metadata image does not match config.token.image");
+    }
+    if (TOKEN_METADATA.animation_url && metadata.animation_url !== TOKEN_METADATA.animation_url) {
+      errors.push("Local token metadata animation_url does not match config.token.animation_url");
+    }
+    if (metadata.external_url !== TOKEN_METADATA.external_url) {
+      errors.push("Local token metadata external_url does not match config.token.external_url");
+    }
+  } catch (error) {
+    errors.push(`Local token metadata JSON is invalid: ${error.message}`);
+  }
+}
 
 function validateConfiguration() {
   console.log("\x1b[33m%s\x1b[0m", "🔍 Validating configuration...");
@@ -270,7 +365,20 @@ function validateConfiguration() {
     } catch {
       errors.push("Token image must be a valid URL");
     }
+    const imagePath = urlPathname(TOKEN_METADATA.image);
+    if (imagePath.endsWith(".gif") || imagePath.endsWith(".svg")) {
+      errors.push("Token image must be a static raster image; keep GIF/SVG in animation_url or app UI only");
+    }
   }
+  if (TOKEN_METADATA.animation_url) {
+    try {
+      new URL(TOKEN_METADATA.animation_url);
+    } catch {
+      errors.push("Token animation_url must be a valid URL");
+    }
+  }
+
+  validateLocalMetadataAssets(errors);
 
   if (errors.length > 0) {
     console.error("\x1b[31m%s\x1b[0m", "❌ Configuration validation failed:");
@@ -517,6 +625,7 @@ async function createMintAccountTx(
     additionalMetadata: [
       ...(TOKEN_METADATA.description ? [["description", TOKEN_METADATA.description]] : []),
       ...(TOKEN_METADATA.image ? [["image", TOKEN_METADATA.image]] : []),
+      ...(TOKEN_METADATA.animation_url ? [["animation_url", TOKEN_METADATA.animation_url]] : []),
       ...(TOKEN_METADATA.external_url ? [["external_url", TOKEN_METADATA.external_url]] : []),
     ],
   };
@@ -602,6 +711,7 @@ async function createMintAccountTx(
       metadata_symbol: metadata.symbol,
       metadata_uri: metadata.uri,
       metadata_image: TOKEN_METADATA.image,
+      metadata_animation_url: TOKEN_METADATA.animation_url,
       metadata_external_url: TOKEN_METADATA.external_url,
       creation_signature: signature,
       timestamp: new Date().toISOString(),
@@ -1199,6 +1309,89 @@ async function freezeTransferFeeConfigAuthority(
   }
 }
 
+async function removeMetadataUpdateAuthority(
+  connection,
+  deployer,
+  deploymentData,
+  deploymentPath
+) {
+  if (deploymentData.metadata_update_authority_removed) {
+    console.log(
+      "\x1b[34m%s\x1b[0m",
+      "ℹ️ Metadata update authority already removed. Skipping..."
+    );
+    console.log(
+      "\x1b[36m%s\x1b[0m",
+      "🔒 Metadata is immutable"
+    );
+    return;
+  }
+
+  console.log(
+    "\x1b[35m%s\x1b[0m",
+    "\n=================== [ REMOVING METADATA UPDATE AUTHORITY ] ==================="
+  );
+
+  const mintPubkey = new PublicKey(
+    deploymentData.dbtc_mint_created.mint_address
+  );
+
+  console.log(
+    "\x1b[36m%s\x1b[0m",
+    `   • Current Update Authority: ${deployer.publicKey.toBase58()}`
+  );
+  console.log(
+    "\x1b[36m%s\x1b[0m",
+    "   • Action: Set metadata update authority to null"
+  );
+
+  try {
+    const transaction = new Transaction().add(
+      createUpdateAuthorityInstruction({
+        programId: TOKEN_2022_PROGRAM_ID,
+        metadata: mintPubkey,
+        oldAuthority: deployer.publicKey,
+        newAuthority: null,
+      })
+    );
+    const signature = await sendAndConfirmTransaction(connection, transaction, [
+      deployer,
+    ]);
+
+    deploymentData.metadata_update_authority_removed = {
+      previous_update_authority: deployer.publicKey.toBase58(),
+      new_update_authority: null,
+      removal_signature: signature,
+      timestamp: new Date().toISOString(),
+    };
+    deploymentData.dbtc_mint_created.metadata_update_authority = null;
+    deploymentData.dbtc_mint_created.metadata_update_authority_status =
+      "removed";
+
+    fs.writeFileSync(deploymentPath, JSON.stringify(deploymentData, null, 2));
+    console.log(
+      "\x1b[32m%s\x1b[0m",
+      "✅ Metadata update authority removed successfully"
+    );
+    console.log(
+      "\x1b[32m%s\x1b[0m",
+      "🔒 Token metadata is now immutable"
+    );
+    console.log("\x1b[90m%s\x1b[0m", "🔗 Transaction:", signature);
+  } catch (error) {
+    console.error(
+      "\x1b[31m%s\x1b[0m",
+      "❌ Failed to remove metadata update authority:",
+      error
+    );
+    console.error("\x1b[31m%s\x1b[0m", "Error details:", error.message);
+    if (error.logs) {
+      console.error("\x1b[31m%s\x1b[0m", "Transaction logs:", error.logs);
+    }
+    throw error;
+  }
+}
+
 function printCompletionSummary(deploymentData) {
   console.log(
     "\x1b[35m%s\x1b[0m",
@@ -1237,6 +1430,14 @@ function printCompletionSummary(deploymentData) {
       console.log(
         "\x1b[90m%s\x1b[0m",
         `   Metadata Location: Built into mint account (Token-2022 native)`
+      );
+      console.log(
+        "\x1b[90m%s\x1b[0m",
+        `   Metadata URI: ${deploymentData.dbtc_mint_created.metadata_uri}`
+      );
+      console.log(
+        "\x1b[90m%s\x1b[0m",
+        `   Metadata Image: ${deploymentData.dbtc_mint_created.metadata_image}`
       );
     }
 
@@ -1296,6 +1497,13 @@ function printCompletionSummary(deploymentData) {
           deploymentData.dbtc_mint_created.transfer_fee_config_authority ||
           "None"
         }`
+      );
+    }
+
+    if (deploymentData.metadata_update_authority_removed) {
+      console.log(
+        "\x1b[32m%s\x1b[0m",
+        `   🔒 Metadata Update Authority: REMOVED - Metadata is immutable`
       );
     }
   }
