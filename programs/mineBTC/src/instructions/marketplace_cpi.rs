@@ -65,11 +65,15 @@
 //!         ▼ DistributeSolFees splits `nft_market_making_pct`
 //!   inventory_sweep_vault  ◀──┐
 //!         │                    │ 50% (handle_inventory_proceeds)
-//!         │ sweep buy ≤        │
+//!         │ pays sweep buy ≤   │
 //!         │ min(5%×vault,      │
 //!         │     1.05×anchor)   │
 //!         ▼                    │
-//!   inventory_pda  ── sale proceeds (any time the protocol lists & sells)
+//!   marketplace seller/fee     │
+//!         │                    │
+//!         ▼                    │
+//!   inventory_pda receives NFT │
+//!   inventory_pda receives sale proceeds when protocol listings sell
 //!         │                    │
 //!         │ 50% to sweep_vault │
 //!         │ 50% to sol_treasury (handle_inventory_proceeds)
@@ -113,7 +117,8 @@
 //! - `handle_inventory_proceeds` — drains accumulated sale lamports from
 //!   inventory_pda, splitting 50/50 between sweep_vault and sol_treasury.
 //! - `inventory_finalize_sale` — closes a sold inventory `RebornEntry`
-//!   after verifying the on-chain asset owner is no longer inventory_pda.
+//!   after verifying the on-chain asset owner is neither inventory_pda nor
+//!   the canonical marketplace escrow PDA.
 //! - `claim_lootbox_nft` — delivers a reserved loser-roll HashBeast to its
 //!   recorded winner. Cranker can be anyone; recipient is fixed by the
 //!   `LootboxClaim.user` address constraint on the `user` field.
@@ -753,28 +758,6 @@ fn raw_floor_history_compute_trend_bps(history_info: &AccountInfo<'_>) -> Result
     Ok(bps.clamp(-10_000, 10_000) as i32)
 }
 
-/// Pre-fund inventory_pda from sweep_vault by `lamports`. The vault PDA signs
-/// via its seeds.
-fn fund_inventory_from_sweep_vault<'info>(
-    sweep_vault: &AccountInfo<'info>,
-    inventory_pda: &AccountInfo<'info>,
-    system_program: &AccountInfo<'info>,
-    sweep_bump: u8,
-    lamports: u64,
-) -> Result<()> {
-    let seeds_inner: &[&[u8]] = &[INVENTORY_SWEEP_VAULT_SEED, &[sweep_bump]];
-    let signers: &[&[&[u8]]] = &[seeds_inner];
-    let cpi_ctx = CpiContext::new_with_signer(
-        system_program.to_account_info(),
-        Transfer {
-            from: sweep_vault.to_account_info(),
-            to: inventory_pda.to_account_info(),
-        },
-        signers,
-    );
-    sys_prog::transfer(cpi_ctx, lamports)
-}
-
 /// Pay `lamports` keeper bounty out of sweep_vault.
 fn pay_keeper<'info>(
     sweep_vault: &AccountInfo<'info>,
@@ -882,6 +865,7 @@ pub fn internal_list_user_nft(ctx: Context<ListUserNft>, price_lamports: u64) ->
     let cpi_ctx = CpiContext::new(
         ctx.accounts.marketplace_program.to_account_info(),
         degenbtc_market::cpi::accounts::ListNft {
+            payer: ctx.accounts.seller.to_account_info(),
             seller: ctx.accounts.seller.to_account_info(),
             marketplace_config: ctx.accounts.marketplace_config.to_account_info(),
             listing: ctx.accounts.marketplace_listing.to_account_info(),
@@ -1029,6 +1013,7 @@ pub fn internal_cancel_user_listing(ctx: Context<CancelUserListing>) -> Result<(
     let cpi_ctx = CpiContext::new(
         ctx.accounts.marketplace_program.to_account_info(),
         degenbtc_market::cpi::accounts::CancelListing {
+            payer: ctx.accounts.seller.to_account_info(),
             seller: ctx.accounts.seller.to_account_info(),
             marketplace_config: ctx.accounts.marketplace_config.to_account_info(),
             listing: ctx.accounts.marketplace_listing.to_account_info(),
@@ -1320,6 +1305,7 @@ pub fn internal_buy_user_listing(
     let cpi_ctx = CpiContext::new(
         ctx.accounts.marketplace_program.to_account_info(),
         degenbtc_market::cpi::accounts::BuyListing {
+            payer: ctx.accounts.buyer.to_account_info(),
             buyer: ctx.accounts.buyer.to_account_info(),
             seller: ctx.accounts.seller.to_account_info(),
             marketplace_config: ctx.accounts.marketplace_config.to_account_info(),
@@ -1867,36 +1853,46 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
         ErrorCode::FloorPriceTooHigh
     );
 
-    // Vault reserve + per-tx cap.
+    let queue_has_space = (ctx.accounts.lootbox_queue.filled_count as usize) < LOOTBOX_QUEUE_SIZE;
+    let will_relist_after_sweep = !queue_has_space && trend_bps >= BURN_TREND_BPS_THRESHOLD;
+    let relist_rent = if will_relist_after_sweep {
+        Rent::get()?.minimum_balance(degenbtc_market::state::Listing::LEN)
+    } else {
+        0
+    };
+
+    // Vault reserve + per-tx cap. If this sweep will immediately relist the
+    // acquired asset, the sweep vault also pays listing rent in the downstream
+    // CPI, so include it in the solvency check.
     let vault_lamports = ctx.accounts.inventory_sweep_vault.lamports();
     let needed = chosen_entry
         .price
         .checked_add(MIN_SWEEP_RESERVE_LAMPORTS)
         .ok_or(ErrorCode::ArithmeticOverflow)?
         .checked_add(KEEPER_REWARD_LAMPORTS)
+        .ok_or(ErrorCode::ArithmeticOverflow)?
+        .checked_add(relist_rent)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     require!(vault_lamports >= needed, ErrorCode::SweepVaultBelowReserve);
 
     let tx_cap = ((vault_lamports as u128 * SWEEP_MAX_PCT_BPS as u128) / 10_000u128) as u64;
     require!(chosen_entry.price <= tx_cap, ErrorCode::SweepTxCapExceeded);
 
-    // Pre-fund inventory_pda with the buy amount.
-    fund_inventory_from_sweep_vault(
-        &ctx.accounts.inventory_sweep_vault.to_account_info(),
-        &ctx.accounts.inventory_pda.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
-        ctx.bumps.inventory_sweep_vault,
-        chosen_entry.price,
-    )?;
-
-    // CPI buy_listing as inventory_pda.
+    // CPI buy_listing with the system-owned sweep vault as SOL payer and
+    // inventory_pda as NFT recipient. Do not pre-fund inventory_pda: it is a
+    // program-owned data account and cannot pay via System Program transfer.
     let pool_bump = ctx.accounts.inventory_pool.bump;
     let inventory_seeds_inner: &[&[u8]] = &[INVENTORY_POOL_SEED, &[pool_bump]];
-    let signers: &[&[&[u8]]] = &[inventory_seeds_inner];
+    let sweep_bump = ctx.bumps.inventory_sweep_vault;
+    let sweep_seeds_inner: &[&[u8]] = &[INVENTORY_SWEEP_VAULT_SEED, &[sweep_bump]];
+    let inventory_signers: &[&[&[u8]]] = &[inventory_seeds_inner];
+    let sweep_signers: &[&[&[u8]]] = &[sweep_seeds_inner];
+    let inventory_and_sweep_signers: &[&[&[u8]]] = &[inventory_seeds_inner, sweep_seeds_inner];
     {
         let cpi_ctx = CpiContext::new_with_signer(
             ctx.accounts.marketplace_program.to_account_info(),
             degenbtc_market::cpi::accounts::BuyListing {
+                payer: ctx.accounts.inventory_sweep_vault.to_account_info(),
                 buyer: ctx.accounts.inventory_pda.to_account_info(),
                 seller: ctx.accounts.seller.to_account_info(),
                 marketplace_config: ctx.accounts.marketplace_config.to_account_info(),
@@ -1908,7 +1904,7 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
                 mpl_core_program: ctx.accounts.mpl_core_program.to_account_info(),
                 system_program: ctx.accounts.system_program.to_account_info(),
             },
-            signers,
+            sweep_signers,
         );
         degenbtc_market::cpi::buy_listing(cpi_ctx, chosen_entry.price)?;
     }
@@ -1919,9 +1915,6 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
     let asset_key = ctx.accounts.hashbeast_asset.key();
     let faction_id = ctx.accounts.hashbeast_metadata.faction_id;
     let now = Clock::get()?.unix_timestamp;
-
-    // Disposition cascade.
-    let queue_has_space = (ctx.accounts.lootbox_queue.filled_count as usize) < LOOTBOX_QUEUE_SIZE;
 
     if queue_has_space {
         // Path A: push to lootbox queue. Init RebornEntry as Lootbox.
@@ -1994,7 +1987,7 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
             &ctx.accounts.caller.to_account_info(),
             &ctx.accounts.inventory_pda.to_account_info(),
             &ctx.accounts.mpl_core_program.to_account_info(),
-            Some(signers),
+            Some(inventory_signers),
         )?;
         emit!(InventoryAssetBurned {
             asset: asset_key,
@@ -2048,6 +2041,7 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
         let cpi_ctx = CpiContext::new_with_signer(
             ctx.accounts.marketplace_program.to_account_info(),
             degenbtc_market::cpi::accounts::ListNft {
+                payer: ctx.accounts.inventory_sweep_vault.to_account_info(),
                 seller: ctx.accounts.inventory_pda.to_account_info(),
                 marketplace_config: ctx.accounts.marketplace_config.to_account_info(),
                 listing: ctx.accounts.marketplace_listing.to_account_info(),
@@ -2057,7 +2051,7 @@ pub fn internal_sweep_floor_lowest(ctx: Context<SweepFloorLowest>) -> Result<()>
                 mpl_core_program: ctx.accounts.mpl_core_program.to_account_info(),
                 system_program: ctx.accounts.system_program.to_account_info(),
             },
-            signers,
+            inventory_and_sweep_signers,
         );
         degenbtc_market::cpi::list_nft(cpi_ctx, new_price)?;
 
@@ -2295,6 +2289,7 @@ pub fn internal_expire_program_listing(ctx: Context<ExpireProgramListing>) -> Re
         read_marketplace_min_price(&ctx.accounts.marketplace_config.to_account_info())?;
     let planned_expire_count = entry.expire_count.saturating_add(1);
     let queue_has_space = (ctx.accounts.lootbox_queue.filled_count as usize) < LOOTBOX_QUEUE_SIZE;
+    let trend_bps = ctx.accounts.floor_history.compute_trend_bps();
     if !queue_has_space && planned_expire_count < MAX_EXPIRES {
         require!(
             ctx.accounts.floor_history.current_anchor() >= SWEEP_MIN_ANCHOR_LAMPORTS,
@@ -2309,15 +2304,36 @@ pub fn internal_expire_program_listing(ctx: Context<ExpireProgramListing>) -> Re
             ErrorCode::FloorAnchorStale
         );
     }
+    let will_relist_after_expire = !queue_has_space
+        && planned_expire_count < MAX_EXPIRES
+        && trend_bps >= BURN_TREND_BPS_THRESHOLD;
+    if will_relist_after_expire {
+        let relist_rent = Rent::get()?.minimum_balance(degenbtc_market::state::Listing::LEN);
+        let needed = relist_rent
+            .checked_add(MIN_SWEEP_RESERVE_LAMPORTS)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            .checked_add(KEEPER_REWARD_LAMPORTS)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        require!(
+            ctx.accounts.inventory_sweep_vault.lamports() >= needed,
+            ErrorCode::SweepVaultBelowReserve
+        );
+    }
     let pool_bump = ctx.accounts.inventory_pool.bump;
     let inventory_seeds_inner: &[&[u8]] = &[INVENTORY_POOL_SEED, &[pool_bump]];
-    let signers: &[&[&[u8]]] = &[inventory_seeds_inner];
+    let sweep_bump = ctx.bumps.inventory_sweep_vault;
+    let sweep_seeds_inner: &[&[u8]] = &[INVENTORY_SWEEP_VAULT_SEED, &[sweep_bump]];
+    let inventory_signers: &[&[&[u8]]] = &[inventory_seeds_inner];
+    let inventory_and_sweep_signers: &[&[&[u8]]] = &[inventory_seeds_inner, sweep_seeds_inner];
 
-    // Cancel the existing listing — asset returns to inventory_pda.
+    // Cancel the existing listing — asset returns to inventory_pda. The
+    // inventory PDA authorizes the asset, while the system-owned sweep vault
+    // pays any mpl-core reallocation rent.
     {
         let cpi_ctx = CpiContext::new_with_signer(
             ctx.accounts.marketplace_program.to_account_info(),
             degenbtc_market::cpi::accounts::CancelListing {
+                payer: ctx.accounts.inventory_sweep_vault.to_account_info(),
                 seller: ctx.accounts.inventory_pda.to_account_info(),
                 marketplace_config: ctx.accounts.marketplace_config.to_account_info(),
                 listing: ctx.accounts.marketplace_listing.to_account_info(),
@@ -2327,7 +2343,7 @@ pub fn internal_expire_program_listing(ctx: Context<ExpireProgramListing>) -> Re
                 mpl_core_program: ctx.accounts.mpl_core_program.to_account_info(),
                 system_program: ctx.accounts.system_program.to_account_info(),
             },
-            signers,
+            inventory_and_sweep_signers,
         );
         degenbtc_market::cpi::cancel_listing(cpi_ctx)?;
     }
@@ -2340,8 +2356,6 @@ pub fn internal_expire_program_listing(ctx: Context<ExpireProgramListing>) -> Re
     let faction_id = entry.faction_id;
     let now = Clock::get()?.unix_timestamp;
     let _ = stored_bump; // bump captured for symmetry; verified by Anchor seeds
-
-    let trend_bps = ctx.accounts.floor_history.compute_trend_bps();
 
     emit!(ProgramListingExpired {
         asset: asset_key,
@@ -2381,7 +2395,7 @@ pub fn internal_expire_program_listing(ctx: Context<ExpireProgramListing>) -> Re
             &ctx.accounts.caller.to_account_info(),
             &ctx.accounts.inventory_pda.to_account_info(),
             &ctx.accounts.mpl_core_program.to_account_info(),
-            Some(signers),
+            Some(inventory_signers),
         )?;
         ctx.accounts.inventory_pool.total_count = ctx
             .accounts
@@ -2426,7 +2440,7 @@ pub fn internal_expire_program_listing(ctx: Context<ExpireProgramListing>) -> Re
             &ctx.accounts.caller.to_account_info(),
             &ctx.accounts.inventory_pda.to_account_info(),
             &ctx.accounts.mpl_core_program.to_account_info(),
-            Some(signers),
+            Some(inventory_signers),
         )?;
         ctx.accounts.inventory_pool.total_count = ctx
             .accounts
@@ -2450,6 +2464,7 @@ pub fn internal_expire_program_listing(ctx: Context<ExpireProgramListing>) -> Re
         let cpi_ctx = CpiContext::new_with_signer(
             ctx.accounts.marketplace_program.to_account_info(),
             degenbtc_market::cpi::accounts::ListNft {
+                payer: ctx.accounts.inventory_sweep_vault.to_account_info(),
                 seller: ctx.accounts.inventory_pda.to_account_info(),
                 marketplace_config: ctx.accounts.marketplace_config.to_account_info(),
                 listing: ctx.accounts.marketplace_listing.to_account_info(),
@@ -2459,7 +2474,7 @@ pub fn internal_expire_program_listing(ctx: Context<ExpireProgramListing>) -> Re
                 mpl_core_program: ctx.accounts.mpl_core_program.to_account_info(),
                 system_program: ctx.accounts.system_program.to_account_info(),
             },
-            signers,
+            inventory_and_sweep_signers,
         );
         degenbtc_market::cpi::list_nft(cpi_ctx, new_price)?;
 
@@ -2596,31 +2611,36 @@ pub fn internal_handle_inventory_proceeds(ctx: Context<HandleInventoryProceeds>)
         .checked_sub(to_sweep)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-    let pool_bump = ctx.accounts.inventory_pool.bump;
-    let inventory_seeds_inner: &[&[u8]] = &[INVENTORY_POOL_SEED, &[pool_bump]];
-    let signers: &[&[&[u8]]] = &[inventory_seeds_inner];
-
+    // inventory_pda is the program-owned InventoryPool data account. The
+    // System Program cannot debit it like a wallet, so route proceeds by
+    // directly moving lamports while preserving rent exemption.
+    {
+        let mut inventory_lamports = pool_info.lamports.borrow_mut();
+        **inventory_lamports = inventory_lamports
+            .checked_sub(available)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+    }
     if to_sweep > 0 {
-        let cpi_ctx = CpiContext::new_with_signer(
-            ctx.accounts.system_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.inventory_pda.to_account_info(),
-                to: ctx.accounts.inventory_sweep_vault.to_account_info(),
-            },
-            signers,
-        );
-        sys_prog::transfer(cpi_ctx, to_sweep)?;
+        let sweep_lamports = ctx.accounts.inventory_sweep_vault.lamports();
+        **ctx
+            .accounts
+            .inventory_sweep_vault
+            .to_account_info()
+            .lamports
+            .borrow_mut() = sweep_lamports
+            .checked_add(to_sweep)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
     if to_protocol > 0 {
-        let cpi_ctx = CpiContext::new_with_signer(
-            ctx.accounts.system_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.inventory_pda.to_account_info(),
-                to: ctx.accounts.sol_treasury.to_account_info(),
-            },
-            signers,
-        );
-        sys_prog::transfer(cpi_ctx, to_protocol)?;
+        let treasury_lamports = ctx.accounts.sol_treasury.lamports();
+        **ctx
+            .accounts
+            .sol_treasury
+            .to_account_info()
+            .lamports
+            .borrow_mut() = treasury_lamports
+            .checked_add(to_protocol)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
 
     emit!(InventoryProceedsRouted {
@@ -2690,11 +2710,20 @@ pub fn internal_inventory_finalize_sale(ctx: Context<InventoryFinalizeSale>) -> 
     );
 
     let inventory_key = ctx.accounts.inventory_pool.key();
+    let (expected_escrow, _) = Pubkey::find_program_address(
+        &[
+            degenbtc_market::state::ESCROW_SEED,
+            ctx.accounts.inventory_pool.marketplace_config.as_ref(),
+            ctx.accounts.reborn_entry.asset.as_ref(),
+        ],
+        &degenbtc_market::ID,
+    );
     let owner = read_asset_owner(&ctx.accounts.hashbeast_asset.to_account_info())?;
     require!(
         owner != inventory_key,
         ErrorCode::AssetStillOwnedByInventory
     );
+    require!(owner != expected_escrow, ErrorCode::AssetStillListed);
 
     let asset = ctx.accounts.reborn_entry.asset;
 

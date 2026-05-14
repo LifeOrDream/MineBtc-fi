@@ -83,17 +83,17 @@ Canonical source: `programs/mineBTC/src/state.rs`.
 ## Faction War Accounts
 
 - `FactionWarConfig` PDA `[faction-war-config]`
-  - Current faction-war ID, active flag, settlement LP operation target, previous ranks, cycle telemetry, current degenBTC mining multiplier.
+  - Current faction-war ID, settlement LP operation target, previous ranks, cycle telemetry, boundary-round guard, current degenBTC mining multiplier.
   - Mining multiplier stored in bps; default 10,000 = 1.0x, contract caps 1,000 to 30,000.
 
 - `FactionWarState` PDA `[faction-war, war_id_u64_le]`
   - Stage 0 active, 1 settled/claims open.
-  - Start/final ranks, rank deltas, resolved directions, MVP users/scores/bonuses.
-  - Direction totals, SOL direction totals, loyalty totals, reward pools, round wins, SOL totals, gameplay scores, eligible HashBeast direction totals.
+  - Direction totals, SOL direction totals, round wins, SOL totals, gameplay scores, mutation scores, MVP users/scores.
   - Treasury tax base, treasury claim bitmap, SOL cycle reward pool.
+  - Final ranks, rank deltas, resolved directions, reward pools, MVP bonuses, and SOL reward pools live in the paired `FactionWarSettlement`.
 
 - `UserFactionWarBets` PDA `[user-faction-war, user_pubkey, war_id_u64_le]`
-  - Per-user weighted and SOL direction bets for a cycle, gameplay HashBeast, hashbeast bonus eligibility.
+  - Per-user weighted and SOL direction bets for a cycle, gameplay HashBeast, and mutation-score numerator.
 
 ## Tax Accounts
 

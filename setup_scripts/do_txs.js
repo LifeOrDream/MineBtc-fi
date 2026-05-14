@@ -177,6 +177,8 @@ const factionWarSolVaultPda = deployment.war_sol_vault_pda
 // `dbtc_vault` is the dBTC token vault owned by the mining authority.
 const [dbtcTokenVaultPda] = PublicKey.findProgramAddressSync(
   [Buffer.from("dbtc_vault"), mineBtcMiningPda.toBuffer()], pid);
+const [dbtcVaultAuthorityPda] = PublicKey.findProgramAddressSync(
+  [Buffer.from("degenBTC-vault-authority")], pid);
 
 // Tax-config side accounts (initialized at deploy time)
 const factionTreasuryVault = new PublicKey(
@@ -594,6 +596,8 @@ async function crankDistributeTax() {
     withdrawWithheldAuthority: withdrawWithheldAuthorityPda,
     withdrawAuthorityTokenAccount: withdrawAuthAta,
     factionTreasuryVault,
+    dbtcMining: mineBtcMiningPda,
+    vaultAuthority: dbtcVaultAuthorityPda,
     dbtcTokenVault: dbtcTokenVaultPda,
     taxConfig: taxConfigPda,
     warConfig: factionWarConfigPda,

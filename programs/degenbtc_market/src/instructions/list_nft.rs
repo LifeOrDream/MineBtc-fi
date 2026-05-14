@@ -13,8 +13,14 @@ use crate::state::{Listing, MarketplaceConfig, ESCROW_SEED, LISTING_SEED};
 
 #[derive(Accounts)]
 pub struct ListNft<'info> {
-    /// Current asset owner. Pays rent for the new `Listing` account and signs
-    /// the escrow `TransferV1`.
+    /// Pays rent for the new `Listing` account and any mpl-core transfer
+    /// reallocations. Usually the same wallet as `seller`; protocol-owned
+    /// listings may use a separate system-owned payer PDA.
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    /// Current asset owner. Signs the escrow `TransferV1`. This may be a PDA
+    /// authority, so do not assume it is system-owned or able to pay SOL.
     #[account(mut)]
     pub seller: Signer<'info>,
 
@@ -26,7 +32,7 @@ pub struct ListNft<'info> {
 
     #[account(
         init,
-        payer = seller,
+        payer = payer,
         space = Listing::LEN,
         seeds = [LISTING_SEED, marketplace_config.key().as_ref(), asset.key().as_ref()],
         bump,
@@ -119,7 +125,7 @@ pub fn handler(ctx: Context<ListNft>, price_lamports: u64) -> Result<()> {
     transfer_mpl_core_asset(
         &ctx.accounts.asset.to_account_info(),
         Some(&ctx.accounts.collection.to_account_info()),
-        &ctx.accounts.seller.to_account_info(),
+        &ctx.accounts.payer.to_account_info(),
         &ctx.accounts.seller.to_account_info(),
         &ctx.accounts.escrow.to_account_info(),
         &ctx.accounts.mpl_core_program,

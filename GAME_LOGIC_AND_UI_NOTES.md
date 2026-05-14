@@ -12,7 +12,7 @@
 - **degenBTC** = the mineable token. Fair-launched, mineable-only, no pre-mine. Emissions rebalance every 4h economy cycle based on price movement.
 - **SOL** = the betting currency. Every bet is SOL-denominated.
 - **HashBeasts** = in-game operator NFTs that boost bets, earn XP, trigger mutations (Evolution / Power / Trait), and push your country up the leaderboard.
-- **Faction War** = 4h competitive cycle where own-country gameplay support determines country rankings and degenBTC reward distribution.
+- **Faction War** = 4h competitive cycle where round outcomes and HashBeast mutation score determine country rankings and degenBTC reward distribution.
 
 ---
 
@@ -35,15 +35,14 @@
 
 ### 2.2 Faction War Cycle (4h cycles tied to LP burn)
 
-- Cycle auto-starts on first bet after previous settlement
-- Own-country SOL bets with active gameplay HashBeast add **gameplay score** to your country's leaderboard
+- Keepers initialize each cycle's FactionWarState before round settlements are folded in
+- Round settlement adds **gameplay score** to the winning country; successful home-country HashBeast mutation claims add bonus score
 - Cycle settles when economy LP burn completes
 - Rankings computed from gameplay scores → rank changes resolve directions (Up/Flat/Down)
 - Reward pools:
-  - **Base pool** (70%): anyone who bet any country's final direction correctly
-  - **Loyalty pool** (20%): own-country correct-direction supporters
-  - **MVP pool** (5%): top contributors
-  - **HashBeast pool** (5%): eligible gameplay HashBeasts get accumulated_val bonus
+  - **Base pool** (75%): anyone who bet any country's final direction correctly
+  - **MVP pool** (5%): top mutation-score contributors
+  - **HashBeast pool** (20%): eligible gameplay HashBeasts share by mutation score
 
 ### 2.3 HODL Tax (The "Diamond Hands" Mechanic)
 

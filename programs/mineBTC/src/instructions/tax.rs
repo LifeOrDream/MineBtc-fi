@@ -1,3 +1,25 @@
+//! Token-2022 tax harvesting and faction-treasury distribution.
+//!
+//! degenBTC uses Token-2022 transfer fees. This module owns the protocol side
+//! of that tax loop:
+//!
+//! 1. `internal_crank_harvest_fees` harvests withheld fees from user token
+//!    accounts into the mint's withheld-fee bucket.
+//! 2. `internal_crank_distribute_tax` withdraws the mint bucket into the
+//!    program-controlled withdraw-authority vault, then splits it into:
+//!    faction treasury, burn, and the canonical mining emission vault.
+//! 3. `internal_claim_faction_treasury_for_faction_war` releases the settled
+//!    war's attributed faction-treasury amount into faction staking indexes,
+//!    using the same faction-war ranks computed in `faction_war.rs`.
+//!
+//! Token-2022 fees also apply to the protocol's own transfers. Accounting in
+//! this file therefore credits reward pools with post-fee delivered amounts,
+//! not pre-fee transfer amounts. Any withheld fees created by these transfers
+//! are harvested again in a later tax crank.
+//!
+//! File layout follows call order: tax config, harvest/distribute, faction
+//! treasury claims, then account contexts.
+
 use anchor_lang::prelude::*;
 use anchor_spl::token_2022::spl_token_2022::extension::{
     transfer_fee::TransferFeeConfig, BaseStateWithExtensions, StateWithExtensions,
@@ -8,34 +30,6 @@ use anchor_spl::token_interface::{
     HarvestWithheldTokensToMint, WithdrawWithheldTokensFromMint,
 };
 use anchor_spl::token_interface::{Mint, TokenAccount as TokenAccount2022};
-
-// # Tax and Distribution Instructions
-//
-// Deflationary tax system using Token-2022 transfer fees.
-//
-// ## Tax Mechanics
-//
-// All degenBTC transfers incur a 0.1% tax, split into:
-// - **Burn**: Reducing total supply (default 25%)
-// - **Faction Treasury**: Distributed to stakers via faction_war leaderboard (default 40%)
-// - **Back to Vault**: Reborn into mining emission pool (remainder)
-//
-// NFT floor-sweep market making is funded from the protocol's `distribute_sol_fees`
-// flow, not from this tax split.
-//
-// ## Faction Treasury Distribution
-//
-// After each faction_war settles, `claim_faction_treasury_for_faction_war` distributes
-// the treasury vault based on gameplay-score leaderboard rankings:
-// - 80% rank-weighted (higher rank = more reward, everyone gets something)
-// - 20% lucky draw (one random underdog faction from rank 5+)
-//
-// ## Key Functions
-//
-// - `crank_harvest_fees`: Harvests withheld fees from token accounts to mint.
-// - `crank_distribute_tax`: Withdraws from mint, splits to vaults.
-// - `claim_faction_treasury_for_faction_war`: Distributes treasury to stakers using faction_war rankings.
-//
 
 use crate::errors::ErrorCode;
 use crate::events::*;
@@ -192,6 +186,36 @@ fn load_war_state_boxed<'info>(account: &AccountInfo<'info>) -> Result<Box<Facti
     Ok(boxed)
 }
 
+fn post_fee_amount<'info>(
+    mint_account_info: &AccountInfo<'info>,
+    pre_fee_amount: u64,
+    epoch: u64,
+) -> Result<u64> {
+    if pre_fee_amount == 0 {
+        return Ok(0);
+    }
+    Ok(
+        helper::get_token2022_transfer_fee_info(mint_account_info, pre_fee_amount, epoch)?
+            .post_fee_amount,
+    )
+}
+
+fn proportional_post_fee_share(
+    post_fee_total: u64,
+    pre_fee_share: u64,
+    pre_fee_total: u64,
+) -> Result<u64> {
+    if post_fee_total == 0 || pre_fee_share == 0 || pre_fee_total == 0 {
+        return Ok(0);
+    }
+    u64::try_from(helper::mul_div(
+        post_fee_total,
+        pre_fee_share,
+        pre_fee_total,
+    )?)
+    .map_err(|_| ErrorCode::ArithmeticOverflow.into())
+}
+
 #[inline(never)]
 pub fn internal_crank_distribute_tax<'info>(
     accounts: &mut CrankDistributeTax<'info>,
@@ -252,8 +276,11 @@ pub fn internal_crank_distribute_tax<'info>(
         withdraw_authority_signer,
     ))?;
 
-    // 3. Calculate distribution amounts based on TaxConfig percentages
+    // 3. Calculate distribution amounts based on TaxConfig percentages.
+    // Token-2022 transfer fees apply to the transfer into faction_treasury_vault,
+    // so the war accounting below credits only the post-fee delivered amount.
     let tax_config = &mut accounts.tax_config;
+    let clock = Clock::get()?;
     require!(
         accounts.war_config.current_war_id == war_id,
         ErrorCode::InvalidParameters
@@ -275,6 +302,11 @@ pub fn internal_crank_distribute_tax<'info>(
         .checked_sub(faction_treasury_amount)
         .and_then(|remaining| remaining.checked_sub(burn_amount))
         .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let faction_treasury_credit = post_fee_amount(
+        &accounts.degenbtc_mint.to_account_info(),
+        faction_treasury_amount,
+        clock.epoch,
+    )?;
 
     msg!("   Splitting {} tokens:", (withheld_amount as f64) / 1e6);
     msg!(
@@ -308,8 +340,9 @@ pub fn internal_crank_distribute_tax<'info>(
             accounts.degenbtc_mint.decimals,
         )?;
         msg!(
-            "   ✅ Transferred {} tokens to Faction treasury vault",
-            (faction_treasury_amount as f64) / 1e6
+            "   ✅ Sent {} tokens to Faction treasury vault (post-fee credit={})",
+            (faction_treasury_amount as f64) / 1e6,
+            (faction_treasury_credit as f64) / 1e6
         );
     }
 
@@ -361,17 +394,17 @@ pub fn internal_crank_distribute_tax<'info>(
         );
     }
 
-    if faction_treasury_amount > 0 {
+    if faction_treasury_credit > 0 {
         if war_state_info.lamports() > 0 && !war_state_info.data_is_empty() {
             let mut war_state = load_war_state_boxed(war_state_info)?;
             if war_state.war_id == accounts.war_config.current_war_id && war_state.stage == 0 {
                 war_state.treasury_reward_base_amount = war_state
                     .treasury_reward_base_amount
-                    .checked_add(faction_treasury_amount)
+                    .checked_add(faction_treasury_credit)
                     .ok_or(ErrorCode::ArithmeticOverflow)?;
                 msg!(
-                    "   🏴 Attributed {} degenBTC treasury tax to faction war {} (base now {})",
-                    (faction_treasury_amount as f64) / 1e6,
+                    "   🏴 Attributed {} delivered degenBTC treasury tax to faction war {} (base now {})",
+                    (faction_treasury_credit as f64) / 1e6,
                     war_state.war_id,
                     (war_state.treasury_reward_base_amount as f64) / 1e6
                 );
@@ -379,22 +412,22 @@ pub fn internal_crank_distribute_tax<'info>(
             } else {
                 tax_config.unassigned_war_treasury_amount = tax_config
                     .unassigned_war_treasury_amount
-                    .checked_add(faction_treasury_amount)
+                    .checked_add(faction_treasury_credit)
                     .ok_or(ErrorCode::ArithmeticOverflow)?;
                 msg!(
-                    "   💤 Faction war state not ready; queued {} degenBTC treasury tax for the next war (queued total {})",
-                    (faction_treasury_amount as f64) / 1e6,
+                    "   💤 Faction war state not ready; queued {} delivered degenBTC treasury tax for the next war (queued total {})",
+                    (faction_treasury_credit as f64) / 1e6,
                     (tax_config.unassigned_war_treasury_amount as f64) / 1e6
                 );
             }
         } else {
             tax_config.unassigned_war_treasury_amount = tax_config
                 .unassigned_war_treasury_amount
-                .checked_add(faction_treasury_amount)
+                .checked_add(faction_treasury_credit)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
             msg!(
-                "   💤 Faction wars inactive; queued {} degenBTC treasury tax for the next war (queued total {})",
-                (faction_treasury_amount as f64) / 1e6,
+                "   💤 Faction wars inactive; queued {} delivered degenBTC treasury tax for the next war (queued total {})",
+                (faction_treasury_credit as f64) / 1e6,
                 (tax_config.unassigned_war_treasury_amount as f64) / 1e6
             );
         }
@@ -406,7 +439,7 @@ pub fn internal_crank_distribute_tax<'info>(
         faction_treasury_amount,
         burn_amount,
         total_burnt,
-        timestamp: Clock::get()?.unix_timestamp,
+        timestamp: clock.unix_timestamp,
     });
 
     msg!("✅ [crank_distribute_tax] Tax distribution complete");
@@ -419,8 +452,10 @@ pub fn internal_crank_distribute_tax<'info>(
 
 /// Distribute faction treasury rewards for a settled faction_war.
 ///
-/// Uses the faction_war's mutation-based `final_ranks` to determine reward tiers:
-///   1st = 25% | 2nd = 15% | 3rd = 10% | random from 4th+ = 50%
+/// Uses the faction_war's final ranks to distribute the cycle's credited
+/// treasury amount:
+/// - 80% rank-weighted: higher ranks get more, every faction gets a share.
+/// - 20% lucky draw: one lower-ranked faction receives the underdog slice.
 ///
 /// Called once per faction per faction_war. Each call transfers that faction's share
 /// from the treasury vault to the emission vault and updates staker reward indexes.
@@ -446,8 +481,20 @@ pub fn internal_claim_faction_treasury_for_faction_war(
     require!(war_state.stage == 1, ErrorCode::FactionWarNotSettled);
     require!(war_state.war_id == war_id, ErrorCode::InvalidState);
 
-    // Prevent double-claim for this faction
-    let faction_bit = 1u16 << fid;
+    let active_factions = war_state.faction_count as usize;
+    require!(
+        (fid as usize) < active_factions,
+        ErrorCode::InvalidFactionId
+    );
+    require!(
+        (fid as usize) < NUM_FACTIONS && (fid as u32) < u16::BITS,
+        ErrorCode::InvalidFactionId
+    );
+
+    // Prevent double-claim for this faction.
+    let faction_bit = 1u16
+        .checked_shl(fid as u32)
+        .ok_or(ErrorCode::InvalidFactionId)?;
     require!(
         war_settlement.treasury_claimed_bitmap & faction_bit == 0,
         ErrorCode::FactionWarRewardsAlreadyClaimed
@@ -455,12 +502,6 @@ pub fn internal_claim_faction_treasury_for_faction_war(
 
     let treasury_balance = ctx.accounts.faction_treasury_vault.amount;
     let treasury_base_amount = war_state.treasury_reward_base_amount;
-
-    let active_factions = war_state.faction_count as usize;
-    require!(
-        (fid as usize) < active_factions,
-        ErrorCode::InvalidFactionId
-    );
 
     // Determine this faction's rank from faction_war final_ranks
     let rank = war_settlement.final_ranks[fid as usize] as usize;
@@ -509,7 +550,7 @@ pub fn internal_claim_faction_treasury_for_faction_war(
     let total_reward_u128 = rank_reward
         .checked_add(lucky_reward)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    let reward_amount =
+    let pre_fee_reward_amount =
         u64::try_from(total_reward_u128).map_err(|_| ErrorCode::ArithmeticOverflow)?;
 
     msg!(
@@ -520,10 +561,10 @@ pub fn internal_claim_faction_treasury_for_faction_war(
         rank_reward,
         lucky_rank,
         lucky_reward,
-        reward_amount
+        pre_fee_reward_amount
     );
 
-    if reward_amount == 0 {
+    if pre_fee_reward_amount == 0 {
         msg!("   ⚠️ No reward for faction {} (rank {})", fid, rank);
         war_settlement.treasury_claimed_bitmap |= faction_bit;
         return Ok(());
@@ -532,25 +573,42 @@ pub fn internal_claim_faction_treasury_for_faction_war(
     // Split 50/50 between degenBTC stakers and LP stakers
     let degenbtc_active = fs.total_degenbtc_hashpower > 0;
     let lp_active = fs.total_lp_hashpower > 0;
-    let (dbtc_share, lp_share) = match (degenbtc_active, lp_active) {
+    let (pre_fee_dbtc_share, pre_fee_lp_share) = match (degenbtc_active, lp_active) {
         (true, true) => {
-            let half = reward_amount / 2;
-            (half, reward_amount - half)
+            let half = pre_fee_reward_amount / 2;
+            (half, pre_fee_reward_amount - half)
         }
-        (true, false) => (reward_amount, 0),
-        (false, true) => (0, reward_amount),
+        (true, false) => (pre_fee_reward_amount, 0),
+        (false, true) => (0, pre_fee_reward_amount),
         (false, false) => (0, 0),
     };
-    let distributed = dbtc_share
-        .checked_add(lp_share)
+    let pre_fee_distributed = pre_fee_dbtc_share
+        .checked_add(pre_fee_lp_share)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    let reborn_amount = if degenbtc_active || lp_active {
+    let pre_fee_reborn_amount = if degenbtc_active || lp_active {
         0
     } else {
-        reward_amount
+        pre_fee_reward_amount
     };
-    let total_transfer = distributed
-        .checked_add(reborn_amount)
+    let total_transfer = pre_fee_distributed
+        .checked_add(pre_fee_reborn_amount)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let post_fee_transfer = post_fee_amount(
+        &ctx.accounts.degenbtc_mint.to_account_info(),
+        total_transfer,
+        Clock::get()?.epoch,
+    )?;
+    let dbtc_share =
+        proportional_post_fee_share(post_fee_transfer, pre_fee_dbtc_share, total_transfer)?;
+    let lp_share =
+        proportional_post_fee_share(post_fee_transfer, pre_fee_lp_share, total_transfer)?;
+    let reborn_amount = post_fee_transfer
+        .checked_sub(dbtc_share)
+        .and_then(|remaining| remaining.checked_sub(lp_share))
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    let reward_amount = dbtc_share
+        .checked_add(lp_share)
+        .and_then(|distributed| distributed.checked_add(reborn_amount))
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
     if total_transfer > 0 {
@@ -577,8 +635,9 @@ pub fn internal_claim_faction_treasury_for_faction_war(
             ctx.accounts.degenbtc_mint.decimals,
         )?;
         msg!(
-            "   ✅ Transferred {} degenBTC from treasury (dbtc_stakers={}, lp_stakers={}, reborn={})",
+            "   ✅ Sent {} degenBTC from treasury; post-fee credited {} (dbtc_stakers={}, lp_stakers={}, reborn={})",
             total_transfer,
+            reward_amount,
             dbtc_share,
             lp_share,
             reborn_amount
@@ -670,17 +729,48 @@ pub struct CrankHarvestFees<'info> {
 pub struct CrankDistributeTax<'info> {
     #[account(mut)]
     pub degenbtc_mint: Box<InterfaceAccount<'info, Mint>>,
+
     /// CHECK: Withdraw withheld authority PDA
     #[account(seeds = [WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref()], bump)]
     pub withdraw_withheld_authority: AccountInfo<'info>,
-    #[account(mut, constraint = withdraw_authority_token_account.owner == withdraw_withheld_authority.key() @ ErrorCode::Unauthorized)]
+
+    #[account(
+        mut,
+        constraint = withdraw_authority_token_account.owner == withdraw_withheld_authority.key() @ ErrorCode::Unauthorized,
+        constraint = withdraw_authority_token_account.mint == degenbtc_mint.key() @ ErrorCode::InvalidMint,
+    )]
     pub withdraw_authority_token_account: Box<InterfaceAccount<'info, TokenAccount2022>>,
-    #[account(mut, constraint = faction_treasury_vault.key() == tax_config.faction_treasury_vault @ ErrorCode::InvalidAccount)]
+
+    #[account(
+        mut,
+        constraint = faction_treasury_vault.key() == tax_config.faction_treasury_vault @ ErrorCode::InvalidAccount,
+        constraint = faction_treasury_vault.mint == degenbtc_mint.key() @ ErrorCode::InvalidMint,
+    )]
     pub faction_treasury_vault: Box<InterfaceAccount<'info, TokenAccount2022>>,
-    #[account(mut)]
+
+    #[account(seeds = [MINE_BTC_MINING_SEED.as_ref()], bump = dbtc_mining.bump)]
+    pub dbtc_mining: Box<Account<'info, DegenBtcMining>>,
+
+    /// CHECK: Canonical degenBTC vault authority PDA.
+    #[account(
+        seeds = [DEGEN_BTC_VAULT_AUTHORITY_SEED.as_ref()],
+        bump = dbtc_mining.vault_auth_bump,
+    )]
+    pub vault_authority: AccountInfo<'info>,
+
+    #[account(
+        mut,
+        seeds = [DEGEN_BTC_VAULT_SEED.as_ref(), dbtc_mining.key().as_ref()],
+        bump,
+        constraint = dbtc_token_vault.key() == dbtc_mining.dbtc_token_vault @ ErrorCode::InvalidAccount,
+        constraint = dbtc_token_vault.mint == degenbtc_mint.key() @ ErrorCode::InvalidMint,
+        constraint = dbtc_token_vault.owner == vault_authority.key() @ ErrorCode::Unauthorized,
+    )]
     pub dbtc_token_vault: Box<InterfaceAccount<'info, TokenAccount2022>>,
+
     #[account(mut, seeds = [TAX_CONFIG_SEED.as_ref()], bump = tax_config.bump)]
     pub tax_config: Box<Account<'info, TaxConfig>>,
+
     #[account(
         seeds = [FACTION_WAR_CONFIG_SEED],
         bump = war_config.bump
@@ -694,8 +784,10 @@ pub struct CrankDistributeTax<'info> {
     /// CHECK: Program PDA; initialized manually in handler to keep parser stack small.
     /// Must remain `mut` because helper::store_account_data persists treasury attribution state.
     pub war_state: UncheckedAccount<'info>,
+
     #[account(mut)]
     pub caller: Signer<'info>,
+
     pub token_program_2022: Program<'info, anchor_spl::token_2022::Token2022>,
     pub system_program: Program<'info, System>,
 }
@@ -718,15 +810,42 @@ pub struct ClaimFactionTreasuryForFactionWar<'info> {
         bump = war_settlement.bump
     )]
     pub war_settlement: Box<Account<'info, FactionWarSettlement>>,
+
     #[account(mut)]
     pub faction_state: Box<Account<'info, FactionState>>,
-    #[account(mut, constraint = faction_treasury_vault.key() == tax_config.faction_treasury_vault @ ErrorCode::InvalidAccount)]
+
+    pub degenbtc_mint: Box<InterfaceAccount<'info, Mint>>,
+
+    #[account(
+        mut,
+        constraint = faction_treasury_vault.key() == tax_config.faction_treasury_vault @ ErrorCode::InvalidAccount,
+        constraint = faction_treasury_vault.mint == degenbtc_mint.key() @ ErrorCode::InvalidMint,
+    )]
     pub faction_treasury_vault: Box<InterfaceAccount<'info, TokenAccount2022>>,
-    #[account(mut)]
+
+    #[account(seeds = [MINE_BTC_MINING_SEED.as_ref()], bump = dbtc_mining.bump)]
+    pub dbtc_mining: Box<Account<'info, DegenBtcMining>>,
+
+    /// CHECK: Canonical degenBTC vault authority PDA.
+    #[account(
+        seeds = [DEGEN_BTC_VAULT_AUTHORITY_SEED.as_ref()],
+        bump = dbtc_mining.vault_auth_bump,
+    )]
+    pub vault_authority: AccountInfo<'info>,
+
+    #[account(
+        mut,
+        seeds = [DEGEN_BTC_VAULT_SEED.as_ref(), dbtc_mining.key().as_ref()],
+        bump,
+        constraint = dbtc_emission_vault.key() == dbtc_mining.dbtc_token_vault @ ErrorCode::InvalidAccount,
+        constraint = dbtc_emission_vault.mint == degenbtc_mint.key() @ ErrorCode::InvalidMint,
+        constraint = dbtc_emission_vault.owner == vault_authority.key() @ ErrorCode::Unauthorized,
+    )]
     pub dbtc_emission_vault: Box<InterfaceAccount<'info, TokenAccount2022>>,
+
     /// CHECK: PDA signer for treasury vault transfers
     #[account(seeds = [WITHDRAW_WITHHELD_AUTHORITY_SEED.as_ref()], bump)]
     pub withdraw_withheld_authority: AccountInfo<'info>,
-    pub degenbtc_mint: Box<InterfaceAccount<'info, Mint>>,
+
     pub token_program_2022: Program<'info, anchor_spl::token_2022::Token2022>,
 }

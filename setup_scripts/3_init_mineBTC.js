@@ -634,10 +634,9 @@ async function main() {
     // 17. Initialize Faction War Config (mutation-driven competitive cycles)
     // Instruction: initialize_war_config() — no args
     // Creates FactionWarConfig PDA [seeds: "faction-war-config"] with
-    // current_war_id=1, settle_at_lp_op_count=0
-    // (auto-set on first bet), and identity
-    // start ranks [0..NUM_FACTIONS). Faction-war cycles auto-start on first bet and
-    // auto-settle when the economy-cycle LP burn completes.
+    // current_war_id=1, settle_at_lp_op_count=0, and identity
+    // start ranks [0..NUM_FACTIONS). Each cycle's FactionWarState is then
+    // initialized by a keeper before that cycle's round settlements are folded in.
     // Accounts: warConfig, globalConfig, authority, systemProgram
     await initializeFactionWarConfig(minebtcProgram);
 
@@ -3178,7 +3177,7 @@ async function initializeFactionWarConfig(minebtcProgram) {
     console.log(COLOR_INFO, `🔑 Global Config PDA: ${globalConfigPda.toBase58()}`);
     console.log(
       COLOR_INFO,
-      `🔄 Faction wars auto-start on first bet and auto-settle on LP burn completion`
+      `🔄 Faction wars are keeper-initialized per cycle and settle after LP burn completion`
     );
 
     const tx = await minebtcProgram.methods

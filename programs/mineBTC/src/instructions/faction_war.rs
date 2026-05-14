@@ -108,13 +108,18 @@
 //! total_dbtc_<lane>_pool`. Same proportions as dBTC, lossless modulo
 //! per-user rounding.
 //!
-//! # Mutation roll (during round-claim, not war-claim)
+//! # HashBeast progression hooks
 //!
-//! When a user claims a round with `claim_won == true` and they had a
-//! gameplay hashbeast active, the round-claim path rolls for a mutation.
-//! NFT-level effects (DNA / XP / multiplier evolution) apply regardless of
-//! which country won. The cycle score accounting is split based on whether
-//! the winning faction is the user's home country:
+//! Rewards do not require RPG progression to be enabled. The base, HB, MVP,
+//! and SOL lanes settle whenever there are eligible bets. The
+//! `rpg_progression` flag only controls whether HashBeast DNA / XP /
+//! multiplier mutation rolls can fire.
+//!
+//! Round-claim hook: when a user claims a winning round with a gameplay
+//! HashBeast active, the claim path can roll for a mutation while the cycle is
+//! still active. NFT-level effects apply regardless of which country won. The
+//! cycle score accounting is split based on whether the winning faction is
+//! the user's home country:
 //!
 //! **Home win** (winner == player's home faction) — full reward:
 //!   - country's `gameplay_scores[winner]` += bonus
@@ -126,7 +131,7 @@
 //!   - country's `gameplay_scores[winner]` += bonus / 2 (50% mercenary penalty)
 //!   - HB-bonus pool, MVP candidacy, and user's `mutation_score` all stay
 //!     unchanged. Mercenaries push the foreign country up the leaderboard
-//!     but don't earn a share of that country's loyalty pools.
+//!     but don't earn that country's HashBeast or MVP lanes.
 //!
 //! This split keeps the HB-bonus math safe (`user.mutation_score ≤
 //! faction_mutation_score[home]` always) while still giving foreign-faction
@@ -135,6 +140,11 @@
 //!
 //! Late rolls (cycle already settled, `war_state.stage != 0`) are silently
 //! skipped — the bonus is dropped and nothing on the war state moves.
+//!
+//! War-claim hook: after settlement, `claim_war_rewards_internal` can sync the
+//! user's active HashBeast with cycle reward value and, when RPG progression is
+//! enabled, roll a separate cycle-accuracy mutation. This updates only the
+//! player's HashBeast state; rankings and reward pools are already final.
 //!
 //! # Edge cases handled
 //!
@@ -146,8 +156,10 @@
 //!   unallocated (dBTC in mining vault, SOL → treasury).
 //! - **No mutators in any faction this cycle**: HB and MVP lanes globally
 //!   unallocated. Base lane unaffected.
-//! - **Late mutation roll after settle**: dropped silently (consistent with
-//!   late-claim semantics).
+//! - **RPG progression disabled**: prediction rewards, SOL claims, and ranks
+//!   still settle; only HashBeast mutation/evolution rolls are skipped.
+//! - **Late round-claim mutation roll after settle**: dropped silently
+//!   (consistent with late-claim semantics).
 //! - **Cycle boundary stuck-state**: `cycle_end_round_id` stays non-zero
 //!   across the `finalize_war_settlement → initialize_war_internal` window,
 //!   blocking `start_round` until the next war's PDA is created. This
@@ -394,12 +406,12 @@ fn process_war_claim_hashbeast_update<'info>(
 
     let should_sync_hashbeast = hashbeast_bonus_amount > 0 || (tuning.rpg_progression && stake > 0);
     if should_sync_hashbeast {
-        require!(
-            hashbeast_metadata.is_some()
-                && hashbeast_metadata.as_ref().unwrap().mint == user_war_bets.gameplay_hashbeast,
+        let hashbeast_metadata = hashbeast_metadata.ok_or(ErrorCode::HashBeastMetadataNotFound)?;
+        require_keys_eq!(
+            hashbeast_metadata.mint,
+            user_war_bets.gameplay_hashbeast,
             ErrorCode::HashBeastMetadataNotFound
         );
-        let hashbeast_metadata = hashbeast_metadata.unwrap();
         if hashbeast_bonus_amount > 0 {
             hashbeast_metadata.accumulated_val = hashbeast_metadata
                 .accumulated_val
@@ -670,8 +682,9 @@ fn scale_user_sol_lane(
 /// - mvp rewards: top contributor per faction (distributed at settlement by rank)
 /// - HashBeast rewards: gameplay HashBeasts backing the resolved home-country outcome
 ///
-/// Each lane is then distributed across factions by final rank, normalized only
-/// across factions that have eligible claimants for that lane.
+/// Each lane is distributed by absolute final-rank weight across all active
+/// factions. Ineligible factions receive 0 and their rank-slot share remains
+/// unallocated.
 /// Compute base + HB reward pools (dBTC and SOL) using **absolute** rank-weight
 /// distribution. Each faction's slice is determined by its rank weight relative
 /// to the sum of rank weights across all active factions. Non-eligible factions'

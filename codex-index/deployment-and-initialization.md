@@ -58,7 +58,7 @@ Canonical source: `setup_scripts/` and especially `setup_scripts/3_init_mineBTC.
 25. Initialize global game state.
 26. Initialize LP token accounts for program custody.
 27. Initialize faction-war config.
-28. Update faction-war active flag.
+28. Run the legacy faction-war config no-op in setup scripts, if needed for older runbooks.
 29. Update gameplay tuning.
 
 ## Important Live Setup Values
@@ -101,6 +101,6 @@ From `setup_scripts/config.json` and `3_init_mineBTC.js`:
 
 ## Keeper and Test Scripts
 
-- `setup_scripts/do_txs.js` - manual cranker / operations script. Single file with every game / economy / NFT-marketplace cranker (`startRound`, `endRound`, `endRoundFactionRewards`, `settleFactionWar`, `distributeSolFees`, `snapshotPrice`, `updateRate`, `addLpAndBurn`, `crankHarvestFees`, `crankDistributeTax`, `recordFloorSnapshot`, plus `printState` / `printGameState`). Comment/uncomment calls in `main()` to run what you want.
+- `setup_scripts/do_txs.js` - manual cranker / operations script. Single file with every game / economy / NFT-marketplace cranker (`startRound`, `endRound`, `settleRound`, `settleFactionWar`, `distributeSolFees`, `snapshotPrice`, `updateRate`, `addLpAndBurn`, `crankHarvestFees`, `crankDistributeTax`, `recordFloorSnapshot`, plus `printState` / `printGameState`). Comment/uncomment calls in `main()` to run what you want.
 - `setup_scripts/test_genescience.js`, `sim_egg_mints.js` - pure-JS simulation helpers (DNA decoder, mint curve simulation).
 - `setup_scripts/user_activity/` - wallet and user-action helpers (bets, etc).

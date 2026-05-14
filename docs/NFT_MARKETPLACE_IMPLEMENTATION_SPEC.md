@@ -44,6 +44,12 @@ seller ownership, and MPL Core program id. MineBTC must still bind all wrapper
 calls to the cached marketplace config so unrelated collections cannot affect
 the HashBeast floor queue.
 
+`list_nft`, `cancel_listing`, and `buy_listing` split SOL payer from asset
+authority/recipient. Normal users pass the same wallet for both roles. Protocol
+inventory paths use the system-owned `inventory_sweep_vault` PDA as payer while
+`inventory_pda` only signs as NFT owner or receives the NFT. This avoids System
+Program transfers from program-owned data accounts.
+
 ## MineBTC State
 
 ### `InventoryPool`
@@ -181,12 +187,15 @@ queue/relist/burn cascade. Each expiry increments `expire_count`. When
 `inventory_finalize_sale`
 
 Closes a listed `RebornEntry` after verifying the exact recorded asset is no
-longer owned by `inventory_pda`.
+longer owned by `inventory_pda` and is no longer held by the canonical
+marketplace escrow PDA.
 
 `handle_inventory_proceeds`
 
 Routes SOL sitting on the inventory PDA: 50% to `inventory_sweep_vault`, 50% to
-the SOL treasury, preserving rent exemption.
+the SOL treasury, preserving rent exemption. Because `inventory_pda` is a
+program-owned data account, this route directly mutates lamports instead of
+calling the System Program.
 
 `claim_lootbox_nft`
 

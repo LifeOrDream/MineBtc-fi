@@ -62,18 +62,17 @@ Per setup script:
 - Faction wars are gameplay-score-driven cycles tied to LP-burn operations.
 - `FactionWarConfig.settle_at_lp_op_count` points to the LP operation count that unlocks settlement.
 - Ranking source:
-  - Gameplay support scores per faction.
-  - Round wins and own-country SOL support are tiebreakers.
+  - Gameplay scores per faction, including round outcome score and mutation-score bonuses.
+  - Round wins are the first tiebreaker; faction id is the deterministic final tiebreaker.
 - Direction resolution compares start ranks to final ranks:
   - Improved rank -> Up.
   - Same rank -> Neutral.
   - Worse rank -> Down.
 - Reward split bps from current setup:
-  - Base reward: 7000 bps.
-  - Loyalty reward: 2000 bps.
+  - Base reward: 7500 bps.
   - MVP reward: 500 bps.
-  - HashBeast reward: 500 bps.
-- Contract defaults differ slightly in `state.rs` (`6500/2000/500/1000`), but setup explicitly applies the live values above.
+  - HashBeast reward: 2000 bps.
+- There is no separate loyalty pool. Home-country activity matters through HashBeast mutation score and MVP eligibility.
 
 ## HashBeast Genesis and Lifecycle Economics
 
@@ -116,3 +115,4 @@ Per setup script:
 - Faction treasury rewards after settlement:
   - 80% rank-weighted.
   - 20% lucky draw.
+  - Reward indexes credit the post-fee amount that reaches the mining vault, because protocol transfers also pay Token-2022 transfer fees.

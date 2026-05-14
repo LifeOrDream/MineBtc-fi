@@ -1,24 +1,28 @@
+//! Economy crank loop for buybacks, price snapshots, emissions, and POL.
+//!
+//! This module is intentionally separate from player betting and staking
+//! claims. It operates the macro-economy loop:
+//!
+//! 1. `distribute_sol_fees_internal` drains available protocol-fee SOL from
+//!    `sol_treasury` into three lanes: buybacks, NFT inventory market-making,
+//!    and multisig WSOL.
+//! 2. `snapshot_price_internal` uses buyback SOL for a small Raydium
+//!    SOL -> degenBTC swap, records the observed price, and earmarks more SOL
+//!    for protocol-owned-liquidity.
+//! 3. `update_rate_internal` turns the 8-snapshot window into a new
+//!    `dbtc_per_round` emission rate and updates the faction-war mining
+//!    multiplier.
+//! 4. `add_lp_and_burn_internal` pairs earmarked SOL with emission-vault
+//!    degenBTC, deposits into the canonical Raydium pool, burns the LP tokens,
+//!    and snapshots the faction-war cycle boundary when the LP threshold is
+//!    crossed.
+//!
+//! Stakers do not get paid directly here. Round settlement consumes the
+//! emission rate set here and increments staking reward indexes; `stake.rs`
+//! claim paths later realize those indexes into user balances.
+
 use crate::errors::ErrorCode;
 use anchor_spl::token;
-
-// # Economy Instructions
-//
-// The economy loop is deliberately separate from staking claims:
-// - `distribute_sol_fees_internal` moves accumulated SOL from the treasury into buybacks
-//   and the protocol/dev lane.
-// - `snapshot_price_internal` records the on-chain market price and earnmarks some SOL for POL.
-// - `update_rate_internal` converts the snapshot window into a new `dbtc_per_round` emission rate.
-// - `add_lp_and_burn` (below in this file) consumes the earnmarked SOL together with degenBTC from the
-//   emissions vault to deepen POL and burn LP.
-//
-// Stakers do **not** get paid directly from this file. Instead:
-// - the emission rate set here is consumed later by round settlement,
-// - round settlement increments faction staking reward indexes,
-// - staking claim paths in `stake.rs` realize those indexes into player balances.
-//
-// That separation is important when debugging economics: if staking APR looks wrong, first check the
-// round distribution indexes, then the claim paths, and only then the economy loop inputs here.
-//
 
 use crate::events::*;
 use crate::instructions::helper;
@@ -1036,8 +1040,11 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
 
     // Admin override check
     if lp_token_amount > 0 {
-        require!(ctx.accounts.authority.is_some(), ErrorCode::Unauthorized);
-        let authority = ctx.accounts.authority.as_ref().unwrap();
+        let authority = ctx
+            .accounts
+            .authority
+            .as_ref()
+            .ok_or(ErrorCode::Unauthorized)?;
         require!(
             ctx.accounts.global_config.ext_authority == authority.key(),
             ErrorCode::Unauthorized
@@ -1239,6 +1246,23 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
         final_sol_amount as f64 / 1e9,
         final_max_dbtc_with_buffer as f64 / 1e6
     );
+
+    if final_estimated_lp_amount == 0 || final_sol_amount == 0 || final_max_dbtc_with_buffer == 0 {
+        msg!(
+            "   ⚠️ LP operation too small after pool-ratio/slippage checks; returning WSOL and clearing pending flag"
+        );
+        anchor_spl::token::close_account(CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            anchor_spl::token::CloseAccount {
+                account: ctx.accounts.sol_token_account.to_account_info(),
+                destination: ctx.accounts.buybacks_sol_vault.to_account_info(),
+                authority: ctx.accounts.authority_pda.to_account_info(),
+            },
+            signer_seeds,
+        ))?;
+        dbtc_mining.lp_operation_pending = false;
+        return Ok(());
+    }
 
     // Dynamic sorting
     let (
@@ -1471,85 +1495,6 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
     msg!("✅ LP addition and burn complete");
     Ok(())
 }
-
-// /// Helper function to perform MINE_BTC to SOL swap via Raydium CPI
-// fn perform_dbtc_to_sol_swap<'info>(
-//     raydium_program: &AccountInfo<'info>,
-//     pool_state: &AccountInfo<'info>,
-//     amm_config: &AccountInfo<'info>,
-//     authority_pda: &AccountInfo<'info>,
-//     raydium_authority: &AccountInfo<'info>,
-//     dbtc_vault: &AccountInfo<'info>,
-//     sol_vault: &AccountInfo<'info>,
-//     dbtc_token_account: &AccountInfo<'info>,
-//     sol_token_account: &AccountInfo<'info>,
-//     degenbtc_mint: &AccountInfo<'info>,
-//     sol_mint: &AccountInfo<'info>,
-//     observation_state: &AccountInfo<'info>,
-//     token_program_2022: &AccountInfo<'info>,
-//     token_program: &AccountInfo<'info>,
-//     amount_in: u64,
-//     vault_auth_bump: u8,
-// ) -> Result<u64> {
-//     use raydium_cp_swap::cpi;
-
-//     msg!("🔄 Performing real Raydium swap: {} MINE_BTC for WSOL", amount_in);
-
-//     // Get WSOL token balance before swap by deserializing account data
-//     let sol_balance_before = {
-//         let sol_account_data = sol_token_account.try_borrow_data()?;
-//         let sol_token_data = anchor_spl::token::TokenAccount::try_deserialize(&mut &sol_account_data[..])?;
-//         sol_token_data.amount
-//     }; // Borrow is dropped here
-
-//     // Create signer seeds for vault authority
-//     let authority_seeds = &[
-//         DEGEN_BTC_VAULT_AUTHORITY_SEED.as_ref(),
-//         &[vault_auth_bump],
-//     ];
-//     let signer_seeds = &[&authority_seeds[..]];
-
-//     // Create CPI context for Raydium swap
-//     let cpi_accounts = cpi::accounts::Swap {
-//         payer: authority_pda.to_account_info(),         // Our PDA as the payer/signer
-//         authority: raydium_authority.to_account_info(), // Raydium's pool authority PDA
-//         amm_config: amm_config.to_account_info(),
-//         pool_state: pool_state.to_account_info(),
-//         input_token_account: dbtc_token_account.to_account_info(),  // Our token account (authority = our PDA)
-//         output_token_account: sol_token_account.to_account_info(),   // Our token account (authority = our PDA)
-//         input_vault: dbtc_vault.to_account_info(),     // Raydium's MINE_BTC vault
-//         output_vault: sol_vault.to_account_info(),      // Raydium's SOL vault
-//         input_token_program: token_program_2022.to_account_info(),   // Token-2022 for MINE_BTC
-//         output_token_program: token_program.to_account_info(),       // Standard token for SOL
-//         input_token_mint: degenbtc_mint.to_account_info(),
-//         output_token_mint: sol_mint.to_account_info(),
-//         observation_state: observation_state.to_account_info(),
-//     };
-
-//     let cpi_ctx = CpiContext::new_with_signer(
-//         raydium_program.to_account_info(),
-//         cpi_accounts,
-//         signer_seeds,
-//     );
-
-//     // Accept any amount out since we're just getting current market price
-//     let min_amount_out = 0;
-
-//     // Perform the actual swap
-//     cpi::swap_base_input(cpi_ctx, amount_in, min_amount_out)?;
-
-//     // Calculate actual WSOL received by checking token account balance again
-//     let sol_received = {
-//         let sol_account_data_after = sol_token_account.try_borrow_data()?;
-//         let sol_token_data_after = anchor_spl::token::TokenAccount::try_deserialize(&mut &sol_account_data_after[..])?;
-//         let sol_balance_after = sol_token_data_after.amount;
-//         sol_balance_after.saturating_sub(sol_balance_before)
-//     }; // Borrow is dropped here
-
-//     msg!("✅ Swap completed: received {} WSOL tokens", sol_received);
-
-//     Ok(sol_received)
-// }
 
 /// Helper function to perform SOL to MINE_BTC swap via Raydium CPI
 fn perform_sol_to_dbtc_swap<'info>(

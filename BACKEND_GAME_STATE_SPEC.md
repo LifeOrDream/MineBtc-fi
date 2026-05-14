@@ -22,7 +22,7 @@ distribute_jackpot_rewards(round_id=N)
                                (idempotent via jackpot_distributed flag)
        │
        ▼
-end_round_faction_rewards(war_id=X)
+settle_round(war_id=X)
                               → stage 1→2, staker rewards distributed (or redirected to winners),
                                faction-war tracking updated, can_begin_round = true
        │
@@ -152,7 +152,7 @@ if jackpot_hit && jackpot_rewards_index > 0 && faction_id == jackpot_faction_id 
 |`JackpotHit`| `distribute_jackpot_rewards` | Jackpot paid out | `latest_jackpot_result` |
 |`JackpotRolledOver`| `distribute_jackpot_rewards` | No eligible bettors | `latest_jackpot_result` |
 |`JackpotNearMiss`| `end_round` | Random was ≤10 but not 0 | Frontend notification only |
-|`RewardsDistributedForRound`| `end_round_faction_rewards` | Stage 2 reached | Confirms `latest_result` finality |
+|`RewardsDistributedForRound`| `settle_round` | Stage 2 reached | Confirms `latest_result` finality |
 |`DegenBtcStakingRewardsDistributed`| `distribute_rewards_amg_stakers` | Staker indexes updated | `latest_result.sol_staking_yield` (indirect) |
 |`LpStakingRewardsDistributed`| `distribute_rewards_amg_stakers` | LP indexes updated | Same |
 |`GameplayScoreAccumulated`| `track_war_round_completion` / claim mutation | Faction score changes | `ongoing_session_mutations` |
@@ -165,7 +165,7 @@ if jackpot_hit && jackpot_rewards_index > 0 && faction_id == jackpot_faction_id 
 |`GlobalGameState`| `b"global-game-state"` | `current_round_id`, `can_begin_round`, `jackpot_pot`, `last_round_id`, `winning_faction_id` |
 |`GameSession`| `b"game-session" + round_id_le` | All round-specific fields (bets, winner, indexes, stage, mutations) |
 |`DegenBtcMining`| `b"mine-btc-mining"` | `dbtc_per_round`, `total_tokens_mined`, `pol_stats.lp_operations_count` |
-|`FactionWarConfig`| `b"faction-war-config"` | `current_war_id`, `is_active`, `settle_at_lp_op_count` |
+|`FactionWarConfig`| `b"faction-war-config"` | `current_war_id`, `settle_at_lp_op_count`, `cycle_end_round_id`, `last_processed_round_id` |
 
 ---
 
@@ -290,12 +290,12 @@ if jackpot_hit && jackpot_rewards_index > 0 && faction_id == jackpot_faction_id 
 |`jackpot_pot`| `u64` | `GlobalGameState.jackpot_pot` | Global jackpot pot in dBTC base units (accumulated across rounds, paid in dBTC) |
 |`can_begin_round`| `bool` | `GlobalGameState.can_begin_round` | Whether `start_round` can be called |
 |`is_paused`| `bool` | `GlobalConfig.is_paused` | Kill-switch status |
-|`faction_war`| `object` | `FactionWarConfig` | Current cycle ID, active flag, settle cycle |
+|`faction_war`| `object` | `FactionWarConfig` | Current cycle ID, settle cycle, boundary-round guard |
 
 #### `next_tx`
 | Field | Type | Derivation | Description |
 |---|---|---|---|
-|`expected_instruction`| `string` | Logic based on stage | One of: `start_round`, `end_round`, `distribute_jackpot_rewards`, `end_round_faction_rewards` |
+|`expected_instruction`| `string` | Logic based on stage | One of: `start_round`, `end_round`, `distribute_jackpot_rewards`, `settle_round` |
 |`reason`| `string` | Human-readable | Why this instruction is next |
 |`round_id`| `u64` | Target round | Round the next tx should act on |
 |`ETA_seconds`| `i64` | `round_end_timestamp − now` | Seconds until next action (negative = overdue) |
@@ -307,7 +307,7 @@ if stage == 0 && now >= round_end_timestamp && slot > scheduled_entropy_slot:
 elif stage == 1 && !jackpot_distributed && jackpot_hit:
     expected = "distribute_jackpot_rewards"
 elif stage == 1:
-    expected = "end_round_faction_rewards"
+    expected = "settle_round"
 elif stage == 2 && can_begin_round:
     expected = "start_round"
 ```
@@ -417,7 +417,7 @@ If the frontend wants to show the jackpot pot in fiat/SOL terms, convert `Global
 | Winning faction has no stakers | Staker rewards redirected to exact winners via index bump |
 | Scheduled entropy slot ages out | `used_entropy_fallback = true`, latest slot hash used instead |
 | Round finalized but jackpot not distributed | Backend should still show `jackpot_hit=true` and `jackpot_distributed=false`. `distribute_jackpot_rewards(round_id)` can be called retroactively now. |
-| Faction war settled mid-round | `war_state` may be empty/seed. Backend shows `is_active=false` until next bet initializes new cycle. |
+| Faction war settled mid-round | `war_state` may be empty/seed until the next `initialize_faction_war`. Backend should show the current `war_config.current_war_id` and whether its state PDA exists. |
 
 ---
 

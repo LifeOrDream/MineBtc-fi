@@ -323,6 +323,9 @@ pub enum ErrorCode {
     #[msg("Asset is still owned by inventory_pda — sale not actually settled")]
     AssetStillOwnedByInventory,
 
+    #[msg("Asset is still held by marketplace escrow — listing has not sold")]
+    AssetStillListed,
+
     #[msg("Listing is not present in the floor queue")]
     ListingNotInQueue,
 }

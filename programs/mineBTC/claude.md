@@ -7,7 +7,7 @@ This file is the source-of-truth orientation note for anyone editing the `mineBT
 MineBTC is a **degen country arena game** on Solana where:
 
 - players pick a country and a direction, bet SOL, and winning claims can evolve their hashbeast NFTs
-- own-country gameplay support decides which country climbs the leaderboard each cycle
+- round outcomes and HashBeast mutation score decide which country climbs the leaderboard each cycle
 - the same bet powers both the **round raffle** (instant SOL + degenBTC rewards) and the **cycle leaderboard** (longer-term degenBTC rewards based on which countries moved)
 - a deflationary economy runs on a 0.1% transfer tax: burn + faction treasury + mining vault recycle (no NFT floor sweep slice — NFT market making is funded from SOL via `distribute_sol_fees::nft_market_making_pct`, default 3%)
 - an automated economy cycle (price snapshots → rate adjustment → LP burn) keeps tokenomics self-sustaining
@@ -24,11 +24,11 @@ Use these canonical terms:
 - `country` or `faction` — one of 12-15 playable nations
 - `direction` — `Down`, `Neutral`, `Up`
 - `round` — fast 60-second betting loop with random winner
-- `faction war` — longer competitive period tied to the economy cycle (LP burn cadence), where gameplay scores determine country rankings
-- `operator hashbeast` / `gameplay hashbeast` — the live NFT locked for rounds, contributes gameplay score, earns XP from eligible claim rolls, can mutate
+- `faction war` — longer competitive period tied to the economy cycle (LP burn cadence), where round outcomes and mutation scores determine country rankings
+- `operator hashbeast` / `gameplay hashbeast` — the live NFT locked for rounds, boosts weighted bets, earns XP from eligible claim rolls, can mutate
 - `staked hashbeasts` — passive NFTs that boost staking hashpower
 - `story event` — a claim-time HashBeast event (Evolution / Power / Trait); the contract may mutate DNA internally, but the backend decides how to render it
-- `gameplay score` — contribution to your country's leaderboard rank from own-country SOL support with an active gameplay hashbeast
+- `gameplay score` — country leaderboard score from round wins/weighted outcome points plus successful home-country HashBeast mutation bonuses
 
 Do **not** describe the system as:
 
@@ -58,25 +58,25 @@ At round end:
 
 ### Cycle Layer (Gameplay Score Leaderboard)
 
-Each round bet also accumulates into the active cycle. Own-country SOL bets from users with an active gameplay hashbeast contribute deterministic gameplay score to their faction.
+Each round bet also accumulates into the active cycle. Bets record weighted country+direction prediction exposure; round settlement adds score to the randomly selected winning country; successful home-country HashBeast mutation claims add bonus mutation score.
 
 A cycle is defined by:
 
 - `war_id`
 - `start_ranks` (from previous cycle)
 - `gameplay_scores` (internal field; accumulated gameplay scores during this cycle)
-- per-country direction totals, plus separate own-country loyalty totals
+- per-country direction totals, SOL direction totals, mutation scores, and per-faction MVP candidates
 
 **How cycles work:**
 
-1. Cycle auto-starts on first bet after the previous cycle settles
-2. Each eligible own-country SOL bet adds score: `GAMEPLAY_SUPPORT_SCORE_WEIGHT × bet_size × hashbeast_multiplier`
+1. A keeper initializes the next `FactionWarState` before round settlement for that cycle
+2. Every country+direction bet records weighted prediction exposure for the active cycle
 3. Cycle settles when the economy cycle's LP burn completes
-4. Factions are ranked by total gameplay scores, with round wins and SOL support as tiebreakers
+4. Factions are ranked by gameplay score, then round wins, then faction id
 5. Rank changes resolve each country's winning direction
-6. Players who bet correct directions earn degenBTC via the base pool; own-country correct bettors also share the loyalty pool
+6. Players who bet correct directions earn base rewards; HashBeast/MVP lanes pay mutation-score contributors
 
-**When RPG progression is disabled** (`rpg_progression` off), cycle gameplay scoring and mutation rolls pause.
+**When RPG progression is disabled** (`rpg_progression` off), base/SOL rewards and rankings still settle. Only HashBeast mutation/evolution progression is skipped.
 
 ### HashBeast Layer
 
@@ -172,8 +172,8 @@ Important rules:
 - bets are `BetType::FactionDirection`
 - one transaction can include multiple countries
 - the same bet updates both `GameSession` totals and `FactionWarState` / `UserFactionWarBets`
-- all country-direction bets feed the base faction-war pool; own-faction bets also feed loyalty rewards
-- active gameplay HashBeasts on own-country SOL bets add gameplay score during bet processing
+- all country-direction bets feed the base faction-war pool
+- active gameplay HashBeasts boost weighted bets and can create mutation-score rewards during later winning claims
 - story events fire later during winning reward claims, using the recorded bet context
 
 ### Round Settlement
@@ -182,13 +182,13 @@ Important rules:
 
 - `int_start_round`
 - `int_end_round`
-- `int_end_round_faction_rewards`
+- `int_settle_round`
 
 Important rules:
 
 - randomness is commit-reveal based (scheduled slot hash)
 - winner selection is `country → direction`
-- `end_round_faction_rewards` also advances faction-war mining accounting and auto-settles the cycle when the LP burn completes
+- `settle_round` also advances faction-war mining accounting; `settle_war` closes the cycle after the linked LP burn completes
 
 ### Cycle Settlement
 

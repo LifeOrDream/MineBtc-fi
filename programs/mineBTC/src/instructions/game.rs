@@ -115,9 +115,10 @@
 //!
 //! # Edge cases handled
 //!
-//! - **Round with zero bettors**: end_round short-circuits — picks a random
-//!   faction/direction for event purposes, marks stage 2 immediately, no
-//!   pools distributed.
+//! - **Round with zero bettors**: end_round picks a random faction/direction
+//!   for event/indexer continuity, marks stage 1, and still requires
+//!   `settle_round` to fold the boundary round ID into the cycle. No reward
+//!   pools are distributed.
 //! - **Scheduled entropy slot aged out**: `resolve_round_entropy` falls back
 //!   to the latest slot. Round still settles.
 //! - **Jackpot hits with zero bettors on the rolled faction**: pot rolls

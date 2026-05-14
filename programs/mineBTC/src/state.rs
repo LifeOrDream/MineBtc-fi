@@ -304,9 +304,11 @@ pub const BREED_DBTC_BURN_BPS: u64 = 5_000;
 pub const LOOTBOX_QUEUE_SIZE: usize = 10;
 
 /// Per-claim drop chance keyed by current `LootboxQueue.filled_count`.
-/// Formula: ~110 * depth^2, capped at 11000 bps (110%).
+/// Conservative fixed schedule in basis points. Full depth is still only 1.50%
+/// per losing claim, so a full queue creates excitement without guaranteeing
+/// a drain race.
 pub const CHANCE_BPS_BY_QUEUE_DEPTH: [u16; LOOTBOX_QUEUE_SIZE + 1] =
-    [0, 100, 440, 990, 1760, 2750, 3960, 5390, 7040, 8910, 11000];
+    [0, 3, 8, 15, 25, 40, 58, 78, 100, 125, 150];
 
 /// Inventory proceeds split: 50% sweep reserve, 50% protocol pipeline.
 pub const INVENTORY_SWEEP_RESERVE_BPS: u16 = 5000;
@@ -2370,8 +2372,9 @@ pub fn compute_quality_score(multiplier: u32, xp: u32, breed_count: u8) -> u16 {
 }
 
 /// Loser-roll drop chance in basis points, keyed by the country queue's
-/// current `filled_count`. Steep curve: full queue drains aggressively,
-/// near-empty queue drains slowly so the few remaining NFTs stay visible.
+/// current `filled_count`. The table stays intentionally conservative:
+/// full depth is 1.50%, and near-empty queues are low enough to keep the last
+/// few NFTs visible instead of creating an instant drain race.
 /// `filled_count == 0` returns 0 — eligibility upstream prevents that case
 /// from reaching here, but defensive zero is correct.
 pub fn compute_loser_drop_chance_bps(filled_count: u8) -> u16 {
@@ -2382,6 +2385,29 @@ pub fn compute_loser_drop_chance_bps(filled_count: u8) -> u16 {
         return CHANCE_BPS_BY_QUEUE_DEPTH[CHANCE_BPS_BY_QUEUE_DEPTH.len() - 1];
     }
     CHANCE_BPS_BY_QUEUE_DEPTH[idx]
+}
+
+#[cfg(test)]
+mod lootbox_probability_tests {
+    use super::*;
+
+    #[test]
+    fn loser_drop_chance_matches_configured_depth_schedule() {
+        let expected: [u16; LOOTBOX_QUEUE_SIZE + 1] = [0, 3, 8, 15, 25, 40, 58, 78, 100, 125, 150];
+
+        for (depth, expected_bps) in expected.iter().copied().enumerate() {
+            assert_eq!(
+                compute_loser_drop_chance_bps(depth as u8),
+                expected_bps,
+                "wrong loser lootbox chance at depth {depth}"
+            );
+        }
+    }
+
+    #[test]
+    fn loser_drop_chance_clamps_above_queue_capacity() {
+        assert_eq!(compute_loser_drop_chance_bps(u8::MAX), 150);
+    }
 }
 
 // ========================================================================================

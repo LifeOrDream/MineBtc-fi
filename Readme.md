@@ -22,10 +22,10 @@
 MineBTC is a country arena game where every bet does three things at once:
 
 1. **Enters a 60-second round raffle** for instant SOL + degenBTC rewards
-2. **Scores gameplay support for your country** on the competitive leaderboard
+2. **Records a country-direction prediction** for the longer rebase cycle
 3. **Sets up claim-time hashbeast mutation rolls** when that bet later wins rewards
 
-Countries compete for the top of the leaderboard. Players compete for rewards. HashBeasts evolve through gameplay. The economy self-sustains through deflationary tokenomics and permanent liquidity locks.
+Countries compete for the top of the leaderboard through round wins, weighted points, and HashBeast mutation score. Players compete for rewards. HashBeasts evolve through gameplay. The economy self-sustains through deflationary tokenomics and permanent liquidity locks.
 
 ---
 
@@ -51,19 +51,19 @@ Every minute, a new round runs:
 
 The same bets also accumulate into a longer competitive cycle called a **rebase**:
 
-1. Own-country SOL bets with an active gameplay hashbeast **score gameplay support for that country**
-2. At the end of the cycle, countries are ranked by total gameplay scores
+1. Every country+direction bet records weighted prediction exposure for the active cycle
+2. Round settlement and successful HashBeast mutation claims add gameplay score to countries
 3. Rankings are compared to the previous cycle to determine which countries moved Up, Down, or stayed Neutral
 4. Players who correctly bet final directions earn degenBTC from the rebase mining pool
-5. Own-country correct bettors get the loyalty share and the strongest hashbeast mutation odds
+5. Gameplay HashBeasts can earn HashBeast-pool rewards and MVP bonuses through mutation score
 
 **Gameplay score formula:**
 ```
-score = support_weight × own_country_sol_bet × hashbeast_multiplier
-        support_weight=10
+round_score = winning_country_weighted_points_this_round
+mutation_score = home_country_mutation_bonus_from_successful_claims
 ```
 
-Higher own-country bets + better gameplay hashbeasts = bigger score contribution to your country.
+The bet is the prediction. The outcome and claim-time HashBeast progression decide how much that activity moves a country.
 
 ---
 
@@ -73,7 +73,7 @@ HashBeasts are functional game pieces with on-chain 256-bit DNA:
 
 ### Two HashBeast Roles
 
-- **Gameplay hashbeast (operator):** One hashbeast locked for active play. Earns XP from betting. Own-country bets add gameplay score, and winning reward claims can mutate it (Evolution / Power / Trait).
+- **Gameplay hashbeast (operator):** One hashbeast locked for active play. It adds bet multiplier, earns XP from eligible claims, can mutate (Evolution / Power / Trait), and can create home-country mutation score for rebase HashBeast/MVP rewards.
 - **Staked hashbeasts (passive):** Up to 3 hashbeasts boosting staking hashpower. More staked hashbeasts = higher staking APR.
 
 ### How Mutations Work
@@ -85,7 +85,7 @@ Base chance: 20%
 × stake_strength (eligible winning stake / highest stake on the country)
 × multiplier_penalty (1.0x hashbeast = full chance, 4.2x ~= 24% chance)
 × faction_penalty / pacing / volume controls
-× claim_boost (highest for own-country correct Up moves)
+× claim_boost (highest for correct home-country rebase claims, especially Up moves)
 
 Round exact wins receive stronger odds than same-country consolation wins. Rebase claims are strongest when the user backed their own country correctly, especially when that country moved Up.
 ```

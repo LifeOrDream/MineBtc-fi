@@ -126,7 +126,7 @@ price rises increase them. This creates deflationary pressure during downturns.
 4. Burns ALL LP tokens received (permanent liquidity lock)
 5. Updates `pol_stats` (cumulative POL metrics)
 6. Clears `lp_operation_pending` flag (unblocks next cycle of snapshots)
-7. Increments `pol_stats.lp_operations_count` (triggers epoch settlement)
+7. Increments `pol_stats.lp_operations_count` (unlocks faction-war settlement)
 
 **LP amount calculation:**
 ```
@@ -184,7 +184,7 @@ buybacks_sol_vault via WSOL account closure.
                  ┌─────────────────────┐
                  │  CYCLE COMPLETE     │
                  │  lp_operation = false│
-                 │  lp_ops_count += 1  │◄── triggers epoch settlement
+                 │  lp_ops_count += 1  │◄── unlocks faction-war settlement
                  └──────┬──────────────┘
                         │ (back to top)
                         ▼
@@ -257,18 +257,17 @@ SOL from bets
 5. **Permissionless cranking:** All three steps can be called by anyone.
    No admin key required to keep the economy running.
 
-6. **Swap slippage:** `min_amount_out = 0` on price discovery swaps is
-   intentional — these are tiny 10%-of-10% amounts used for price oracle,
-   not large trades. Sandwich attacks on these amounts are unprofitable
-   relative to the gas cost.
+6. **Swap slippage:** price-discovery swaps use a nonzero `min_amount_out`
+   derived from the recent price and the snapshot deviation cap. A zero-output
+   or heavily manipulated snapshot reverts instead of polluting emissions.
 
 ---
 
 # Faction War Cycle: Gameplay Score Leaderboard
 
 Each economy cycle (LP burn) can settle the active **Faction War** — the
-competitive cycle where own-country gameplay support determines country rankings and
-distribute degenBTC rewards.
+multi-round prediction cycle where country rankings resolve Up / Neutral / Down
+directions and distribute degenBTC + SOL rewards.
 
 Product note: the contract mutates HashBeast DNA for Evolution / Power / Trait
 events only during successful reward claims. Backends should treat these as
@@ -278,26 +277,26 @@ simple indexed gameplay beats.
 ## How It Works
 
 ```
-Players bet SOL in 60-second rounds
+Players bet SOL or tickets on country+direction positions in 60-second rounds
     │
-    ├─ Own-country gameplay hashbeast bets add support score
-    │   └─ score = support_weight × bet_size × multiplier
+    ├─ Round settlement picks a random winning country+direction
+    │   └─ winning country receives gameplay_score from weighted points
     │
-    ├─ gameplay scores accumulate on FactionWarState per faction
+    ├─ Successful HashBeast mutation rolls can add bonus gameplay_score
     │
-    └─ total_dbtc_mined_in_rounds grows with each round
+    └─ weighted direction bets fold into FactionWarState for cycle claims
 ```
 
 When the economy cycle completes (LP burn → `lp_operations_count` increments):
 
 ```
 finalize_war_settlement():
-    1. Rank factions by gameplay score, then round wins, then own-faction SOL support
+    1. Rank factions by gameplay score, then round wins, then faction_id
     2. Compare with start_ranks → compute rank deltas → resolve directions
-    3. Split dbtc_mined_this_war:
+    3. Split dbtc_mined_this_war and cycle SOL:
        - base pool: anyone who picked a country's final direction correctly
-       - loyalty pool: own-country correct-direction supporters
-       - HashBeast pool: users whose gameplay HashBeast backed the resolved home-country outcome
+       - HashBeast pool: users with mutation_score on their home country
+       - MVP pool: the top mutation-score contributor for each eligible faction
     4. Stage = 1 (claims open)
     5. Persist final_ranks as next faction war's start_ranks
     6. Advance current_war_id
@@ -311,12 +310,15 @@ dbtc_mined_this_war (total degenBTC mined in all rounds this cycle)
     ├─ base_reward_bps → base_reward_pools
     │         Users who bet any country's final direction correctly get pro-rata share
     │
-    ├─ loyalty_reward_bps → loyalty_reward_pools
-    │         Own-country correct-direction supporters get pro-rata share
+    ├─ mvp_reward_bps → mvp_bonus
+    │         Each faction's MVP can claim its rank-weighted bonus
     │
-    └─ hashbeast_reward_bps → hashbeast_reward_pools
-              Eligible gameplay HashBeasts get accumulated_val (claimable via burn)
+    └─ remaining bps → hashbeast_reward_pools
+              Users with successful home-country mutation_score share pro-rata
 ```
+
+The SOL cycle pool uses the same three-lane shape. At claim time, each user's
+SOL share is scaled by their dBTC share of the same lane.
 
 ---
 
@@ -351,7 +353,7 @@ For ticket bets: wgtd_points = points (no multiplier). Tickets are capped at 25%
 Weighted points determine:
 - Your share of degenBTC round rewards (winner pool)
 - Your share of degenBTC faction-war rewards (correct direction pool)
-- Gameplay score contribution to your country when backing your own country with an active gameplay hashbeast
+- Round outcome score and claim-time mutation-score potential for the faction-war leaderboard
 
 ### XP System
 
@@ -403,11 +405,14 @@ correctly, especially when that country moved Up.
 
 Each story event also boosts multiplier by `base + (XP × efficiency_pct / 100)`.
 
-**Gameplay score** (added to country's faction-war leaderboard during betting):
+**Gameplay score** (added to the country leaderboard during settlement/claims):
 ```
-score = GAMEPLAY_SUPPORT_SCORE_WEIGHT × own_country_sol_bet × active_multiplier / BASE / PRECISION
-GAMEPLAY_SUPPORT_SCORE_WEIGHT=10
+round_score = winning_country_weighted_points_this_round
+mutation_bonus = user_weighted_points_on_winner × active_multiplier × mutation_weight
 ```
+
+Plain betting records prediction weight; it does not directly move the
+leaderboard until the round outcome or a claim-time mutation is known.
 
 ### HashBeast accumulated_val
 
@@ -497,8 +502,8 @@ SOL rewards: winning-direction bettors split the SOL prize pot proportional to t
 
 **User claims:**
 - `user_reward = faction_pool × user_bet / total_bet` (on correct direction)
-- Only own-faction bets count
-- HashBeast bonus: same formula but using `eligible_hashbeast_direction_totals` as denominator
+- Bets on any country can earn base rewards when that country's final direction is correct
+- HashBeast bonus: `hashbeast_pool × user_mutation_score / faction_mutation_score`
 
 **Referral overlay:** if a player joined through a real referral code, their
 degenBTC claim gets a 1% bonus from the emissions vault. The referrer accrues 3%
@@ -574,8 +579,8 @@ This means claim timing matters:
 
 ## Tax Treasury Distribution (also tied to faction wars)
 
-After settlement, `claim_faction_treasury_for_faction_war` distributes the faction
-treasury vault (accumulated from 0.1% transfer tax):
+After settlement, `claim_faction_treasury_for_faction_war` distributes the
+post-fee faction treasury credit accumulated from Token-2022 transfer tax:
 
 ```
 treasury_balance
@@ -586,36 +591,41 @@ treasury_balance
         Equal probability per eligible faction, deterministic from war_id
 ```
 
-Rewards go to faction stakers (split 50/50 between degenBTC and LP stakers).
+Rewards go to faction stakers (split 50/50 between degenBTC and LP stakers
+when both lanes are active). Protocol transfers are also subject to Token-2022
+fees, so staking indexes credit the amount that actually reaches the mining
+vault after transfer fees.
 
 ## State Accounts
 
 ```
 FactionWarConfig (singleton)
     ├─ current_war_id: incrementing counter
-    ├─ is_active: admin toggle
     ├─ settle_at_lp_op_count: LP ops count that triggers settlement
+    ├─ cycle_end_round_id / last_processed_round_id: boundary-round guard
     └─ prev_ranks: carried forward to next faction war
 
 FactionWarState (one per faction war)
     ├─ war_id, start_timestamp, stage
     ├─ total_dbtc_mined_in_rounds → dbtc_mined_this_war
-    ├─ start_ranks ↔ final_ranks → rank_deltas → resolved_directions
     ├─ gameplay_scores (internal gameplay-score array that drives rankings)
     ├─ faction_direction_totals (base-pool denominator for user claims)
-    ├─ faction_sol_direction_totals (claim-time mutation stake context)
-    ├─ loyalty_direction_totals (own-country loyalty-pool denominator)
-    ├─ eligible_hashbeast_direction_totals (denominator for hashbeast bonus)
+    ├─ total_cycle_sol / sol_reward_pool
+    ├─ faction_mutation_score, mvp_user, mvp_score
+    └─ treasury_reward_base_amount
+
+FactionWarSettlement (one per faction war)
+    ├─ final_ranks → rank_deltas → resolved_directions
     ├─ base_reward_pools (base user share)
-    ├─ loyalty_reward_pools (own-country loyalty share)
-    └─ hashbeast_reward_pools (HashBeast claim bonus share)
+    ├─ hashbeast_reward_pools, mvp_bonus
+    ├─ sol_base_pool, sol_hb_pool, sol_mvp_pool
+    └─ undistributed_sol / treasury_claimed_bitmap
 
 UserFactionWarBets (one per user per faction war)
     ├─ direction_bets: weighted bets across countries
     ├─ sol_direction_bets: SOL stake by country/direction for claim-time mutation context
-    ├─ loyalty_direction_bets: weighted own-country bets
     ├─ gameplay_hashbeast: which hashbeast became eligible
-    └─ hashbeast_bonus_eligible: did this user's active gameplay hashbeast back its own country?
+    └─ mutation_score: user's home-country HB-bonus numerator
 ```
 
 ## Lifecycle
@@ -625,7 +635,7 @@ UserFactionWarBets (one per user per faction war)
   │  IDLE (no active faction war) │
   │  war_state id = 0     │
   └──────────┬──────────────────┘
-             │ First bet in new cycle (auto-start)
+             │ initialize_faction_war(war_id)
              ▼
   ┌─────────────────────────────┐
   │  ACTIVE (stage = 0)         │
@@ -641,6 +651,6 @@ UserFactionWarBets (one per user per faction war)
   │  Reward pools locked         │
   │  Claims open                 │
   └──────────┬──────────────────┘
-             │ All claims processed, next bet starts new faction war
+             │ next initialize_faction_war starts new faction war
              ▼ (loop)
 ```

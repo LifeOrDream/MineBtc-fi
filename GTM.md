@@ -184,7 +184,7 @@ Post 3-5x daily per language across platforms.
 | **HashBeast Mutations** | 10s Unboxing | "My gameplay HashBeast just EVOLVED mid-round. Visual trait: Diamond Fur." |
 | **Faction War Standings** | 30s Esports Update | "Week 2 Standings: Russia #1, USA #3, Shadow Faction... surprisingly #2?" |
 | **Burn Reports** | 15s Data Viz | "Today we burned 2.4M degenBTC. Supply crunch incoming." |
-| **Strategy** | 60s YouTube Short | "Why predicting your home faction gives 20% loyalty bonus in Faction Wars." |
+| **Strategy** | 60s YouTube Short | "Why backing your home faction can create HashBeast score and MVP upside." |
 | **Propaganda** | Meme image/video | "USA HOLDERS ARE SLEEPING. 🇷🇺 RUSSIA DOESN'T SLEEP." |
 
 ---
@@ -335,10 +335,11 @@ You are correct: `economy.rs` has an asymmetrical feedback loop.
 ### Implemented Mechanics
 - 5% of every round's emission goes to a **global** `jackpot_pot` in `GlobalGameState`
 - 5% of every faction war mining pool goes to **faction MVPs** (rank-weighted):
-  - #1 faction MVP: 40% of MVP pool (2% of total war pool)
-  - #2 faction MVP: 25% of MVP pool (1.25% of total)
-  - #3 faction MVP: 15% of MVP pool (0.75% of total)
-  - #4-12 MVPs: equal share of remaining 20% of MVP pool (~0.11% each)
+  - #1 faction MVP: 30% of MVP pool (1.5% of total war pool)
+  - #2 faction MVP: 20% of MVP pool (1.0% of total)
+  - #3 faction MVP: 14% of MVP pool (0.7% of total)
+  - #4-8 MVPs: 10%, 8%, 6%, 5%, 4% of MVP pool
+  - Remaining lower-ranked MVPs split the final 3% of MVP pool when eligible
 - 0.16% chance per round (1 in 625) to hit
 - **Inverse-weighted faction selection:** When hit, the winning faction is selected using bet-volume inverse weighting
   - Factions with **lower SOL prediction volume** receive **higher** win probability
@@ -498,21 +499,19 @@ A mutation system where the user can't **see** the mutation is like a slot machi
 ## 6. Faction War Rewards — MVP Bonus Implemented ✅
 
 ### Current Mechanics
-- 4-layer split: Base (65%), Loyalty (20%), MVP (5%), HashBeast (10%)
-- Each layer is distributed per-faction by final rank
+- 3-layer split: Base (75%), MVP (5%), HashBeast (20%)
+- Base and HashBeast layers are distributed per-faction by final rank eligibility; MVP bonuses are rank-weighted by final country rank
 - Users must bet on the correct direction of a country's resolved movement
 
 ### The Problem
 
-Users don't understand why they got X tokens. The 4-layer split creates opaque reward calculations. Complexity kills word-of-mouth. The MVP bonuses (5% of mining pool, rank-weighted across all 12 factions) are a strong social hook — they need to be *shown*, not just paid.
-
-Also: **Loyalty rewards require predicting your own faction's direction.** But the main game rewards picking the *winning* faction. These incentives are often in conflict. A rational player predicts whoever they think will win, not their own country. This weakens the "faction pride" narrative.
+Users don't understand why they got X tokens. The base/HB/MVP split can still feel opaque if the UI hides the path from bet -> correct direction -> mutation score -> claim. The MVP bonuses (5% of mining pool, rank-weighted across all eligible factions) are a strong social hook — they need to be *shown*, not just paid.
 
 ### Implemented Changes
 
 | Change | File | Status | Impact |
 |--------|------|--------|--------|
-| **Faction War MVP bonus** | `faction_war.rs`, `state.rs` | ✅ Done | 🔥🔥 | Every faction gets a ranked MVP bonus. #1=40%, #2=25%, #3=15%, #4-12 split 20%. Auto-claimed with faction war rewards. |
+| **Faction War MVP bonus** | `faction_war.rs`, `state.rs` | ✅ Done | 🔥🔥 | Eligible faction MVPs get a rank-weighted bonus. Current curve: #1=30%, #2=20%, #3=14% of the MVP pool, then tapered. Auto-claimed with faction war rewards. |
 | **Real-time war score ticker** | Frontend + existing events | Backend-ready | 🔥🔥 |
 | **Simplify reward narrative** | Frontend only | Pending | 🔥 |
 
@@ -520,12 +519,12 @@ Also: **Loyalty rewards require predicting your own faction's direction.** But t
 
 1. **Faction War MVP (Implemented)**
    - `FactionWarState` tracks running MVP per faction: `mvp_user` + `mvp_score`
-   - `PlayerData` tracks `current_war_score` (reset each war)
+   - `UserFactionWarBets` tracks the player's cycle mutation score
    - At settlement, **EVERY faction's MVP gets a bonus** (rank-weighted from 5% of mining pool):
-     - #1 faction MVP: 2% of total war pool
-     - #2 faction MVP: 1.25% of total war pool
-     - #3 faction MVP: 0.75% of total war pool
-     - #4-12 MVPs: ~0.11% each
+     - #1 faction MVP: 1.5% of total war pool
+     - #2 faction MVP: 1.0% of total war pool
+     - #3 faction MVP: 0.7% of total war pool
+     - Later MVPs follow the on-chain tapered rank curve
    - `FactionWarMvp` events emitted for all 12 factions: "🏆 {User} was MVP for Israel! Bonus: 420 degenBTC"
    - MVP bonus is added automatically when user claims faction war rewards
    - Creates **12 hero narratives per war** instead of 1 — more content, more engagement
@@ -544,7 +543,7 @@ Also: **Loyalty rewards require predicting your own faction's direction.** But t
 3. **Simplify Frontend Narrative (Frontend-Only)**
    - Don't show 4 separate pools. Show one reward with multipliers:
      - "Base Reward: 500 degenBTC"
-     - "Loyalty Bonus: ×1.5 (you predicted YOUR country)"
+     - "HashBeast Score: +120 (your operator pushed USA's cycle rank)"
      - "MVP Bonus: +2,000 (you were the top contributor for USA!)"
      - "HashBeast Bonus: +120 (your HashBeast evolved this war)"
    - Same contract logic, simpler story.
