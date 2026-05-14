@@ -140,13 +140,22 @@ pub fn transfer_to_autominer_custody<'info>(
     Ok(())
 }
 
+/// Return the native SOL that can leave an account without dropping it below
+/// its current rent-exempt floor. This is zero for the zero-data system PDAs
+/// used as simple SOL vaults today, but keeping the helper generic prevents a
+/// future vault shape change from introducing rent-drain failures.
+pub fn native_lamports_available_after_rent(account: &AccountInfo<'_>) -> Result<u64> {
+    let rent_floor = Rent::get()?.minimum_balance(account.data_len());
+    Ok(account.lamports().saturating_sub(rent_floor))
+}
+
 pub fn transfer_from_autominer_custody<'info>(
     autominer_custody: &AccountInfo<'info>,
     to: &AccountInfo<'info>,
     system_program: &AccountInfo<'info>,
     amount: u64,
     custody_bump: u8,
-) -> Result<()> {
+) -> Result<u64> {
     msg!(
         "💰 [helper.transfer_from_autominer_custody] from={} to={} amount={} SOL bump={}",
         autominer_custody.key(),
@@ -154,6 +163,13 @@ pub fn transfer_from_autominer_custody<'info>(
         amount as f64 / 1e9,
         custody_bump
     );
+    let available = native_lamports_available_after_rent(autominer_custody)?;
+    let actual_amount = amount.min(available);
+    if actual_amount == 0 {
+        msg!("   ⚠️ autominer custody has no withdrawable SOL after rent reserve");
+        return Ok(0);
+    }
+
     let seeds = &[AUTOMINER_CUSTODY_SEED.as_ref(), &[custody_bump]];
     transfer(
         CpiContext::new_with_signer(
@@ -164,10 +180,13 @@ pub fn transfer_from_autominer_custody<'info>(
             },
             &[seeds],
         ),
-        amount,
+        actual_amount,
     )?;
-    msg!("   ✅ transfer_from_autominer_custody complete");
-    Ok(())
+    msg!(
+        "   ✅ transfer_from_autominer_custody complete actual_amount={}",
+        actual_amount
+    );
+    Ok(actual_amount)
 }
 
 // Helper function to transfer SOL to the sol_rewards_vault PDA
@@ -481,7 +500,7 @@ pub fn transfer_from_sol_rewards_vault<'info>(
     system_program: &AccountInfo<'info>,
     amount: u64,
     vault_bump: u8,
-) -> Result<()> {
+) -> Result<u64> {
     msg!(
         "💰 [helper.transfer_from_sol_rewards_vault] from={} to={} amount={} SOL bump={}",
         sol_rewards_vault.key(),
@@ -489,6 +508,13 @@ pub fn transfer_from_sol_rewards_vault<'info>(
         amount as f64 / 1e9,
         vault_bump
     );
+    let available = native_lamports_available_after_rent(sol_rewards_vault)?;
+    let actual_amount = amount.min(available);
+    if actual_amount == 0 {
+        msg!("   ⚠️ sol_rewards_vault has no withdrawable SOL after rent reserve");
+        return Ok(0);
+    }
+
     let seeds = &[STAKER_SOL_REWARD_VAULT_SEED.as_ref(), &[vault_bump]];
     let signer_seeds = &[&seeds[..]];
 
@@ -501,10 +527,13 @@ pub fn transfer_from_sol_rewards_vault<'info>(
             },
             signer_seeds,
         ),
-        amount,
+        actual_amount,
     )?;
-    msg!("   ✅ transfer_from_sol_rewards_vault complete");
-    Ok(())
+    msg!(
+        "   ✅ transfer_from_sol_rewards_vault complete actual_amount={}",
+        actual_amount
+    );
+    Ok(actual_amount)
 }
 
 // Helper function to transfer SOL FROM sol_prize_pot_vault to a user
@@ -515,7 +544,7 @@ pub fn transfer_from_sol_prize_pot_vault<'info>(
     system_program: &AccountInfo<'info>,
     amount: u64,
     vault_bump: u8,
-) -> Result<()> {
+) -> Result<u64> {
     msg!(
         "💰 [helper.transfer_from_sol_prize_pot_vault] from={} to={} amount={} SOL bump={}",
         sol_prize_pot_vault.key(),
@@ -524,29 +553,19 @@ pub fn transfer_from_sol_prize_pot_vault<'info>(
         vault_bump
     );
 
-    // Cap the payout at `vault_balance - rent_floor` so the vault PDA stays
-    // rent-exempt after transfer. Without this, the runtime aborts the entire
-    // tx with an opaque "insufficient funds for rent" error AFTER all program
-    // logic has already run — wasting compute and emitting events for a tx
-    // that ultimately fails. By capping at the helper, callers downstream of
-    // reward-index math (which can overestimate vault availability by the
-    // ~rent_floor that was used to seed the PDA at init) still succeed.
-    // Hard-revert only if even the rent floor isn't covered — that would
-    // imply the vault was never properly initialized.
-    let rent_floor = Rent::get()?.minimum_balance(sol_prize_pot_vault.data_len());
-    let vault_balance = sol_prize_pot_vault.lamports();
-    require!(vault_balance >= rent_floor, ErrorCode::InsufficientFunds);
-    let max_payable = vault_balance - rent_floor;
-    let actual_amount =
-        if amount > max_payable {
-            msg!(
-            "   ⚠️ Capping payout: requested={} max_payable={} (rent_floor={}, vault_balance={})",
-            amount, max_payable, rent_floor, vault_balance
+    let available = native_lamports_available_after_rent(sol_prize_pot_vault)?;
+    let actual_amount = amount.min(available);
+    if actual_amount < amount {
+        msg!(
+            "   ⚠️ Capping prize-pot payout: requested={} actual={} available_after_rent={}",
+            amount,
+            actual_amount,
+            available
         );
-            max_payable
-        } else {
-            amount
-        };
+    }
+    if actual_amount == 0 {
+        return Ok(0);
+    }
 
     let seeds = &[JACKPOT_POT_VAULT_SEED.as_ref(), &[vault_bump]];
     let signer_seeds = &[&seeds[..]];
@@ -562,8 +581,11 @@ pub fn transfer_from_sol_prize_pot_vault<'info>(
         ),
         actual_amount,
     )?;
-    msg!("   ✅ transfer_from_sol_prize_pot_vault complete");
-    Ok(())
+    msg!(
+        "   ✅ transfer_from_sol_prize_pot_vault complete actual_amount={}",
+        actual_amount
+    );
+    Ok(actual_amount)
 }
 
 // Helper function to transfer WSOL to multisig token account

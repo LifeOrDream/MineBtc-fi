@@ -688,6 +688,11 @@ fn scale_user_sol_lane(
     u64::try_from(s).map_err(|_| ErrorCode::ArithmeticOverflow.into())
 }
 
+fn native_vault_payable_amount(vault: &AccountInfo<'_>, amount: u64) -> Result<u64> {
+    let rent_floor = Rent::get()?.minimum_balance(vault.data_len());
+    Ok(amount.min(vault.lamports().saturating_sub(rent_floor)))
+}
+
 /// Compute how the faction_war mining pool is split across factions.
 ///
 /// The total pool is first split into three lanes:
@@ -1215,26 +1220,34 @@ pub fn settle_war_internal(ctx: Context<SettleFactionWar>) -> Result<()> {
     // plus the full sol pool when no bets exist for the cycle).
     let undistributed_sol = war_settlement.undistributed_sol;
     if undistributed_sol > 0 {
-        let vault_seeds: &[&[u8]] = &[
-            FACTION_WAR_SOL_VAULT_SEED,
-            &[war_config.rewards_sol_vault_bump],
-        ];
-        let signer: &[&[&[u8]]] = &[vault_seeds];
-        anchor_lang::system_program::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.system_program.to_account_info(),
-                anchor_lang::system_program::Transfer {
-                    from: ctx.accounts.faction_war_sol_vault.to_account_info(),
-                    to: ctx.accounts.sol_treasury.to_account_info(),
-                },
-                signer,
-            ),
+        let drain_sol = native_vault_payable_amount(
+            &ctx.accounts.faction_war_sol_vault.to_account_info(),
             undistributed_sol,
         )?;
-        msg!(
-            "💸 [faction_war.settle_war_internal] drained undistributed SOL {} lamports → sol_treasury",
-            undistributed_sol
-        );
+        if drain_sol > 0 {
+            let vault_seeds: &[&[u8]] = &[
+                FACTION_WAR_SOL_VAULT_SEED,
+                &[war_config.rewards_sol_vault_bump],
+            ];
+            let signer: &[&[&[u8]]] = &[vault_seeds];
+            anchor_lang::system_program::transfer(
+                CpiContext::new_with_signer(
+                    ctx.accounts.system_program.to_account_info(),
+                    anchor_lang::system_program::Transfer {
+                        from: ctx.accounts.faction_war_sol_vault.to_account_info(),
+                        to: ctx.accounts.sol_treasury.to_account_info(),
+                    },
+                    signer,
+                ),
+                drain_sol,
+            )?;
+            msg!(
+                "💸 [faction_war.settle_war_internal] drained undistributed SOL {} lamports → sol_treasury",
+                drain_sol
+            );
+        } else {
+            msg!("⚠️ [faction_war.settle_war_internal] no withdrawable undistributed SOL after rent reserve");
+        }
     }
 
     let clock = Clock::get()?;
@@ -1492,30 +1505,61 @@ pub fn claim_war_rewards_internal(ctx: Context<ClaimFactionWarRewards>, war_id: 
         sol_mvp_share,
         sol_reward
     );
+    let mut sol_reward_paid = 0u64;
     if sol_reward > 0 {
+        sol_reward_paid =
+            native_vault_payable_amount(&ctx.accounts.war_sol_vault.to_account_info(), sol_reward)?;
         msg!(
             "💰 [faction_war.claim_war_rewards_internal] Transferring SOL cycle reward: {} lamports ({} SOL)",
-            sol_reward,
-            sol_reward as f64 / 1e9
+            sol_reward_paid,
+            sol_reward_paid as f64 / 1e9
         );
-        let vault_seeds = &[
-            FACTION_WAR_SOL_VAULT_SEED.as_ref(),
-            &[ctx.bumps.war_sol_vault],
-        ];
-        let signer = &[&vault_seeds[..]];
-        anchor_lang::system_program::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.system_program.to_account_info(),
-                anchor_lang::system_program::Transfer {
-                    from: ctx.accounts.war_sol_vault.to_account_info(),
-                    to: ctx.accounts.player.to_account_info(),
-                },
-                signer,
-            ),
-            sol_reward,
-        )?;
-        msg!("💰 [faction_war.claim_war_rewards_internal] SOL transfer complete");
+        if sol_reward_paid > 0 {
+            let vault_seeds = &[
+                FACTION_WAR_SOL_VAULT_SEED.as_ref(),
+                &[ctx.bumps.war_sol_vault],
+            ];
+            let signer = &[&vault_seeds[..]];
+            anchor_lang::system_program::transfer(
+                CpiContext::new_with_signer(
+                    ctx.accounts.system_program.to_account_info(),
+                    anchor_lang::system_program::Transfer {
+                        from: ctx.accounts.war_sol_vault.to_account_info(),
+                        to: ctx.accounts.player.to_account_info(),
+                    },
+                    signer,
+                ),
+                sol_reward_paid,
+            )?;
+            msg!("💰 [faction_war.claim_war_rewards_internal] SOL transfer complete");
+        }
     }
+    let (sol_base_paid, sol_hb_paid, sol_mvp_paid) =
+        if sol_reward > 0 && sol_reward_paid < sol_reward {
+            let base = u64::try_from(
+                (sol_base_share as u128)
+                    .checked_mul(sol_reward_paid as u128)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?
+                    .checked_div(sol_reward as u128)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?,
+            )
+            .map_err(|_| ErrorCode::ArithmeticOverflow)?;
+            let hb = u64::try_from(
+                (sol_hb_share as u128)
+                    .checked_mul(sol_reward_paid as u128)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?
+                    .checked_div(sol_reward as u128)
+                    .ok_or(ErrorCode::ArithmeticOverflow)?,
+            )
+            .map_err(|_| ErrorCode::ArithmeticOverflow)?;
+            let mvp = sol_reward_paid
+                .checked_sub(base)
+                .and_then(|r| r.checked_sub(hb))
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            (base, hb, mvp)
+        } else {
+            (sol_base_share, sol_hb_share, sol_mvp_share)
+        };
 
     let claim_won = total_reward > 0 || sol_reward > 0 || hashbeast_bonus_amount > 0;
     let claim_mutation_type = process_war_claim_hashbeast_update(
@@ -1544,7 +1588,7 @@ pub fn claim_war_rewards_internal(ctx: Context<ClaimFactionWarRewards>, war_id: 
         total_reward,
         hashbeast_bonus_amount,
         user_war_bets.mutation_score,
-        sol_reward
+        sol_reward_paid
     );
 
     if total_reward > 0 {
@@ -1587,7 +1631,7 @@ pub fn claim_war_rewards_internal(ctx: Context<ClaimFactionWarRewards>, war_id: 
         base_reward_amount,
         mvp_bonus_amount,
         hashbeast_bonus_amount,
-        sol_reward,
+        sol_reward_paid,
         clock.unix_timestamp
     );
     emit!(FactionWarRewardsClaimed {
@@ -1597,10 +1641,10 @@ pub fn claim_war_rewards_internal(ctx: Context<ClaimFactionWarRewards>, war_id: 
         base_reward_amount,
         mvp_bonus_amount,
         hashbeast_bonus_amount,
-        sol_reward_amount: sol_reward,
-        sol_base_amount: sol_base_share,
-        sol_hb_amount: sol_hb_share,
-        sol_mvp_amount: sol_mvp_share,
+        sol_reward_amount: sol_reward_paid,
+        sol_base_amount: sol_base_paid,
+        sol_hb_amount: sol_hb_paid,
+        sol_mvp_amount: sol_mvp_paid,
         hashbeast_mint,
         timestamp: clock.unix_timestamp,
     });

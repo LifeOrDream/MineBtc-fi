@@ -1258,13 +1258,14 @@ pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()
     );
 
     let player_sol = total_pending_sol_rewards;
+    let mut player_sol_paid = 0u64;
 
     if player_sol > 0 {
         msg!(
             "   Transferring {} SOL from sol_rewards_vault to user",
             (player_sol as f64 / 1e9)
         );
-        helper::transfer_from_sol_rewards_vault(
+        player_sol_paid = helper::transfer_from_sol_rewards_vault(
             &ctx.accounts.sol_rewards_vault.to_account_info(),
             &ctx.accounts.authority.to_account_info(),
             &ctx.accounts.system_program.to_account_info(),
@@ -1322,14 +1323,14 @@ pub fn int_claim_staking_rewards(ctx: Context<ClaimStakingRewards>) -> Result<()
         user: ctx.accounts.authority.key(),
         player_data: player_data_key,
         faction_id,
-        sol_amount: player_sol,
+        sol_amount: player_sol_paid,
         dbtc_amount: total_pending_dbtc_rewards,
         timestamp: Clock::get()?.unix_timestamp,
     });
 
     msg!(
         "✅ [claim_staking_rewards] Claimed {} SOL and {} staking degenBTC",
-        player_sol as f64 / 1e9,
+        player_sol_paid as f64 / 1e9,
         total_pending_dbtc_rewards as f64 / 1e6,
     );
     Ok(())

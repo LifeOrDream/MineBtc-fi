@@ -1066,7 +1066,23 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
         );
     }
 
-    let total_sol_for_lp = buybacks_account.sol_for_pol;
+    let requested_sol_for_lp = buybacks_account.sol_for_pol;
+    let buybacks_vault_rent_floor =
+        Rent::get()?.minimum_balance(ctx.accounts.buybacks_sol_vault.data_len());
+    let buybacks_vault_available = ctx
+        .accounts
+        .buybacks_sol_vault
+        .lamports()
+        .saturating_sub(buybacks_vault_rent_floor);
+    let total_sol_for_lp = requested_sol_for_lp.min(buybacks_vault_available);
+    if total_sol_for_lp < requested_sol_for_lp {
+        msg!(
+            "   ⚠️ Capping POL SOL for rent reserve: requested={} actual={}",
+            requested_sol_for_lp,
+            total_sol_for_lp
+        );
+        buybacks_account.sol_for_pol = total_sol_for_lp;
+    }
     msg!(
         "   💰 SOL ready for LP: {} SOL",
         total_sol_for_lp as f64 / 1e9
