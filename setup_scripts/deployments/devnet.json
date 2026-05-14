@@ -9,5 +9,76 @@
   "game_programs_deployment": {
     "timestamp": "2026-05-14T17:49:04.812Z",
     "cluster": "devnet"
+  },
+  "dbtc_mint_created": {
+    "mint_address": "D2mVprFrTkj9pH2rwteU9a82dJ1PNNf4MLPYVQUupPUn",
+    "mint_authority": null,
+    "freeze_authority": null,
+    "transfer_fee_config_authority": null,
+    "withdraw_withheld_authority": "Hw44KoLeGNoxXqyTsC7MBpv7qG8rTEYv6U3WgHgqa2vD",
+    "decimals": 6,
+    "transfer_tax_bps": 10,
+    "max_transfer_fee_amount": 1000000,
+    "metadata_included": true,
+    "metadata_name": "degenBTC",
+    "metadata_symbol": "dBTC",
+    "metadata_uri": "https://gateway.irys.xyz/EtvQAJH2KoGmJdVEEn2wPiTsmVYrTeLPVax882zMWBC9",
+    "metadata_image": "https://gateway.irys.xyz/GpxgscWN3w3DSY71QiSFX6bR9DD1tPGD3cGXmu74gVdu",
+    "metadata_animation_url": "https://gateway.irys.xyz/21StrtbPGnXRaYjmmzqJUjux8pm8JJxAKxdgXaT8hdCM",
+    "metadata_external_url": "https://minebtc.fun",
+    "creation_signature": "2o8z2Zu6rGKCv5m9sM2KN8FQ7TT2mcnbyYBTz2Mn6oWwA93eGLVtmbBXz2J4r1rnZC7b26YmoQttm8AqfMB5fHi7",
+    "timestamp": "2026-05-14T19:30:41.309Z",
+    "mint_authority_status": "removed",
+    "withdraw_withheld_authority_status": "set_to_pda",
+    "transfer_fee_config_authority_status": "frozen",
+    "metadata_update_authority": null,
+    "metadata_update_authority_status": "removed"
+  },
+  "dbtc_token_account_created": {
+    "token_account_address": "8TB9HHNz4rcxEXQxnf45P8C7FvVWC5GhsV1xKiuRy8DN",
+    "owner_address": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
+    "mint_address": "D2mVprFrTkj9pH2rwteU9a82dJ1PNNf4MLPYVQUupPUn",
+    "timestamp": "2026-05-14T19:30:43.330Z"
+  },
+  "initial_supply_minted": {
+    "amount": "2100000000000000",
+    "actual_minted_amount": "2100000000000000",
+    "amount_readable": "2,100,000,000 dBTC",
+    "token_account_address": "8TB9HHNz4rcxEXQxnf45P8C7FvVWC5GhsV1xKiuRy8DN",
+    "mint_signature": "4FHj1eqxTT5tac2wtFH9AKuiLqQ3X93yvPYgvZKUKmrzcPn3YZ5tdMumXaDwwWgXab6eQ144x2N34Fttnx5VXuiy",
+    "bigint_verification": {
+      "expected": "2100000000000000",
+      "actual": "2100000000000000",
+      "match": true
+    },
+    "timestamp": "2026-05-14T19:30:45.340Z"
+  },
+  "dbtc_mint_address": "D2mVprFrTkj9pH2rwteU9a82dJ1PNNf4MLPYVQUupPUn",
+  "mint_authority_removed": {
+    "previous_mint_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
+    "new_mint_authority": null,
+    "removal_signature": "4j1d9dTwnL7Cu44i7zkHNSSBD2fCThFq8JxqwTbcqkmYbaXQxompCw4uqu1BsM5u35EywBcnw8XqCGWu47qw9B5S",
+    "timestamp": "2026-05-14T19:30:46.611Z",
+    "total_supply_locked": "2,100,000,000 dBTC"
+  },
+  "withdraw_withheld_authority_set_to_pda": {
+    "previous_withdraw_withheld_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
+    "pda_authority": "Hw44KoLeGNoxXqyTsC7MBpv7qG8rTEYv6U3WgHgqa2vD",
+    "pda_bump": 252,
+    "program_id": "5g6kUAapkJQqQKX7iXsrNJp2vixn4LHRgeFJjLb989T6",
+    "transfer_signature": "4DznWJhh93ZF5gq1iUaanG4NW5DkB2DvAorsuDHdK6PrAAdWFjXLfcNREvs9fKoCoBuEzCeqZizCsnv2taW6MfwZ",
+    "timestamp": "2026-05-14T19:30:48.165Z"
+  },
+  "transfer_fee_config_authority_frozen": {
+    "previous_transfer_fee_config_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
+    "new_transfer_fee_config_authority": null,
+    "transfer_signature": "3KDvwS6XRjsa8cMrhcwYE9Ja3cWBMFv1h5x35FJwUrBzkFXLcRoXRbWfdXa2zp4FukPTFDy8jQxJg2sZwPrnBRd1",
+    "timestamp": "2026-05-14T19:30:48.767Z"
+  },
+  "metadata_update_authority_removed": {
+    "previous_update_authority": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
+    "new_update_authority": null,
+    "removal_signature": "57ohDJxmHMoSod5J2kae8CBk5TX1adoGcRxhYg6hVzqDzsbr9AqqFnW4x9fHRnr5yKQw3tXeLJmE4Dwp8jHgjL6y",
+    "timestamp": "2026-05-14T19:30:50.429Z"
   }
 }
