@@ -32,7 +32,7 @@ pub mod state;
 
 use instructions::*;
 
-declare_id!("5ovyTDwjpMoe9RAqLpyABJ1HKzcGcsFRbt3C5mqKDEyM");
+declare_id!("6pPnqugm79XwbrxdYAzVpZg6tixszCh8eo2qJCgmyd2J");
 
 #[macro_export]
 macro_rules! log_fn {

@@ -2124,18 +2124,18 @@ async function enableHashBeastMining(minebtcProgram) {
     return;
   }
 
-  console.log(COLOR_PENDING, "🔄 Enabling HashBeast mining...");
+  console.log(COLOR_INFO, "🔄 Enabling HashBeast mining...");
   try {
     const provider = minebtcProgram.provider;
     const authority = provider.wallet.publicKey;
 
     const [globalConfigPDA] = PublicKey.findProgramAddressSync(
       [Buffer.from("global-config")],
-      MINE_BTC_PROGRAM_ID
+      minebtcProgram.programId
     );
     const [hashbeastMintConfigPDA] = PublicKey.findProgramAddressSync(
       [Buffer.from("hashbeast-mint-config")],
-      MINE_BTC_PROGRAM_ID
+      minebtcProgram.programId
     );
 
     const tx = await minebtcProgram.methods
@@ -3308,8 +3308,13 @@ async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
   );
   const current = globalConfig.gameplayTuning;
 
+  // Field name follows the Rust `GameplayTuningUpdateArgs` struct, not the
+  // stored `GameplayTuningConfig` struct — the args type renames it from
+  // `rpg_progression` to `enable_rpg_progression`. Anchor exposes that to
+  // JS as `enableRpgProgression`; sending `rpgProgression` would drop to
+  // undefined and crash the Option<bool> borsh encoder.
   const target = {
-    rpgProgression: gameplayTuningConfig.enableRpgProgression,
+    enableRpgProgression: gameplayTuningConfig.enableRpgProgression,
     maxEvolutionStageUnlocked: gameplayTuningConfig.maxEvolutionStageUnlocked,
     warBaseRewardBps: gameplayTuningConfig.factionWarBaseRewardBps,
     warMvpRewardBps: gameplayTuningConfig.factionWarMvpRewardBps,

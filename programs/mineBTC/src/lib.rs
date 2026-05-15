@@ -53,7 +53,7 @@ pub use state::{
     HashBeastMintConfig, PredictionDirection, SolFeeConfig, TaxConfig, TicketTier,
 };
 
-declare_id!("5g6kUAapkJQqQKX7iXsrNJp2vixn4LHRgeFJjLb989T6");
+declare_id!("GU8sF4tKmBzzPA822QcBqysBXXGZEY2reJsdfx8qiTf");
 
 #[macro_export]
 macro_rules! log_fn {
