@@ -18,9 +18,6 @@ devnet-wallet-keypair.json
 mainnet-wallet-keypair.json
 mainnet-irys-upload-wallet-keypair.json
 
-# Deployment secrets (contains API keys)
-setup_scripts/deployments/website.json
-
 # Test user wallets & activity scripts
 setup_scripts/user_activity/
 setup_scripts/tmp/
