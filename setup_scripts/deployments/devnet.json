@@ -125,5 +125,139 @@
     "status": "burned_successfully",
     "permanent_lock": true,
     "timestamp": "2026-05-14T19:49:19.853Z"
+  },
+  "minebtc_program_initialized": {
+    "globalConfig_address": "ErnXZb1xTvNg9AMM1TD4g6ovSqF7i27eAsZFX2PLMJ2t",
+    "mineBtcMining_address": "AGNkMTkA2xwiUWGJ1Kw399ZYCWUpiLb2bfnt8dbEyFnz",
+    "solTreasury_address": "BhogJdNnPFDKRo7k5mF2nKf4hU9RKoskQQQEypYGwfHs",
+    "autominerCustody_address": "BaDH3Nou1t2NCgypMjrbSdyTwqzp4N8RhcF3xJaEMkT4",
+    "hodlPool_address": "G7kromS9mdxZXq19rzvkzcBGzkYbFg2atTyRAPtmF3Mp",
+    "FEE_RECIPIENT_MULTISIG": "2FJysLPr83hcJ1nBhzBMjyF6HFhQrf6RptdnyAemUFiL",
+    "tx_signature": "2VfscfD8GYC4mwXs2wdogUdFYahD2xdWsPj45zfEavCQFaRzmU14p893MmX9XTVtz2Q9UpdXjxH6YqU8d69Pib1u",
+    "timestamp": "2026-05-14T19:50:55.429Z"
+  },
+  "raydium_pool_state_set": {
+    "pool_state_address": "6BgijTsnQhFYkyD9rY4hZz4p9UmA7Gy4nMEDZuqrH3sL",
+    "sol_rewards_vault": "DeJB8GNouJQgeJV4zhVAUq9rvhn7ZXUsVq1LjF3kxp4n",
+    "sol_prize_pot_vault": "F1CvbbjbuiqhWocfqA89TeBXai7znYZRR2n4FBKK2oxi",
+    "tx_signature": "QFMKKqnLJTuEXanPETgLbsRWCjbif12FJXbR6Ud6azd4VeyqWAuhV5XvyskNzoSi8rT85m42XZi8RYVj4WQwcBW",
+    "timestamp": "2026-05-14T19:50:57.584Z"
+  },
+  "war_sol_vault_pda": "8H7j7gCfkBD2ZvhRo6ZSbaDm2GQ7wu7XgBAGZ9ZwV9nE",
+  "factions_added": {
+    "factions": [
+      {
+        "faction_id": 0,
+        "name": "USA",
+        "faction_state_pda": "EuqeQF6ct3KE42P4L73Yb3PA98gVF4XsNmFDKXGZ4crp",
+        "tx_signature": "8w1RuRC9t8WAb4ECwRTZ16a2k87LJebYnm3Qu8zxs5MntHxBssQ6BGKthrcrqZ27qkv2eXiiLxDaFbjRHZBvp3F"
+      },
+      {
+        "faction_id": 1,
+        "name": "China",
+        "faction_state_pda": "H1YXepFnQ5RoBRxThWruNcZbUJYLeCWDzTAquhhWBBce",
+        "tx_signature": "soMcQxAyBy4ysHQQ8e2hikTfEKtPaM4uPjEMGahjNuiMvhhVWpd72BFM6dM6niBp1U2MLtA8aByVthLZZtQJH97"
+      },
+      {
+        "faction_id": 2,
+        "name": "Russia",
+        "faction_state_pda": "98EQFDfkpnAG3uMAd6ouiuibgeyAB1Cy85VPwZMG1W67",
+        "tx_signature": "fm7vGBcYzo6nkeECRugrVi3zcXCVozqaYbX5joGtCD8RboZNdScWCexdY7zyKBZzUxa8c6QA9qvsn1uY4Lq1pw9"
+      },
+      {
+        "faction_id": 3,
+        "name": "India",
+        "faction_state_pda": "Gb3BeJ5jpbBoezQhAfVUQbJSnDULVdwJT53nnNLFhq27",
+        "tx_signature": "3wuntYJGPt9hZjWFaFZetTH611J33p42uigCx9sXx3WLRepGeesyYqnBerQxCSSJoSke9YjpkXtd5GrL3xHRhWVb"
+      },
+      {
+        "faction_id": 4,
+        "name": "Japan",
+        "faction_state_pda": "GEfq7Lxn8QUXKcwFMtgqmwq3q6RW3n6JoUJQSHi1BwNV",
+        "tx_signature": "4ye2oEChWgV2gdRS5rbPRAQnxh6JsJgSjL8WjEkV4BWcx93dyGqYAC5Jo1HhoJvkr5EunwzWNYQosK76qoAPeeCN"
+      },
+      {
+        "faction_id": 5,
+        "name": "South Korea",
+        "faction_state_pda": "HqDhk2PryKHvYffhXDZ9hsuH9AZSYAF2D6a56VLM8p2W",
+        "tx_signature": "36XrCTmG6K7tZkpj3YfLyNJJVjwC4LzUN3p2tfXFFbyQztYN5Ua7qUKUjbCsvR6B1xSYqANRLqiqo2km2UYjiDb4"
+      },
+      {
+        "faction_id": 6,
+        "name": "Iran",
+        "faction_state_pda": "HwSJruNcMg94pVQ37yELbxvnP1BWAmC9TsPjg46jqMw5",
+        "tx_signature": "3VvbHgCJSVcm62r7tuwtgXDC6zcCFJabPyL1gKhDkBTB6gDbmjuSvbt2oUcSHonioeRiTiN8zBPeRcpUVaF7YGy1"
+      },
+      {
+        "faction_id": 7,
+        "name": "UK",
+        "faction_state_pda": "DavDwc4GsU8NxLQqfyeaPvfpZsiGBqq7ETZyUQ1xThkX",
+        "tx_signature": "4yokWyY9MuaWRB6Yv42EhLFQuCU3hEudEWsEtKbpKDQWCRZGMaSKVdZzGRGTCTrsy6PKJRGTYdYQNPs9S9Yi9YJf"
+      },
+      {
+        "faction_id": 8,
+        "name": "North Korea",
+        "faction_state_pda": "8XXp9KbH55Ztz9W6fHrZECJnSdpwdqDy8Zz22V2YmfkU",
+        "tx_signature": "2tfRuK9uny4SdP2gFGayXcr7DCXbTZUdPvnQXj7Z7MTncXpDhX2TJhbFupaUQ8t2tkLDydo6Ccpks3jDYEdND463"
+      },
+      {
+        "faction_id": 9,
+        "name": "France",
+        "faction_state_pda": "4qyAAwV9mug7c2Z4aXak47yU6BaLsTA33Uz3NGaGeBJn",
+        "tx_signature": "5hGsy4jTwbiMfPa9AjKVA4REACn39qUrGMyq4t9pSGu9jMKmjDQfnwZqXsqQwhAyazD1RPvRe5BAVSBLimxj8XdK"
+      },
+      {
+        "faction_id": 10,
+        "name": "Brazil",
+        "faction_state_pda": "A6NwVyaXgbhzHXjJUNsV7WNJHsusTHHCZ6zZ6EoVE85d",
+        "tx_signature": "38gbVGCfg91nQhgWy8Cv88rJDpwCLdvzvjmPJK9LLLLj4ZZSdcmPjPmjphWwiAsE6ykRf88Ye7t2oohVN7go5bVA"
+      },
+      {
+        "faction_id": 11,
+        "name": "Israel",
+        "faction_state_pda": "6pXnLpS6mqZLNZUJfihAHwYtmjPB8kZfyJjiGwUp9ueQ",
+        "tx_signature": "62uZNW6r1B7BRhBbJs2RAoEWA2LFoLi9mww7epMM7SVu9ToPihQs9vpxP7bTb2DxPGva9hXp9qazqaJYRnJpaCCB"
+      }
+    ],
+    "timestamp": "2026-05-14T19:51:22.402Z"
+  },
+  "system_accounts_initialized": {
+    "system_referral_rewards_pda": "BJBvEfYkqDuT1DGJ379gYsKJHTqktuNUKZsRMRixqUkR",
+    "buybacks_account_pda": "4weThWJdZqFVdeSC3d3atrNdjy5Mceum3D9Yp4S3rT98",
+    "buybacks_sol_vault_pda": "Gdv6545Vgs3yNeiFjDGxuDfq9rtvksC4xUxDYFikDazn",
+    "tx_signature": "Ay5dgptot7tPaopB9DFsXKyio2DfqQznb43ULFCjG7GQDbDdBbAPGo4yZp2EE7nR79ao26r5D8v447z9hLMi1Lv",
+    "timestamp": "2026-05-14T19:51:24.315Z"
+  },
+  "fees_updated": {
+    "fee_config": {
+      "newProtocolFeePct": 15,
+      "newBuybackPct": 70,
+      "newStakersPct": 10,
+      "newMinebtcStakersPct": 3,
+      "newMinebtcWinnersPct": 50,
+      "newMinebtcSameFactionPct": 21,
+      "newMinebtcJackpotPct": 5,
+      "newHodlTaxPct": 10,
+      "snapshotInterval": 300,
+      "newCycleSolSplitPct": 5,
+      "newNftMarketMakingPct": 3
+    },
+    "tx_signature": "2sMVhah6gVcnqMwNCQrEsk9CqaajkfiNRN234eYN23PFqiWBK1QP9r7Nn9pEVfkXEoUYbXwfJR4zpkJK2o75F7zG",
+    "timestamp": "2026-05-14T20:14:00.473Z"
+  },
+  "mining_vault_initialized": {
+    "vault_address": "MHUZy5RxTKyVPqimNQyrYvFFsP2Nn8QkNuML7drzX2m",
+    "vault_authority": "FXyZdmeXMQTZPsQnqaptey9UhaKiWLGAVM8qFUabwa9U",
+    "degen_btc_per_round": "1000000000",
+    "tx_signature": "5YKvAhV2vnpadxsoa6So4xB3pqoSVkEQCenhXW7tV8t4RtzAMV2EU2483HsQTCpC93hUqvvscBu9DVMbD7hx77rq",
+    "timestamp": "2026-05-14T20:14:02.566Z"
+  },
+  "mining_tokens_deposited": {
+    "amount": "2099725000000000",
+    "amount_readable": "2,099,725,000 dBTC",
+    "expected_transfer_fee": "1000000",
+    "expected_vault_credit_after_transfer_fee": "2099724999000000",
+    "tx_signature": "4LN5KzxFpXTX6pTWrZo3FwkosLjz5MGVqm1onR41J78xUWrzKTgF3TeaDsjpYf2Smvm5d3NUNN11Lnwd7tkoKXVf",
+    "timestamp": "2026-05-14T20:14:05.417Z"
   }
 }

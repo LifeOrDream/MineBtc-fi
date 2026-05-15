@@ -201,17 +201,17 @@ function generateWebsiteConfig(config, deployment) {
           creators:
             deployment.hashbeast_royalties_initialized?.creators || [],
         },
-        // Breeding parameters seeded into HashBeastConfig. `breeding_allowed`
+        // Breeding switch seeded into HashBeastConfig. `breeding_allowed`
         // is initially false; admin flips it on after genesis sells out.
-        // Runtime cost = max(curve_price, 1.5 × current_floor_anchor),
+        // Runtime cost = max(parent breed-count table, 1.5 × current_floor_anchor),
         // paid 50% SOL + 50% dbtc by SOL value.
         breeding: {
           allowed: deployment.breeding_config_seeded?.breeding_allowed ?? false,
-          base_price:
-            deployment.breeding_config_seeded?.breed_base_price?.toString() ||
-            null,
-          curve_a:
-            deployment.breeding_config_seeded?.breed_curve_a?.toString() || null,
+          parent_prices_lamports:
+            deployment.breeding_config_seeded?.breed_parent_prices_lamports ||
+            [],
+          floor_multiplier_bps:
+            deployment.breeding_config_seeded?.floor_multiplier_bps ?? 15000,
         },
       },
 

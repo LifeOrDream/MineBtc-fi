@@ -150,13 +150,24 @@ Rules:
 | Parents must be same rebirth generation. | Keeps species/recycle levels coherent. |
 | Each parent has max breed count. | Prevents infinite output from best parents. |
 | Floor snapshot must be fresh. | Prevents stale oracle pricing. |
+| Parent breed-count table sets pair price. | Fresh parents are cheaper; heavily used parents become more expensive. |
 | Price must be at least 1.5x floor anchor. | Breeding cannot undercut the secondary floor. |
+
+Parent price table:
+
+| Parent breed count | Price per parent |
+|---:|---:|
+| 0 | 0.75 SOL |
+| 1 | 1.00 SOL |
+| 2 | 1.35 SOL |
+| 3 | 1.85 SOL |
+| 4 | 2.50 SOL |
 
 Payment split:
 
 | Leg | Split |
 |---|---|
-| SOL half | 25% fee recipient, 75% SOL treasury. |
+| SOL half | 50% fee recipient, 50% SOL treasury. |
 | dBTC half | 50% burn, 50% mining vault. |
 
 This makes breeding simultaneously:

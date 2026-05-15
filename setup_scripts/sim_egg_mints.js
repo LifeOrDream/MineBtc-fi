@@ -2,22 +2,17 @@
 
 /**
  * HashBeast Minting Simulation Script
- * Simulates the cost of minting all hashbeasts using the bonding curve pricing formula
- * and displays fee distribution (DEV vs GAME treasury)
+ * Simulates the cost of minting all hashbeasts using the bonding curve pricing formula.
  */
 
 // ============================================================================
 // CONFIGURATION - Edit these values
 // ============================================================================
 
-const BASE_PRICE = 1_000_000_000; // 1 SOL in lamports (updated: was 0.69 SOL)
-const CURVE_A = 5_263_158; // Curve steepness: 1 SOL → 4.2 SOL over 15k mints
-const TOTAL_SUPPLY = 15_000; // Maximum number of hashbeasts to mint (updated: was 24,690)
-const SOL_PRICE_USD = 140; // Current SOL price in USD (update as needed)
-
-// Fee distribution (from hashbeasts.rs: single mint uses 20% treasury, 80% dev)
-const TREASURY_PCT = 20; // Percentage going to game treasury
-const DEV_PCT = 80; // Percentage going to dev (fee_recipient)
+const BASE_PRICE = 1_000_000_000; // 1 SOL in lamports
+const CURVE_A = 1_775_411; // Targets ~$7M raise at $90/SOL over 36k mints
+const TOTAL_SUPPLY = 36_000; // 3k per country across 12 countries
+const SOL_PRICE_USD = 90; // Mainnet launch planning assumption
 
 // ============================================================================
 // PRICING CALCULATION (matches Rust compute_gene_price)
@@ -86,21 +81,19 @@ function computeGenePrice(basePrice, curveA, itemsMinted) {
 }
 
 // ============================================================================
-// FEE DISTRIBUTION CALCULATION
+// PROCEEDS CALCULATION
 // ============================================================================
 
 /**
- * Calculate fee distribution for a single mint
+ * Calculate proceeds for a single mint.
+ * Genesis mint proceeds route to the configured fee_recipient after any referral cut.
+ * This simulation assumes no referral.
  * @param {number} totalPrice - Total price in lamports
- * @returns {{treasury: number, dev: number}} Fee amounts in lamports
+ * @returns {{feeRecipient: number}} Proceeds in lamports
  */
-function calculateFeeDistribution(totalPrice) {
-    const treasuryAmt = Math.floor((totalPrice * TREASURY_PCT) / 100);
-    const devAmt = totalPrice - treasuryAmt;
-    
+function calculateProceeds(totalPrice) {
     return {
-        treasury: treasuryAmt,
-        dev: devAmt
+        feeRecipient: totalPrice
     };
 }
 
@@ -161,12 +154,11 @@ function simulateHashBeastMints() {
     console.log(`Curve A: ${CURVE_A.toLocaleString()}`);
     console.log(`Total Supply: ${TOTAL_SUPPLY.toLocaleString()} hashbeasts`);
     console.log(`SOL Price: $${SOL_PRICE_USD.toLocaleString()}`);
-    console.log(`Fee Split: ${DEV_PCT}% DEV / ${TREASURY_PCT}% GAME`);
+    console.log("Proceeds: 100% fee_recipient in this no-referral simulation");
     console.log("=".repeat(80));
     console.log();
     
-    let totalDev = 0;
-    let totalTreasury = 0;
+    let totalFeeRecipient = 0;
     let totalPrice = 0;
     
     // Track every Nth hashbeast (for display)
@@ -179,13 +171,12 @@ function simulateHashBeastMints() {
         // Calculate price for this hashbeast
         const price = computeGenePrice(BASE_PRICE, CURVE_A, itemsMinted);
         
-        // Calculate fee distribution
-        const fees = calculateFeeDistribution(price);
+        // Calculate proceeds
+        const proceeds = calculateProceeds(price);
         
         // Accumulate totals
         totalPrice += price;
-        totalDev += fees.dev;
-        totalTreasury += fees.treasury;
+        totalFeeRecipient += proceeds.feeRecipient;
         
         // Display every Nth hashbeast or last 10 hashbeasts
         const shouldDisplay = (hashbeastNumber % displayInterval === 0) || 
@@ -196,8 +187,7 @@ function simulateHashBeastMints() {
         if (shouldDisplay) {
             console.log(
                 `HashBeast #${hashbeastNumber.toString().padStart(5)} ==> ${formatSol(price).padStart(15)} (${formatUsd(price).padStart(10)}) :: ` +
-                `${formatSol(fees.dev).padStart(12)} (${formatUsd(fees.dev).padStart(10)}) DEV + ` +
-                `${formatSol(fees.treasury).padStart(12)} (${formatUsd(fees.treasury).padStart(10)}) GAME`
+                `${formatSol(proceeds.feeRecipient).padStart(12)} (${formatUsd(proceeds.feeRecipient).padStart(10)}) FEE_RECIPIENT`
             );
         }
     }
@@ -207,8 +197,7 @@ function simulateHashBeastMints() {
     console.log("FINAL TOTALS");
     console.log("=".repeat(80));
     console.log(`Total Revenue:     ${formatSol(totalPrice).padStart(20)} (${formatUsd(totalPrice).padStart(15)})`);
-    console.log(`Total DEV Share:   ${formatSol(totalDev).padStart(20)} (${formatUsd(totalDev).padStart(15)})`);
-    console.log(`Total GAME Share:  ${formatSol(totalTreasury).padStart(20)} (${formatUsd(totalTreasury).padStart(15)})`);
+    console.log(`Fee Recipient:     ${formatSol(totalFeeRecipient).padStart(20)} (${formatUsd(totalFeeRecipient).padStart(15)})`);
     console.log("=".repeat(80));
     
     // Summary statistics
@@ -228,4 +217,3 @@ function simulateHashBeastMints() {
 
 // Run simulation
 simulateHashBeastMints();
-

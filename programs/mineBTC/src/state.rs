@@ -52,12 +52,16 @@ pub const STORY_EVENT_ORIGIN_FACTION_WAR: u8 = 1;
 /// - `ROUND_WIN`: the round-end score-add that a winning country receives.
 ///   Equal to `total_wgtd_points_bets[winner]` of that round. `user` field
 ///   on the event is unused (set to `Pubkey::default()`).
+/// - `JACKPOT_HIT`: the jackpot score-add that the independently selected
+///   non-winning jackpot country receives when the jackpot pot is actually
+///   paid out. Equal to `total_wgtd_points_bets[jackpot_faction]` of that round.
 /// - `MUTATION_BONUS`: per-user kick added when their round-claim mutation
 ///   roll succeeds. Computed as
 ///   `user_wgtd_points_on_winner × active_multiplier / BASE_MULTIPLIER × mutation_weight`.
 ///   Also accrues to the user's `current_war_score` for MVP tracking.
 pub const GAMEPLAY_SCORE_SOURCE_ROUND_WIN: u8 = 0;
 pub const GAMEPLAY_SCORE_SOURCE_MUTATION_BONUS: u8 = 1;
+pub const GAMEPLAY_SCORE_SOURCE_JACKPOT_HIT: u8 = 2;
 ///
 /// ------------ CONSTANTS ------------
 pub const DAY_IN_SECONDS: u64 = 86400;
@@ -278,6 +282,17 @@ pub const MIN_SOL_BET_PER_POSITION: u64 = 100_000; // 0.0001 SOL minimum per cou
 pub const MAX_INVENTORY: u32 = 200;
 /// XP value at which the quality_score's xp component saturates.
 pub const MAX_XP_FOR_QUALITY: u32 = 100_000;
+/// Number of per-parent price slots for breed counts 0..=4.
+pub const BREED_PARENT_PRICE_COUNT: usize = 5;
+/// Default per-parent breed prices used when HashBeastConfig is initialized.
+pub const DEFAULT_BREED_PARENT_PRICE_LAMPORTS: [u64; BREED_PARENT_PRICE_COUNT] = [
+    750_000_000,   // 0.75 SOL
+    1_000_000_000, // 1.00 SOL
+    1_350_000_000, // 1.35 SOL
+    1_850_000_000, // 1.85 SOL
+    2_500_000_000, // 2.50 SOL
+];
+
 /// Breeding price floor: total breed cost must be at least 1.5x the current
 /// marketplace floor anchor.
 pub const BREED_FLOOR_MULTIPLIER_BPS: u64 = 15_000;
@@ -290,9 +305,9 @@ pub const BREED_FLOOR_MULTIPLIER_BPS: u64 = 15_000;
 pub const BREED_FLOOR_MAX_AGE_SECS: i64 = 48 * 60 * 60;
 /// Breed payment split: half SOL, half dbTC by SOL value.
 pub const BREED_SOL_SHARE_BPS: u64 = 5_000;
-/// SOL breeding fees split: 25% of the SOL leg to fee_recipient, 75% to the
+/// SOL breeding fees split: 50% of the SOL leg to fee_recipient, 50% to the
 /// SOL treasury for the buybacks/economy loop.
-pub const BREED_SOL_FEE_RECIPIENT_BPS: u64 = 2_500;
+pub const BREED_SOL_FEE_RECIPIENT_BPS: u64 = 5_000;
 /// dbTC breeding fees split: 50% burned, 50% returned to the emission vault.
 pub const BREED_DBTC_BURN_BPS: u64 = 5_000;
 
@@ -744,9 +759,8 @@ impl TicketTier {
 ///
 /// **No lifetime supply cap.** Only the genesis sale is bounded (see
 /// `HashBeastMintConfig.genesis_mint_limit`). Post-genesis, HashBeasts mint
-/// via breeding without a hard ceiling; the bonding-curve breeding cost
-/// (`compute_gene_price(breed_base_price, breed_curve_a, total_minted)`)
-/// makes additional supply progressively expensive.
+/// via breeding without a hard ceiling; parent breed-count pricing plus the
+/// floor guard make additional supply progressively expensive.
 ///
 /// **`hashbeast_collection` is the trust anchor** for "this asset is a
 /// canonical HashBeast" — every mint/breed Accounts struct address-pins the
@@ -762,19 +776,16 @@ pub struct HashBeastConfig {
     /// at admin init; mint paths refuse any other collection.
     pub hashbeast_collection: Pubkey,
 
-    /// Lifetime count of HashBeasts ever minted. Monotonic bonding-curve
-    /// x-coordinate for breeding price. Burns do NOT decrement this.
+    /// Lifetime count of HashBeasts ever minted. Burns do NOT decrement this.
     pub total_hashbeasts_minted: u64,
 
     /// Admin kill-switch. When false, `breed_hashbeasts` reverts.
     pub breeding_allowed: bool,
 
-    /// Bonding-curve base price for breeding (lamports). y-intercept of the
-    /// curve `compute_gene_price(...)` returns.
-    pub breed_base_price: u64,
-
-    /// Bonding-curve steepness for breeding. Higher = supply ramps faster.
-    pub breed_curve_a: u64,
+    /// Per-parent prices by current breed_count. Valid indexes are 0..=4.
+    /// Pair price = mom table price + dad table price, then the floor guard is
+    /// applied. Admin-updatable so governance can retune the sink.
+    pub breed_parent_prices_lamports: [u64; BREED_PARENT_PRICE_COUNT],
 }
 
 impl HashBeastConfig {
@@ -783,8 +794,7 @@ impl HashBeastConfig {
         32 +    // hashbeast_collection
         8 +     // total_hashbeasts_minted
         1 +     // breeding_allowed
-        8 +     // breed_base_price
-        8; // breed_curve_a
+        (8 * BREED_PARENT_PRICE_COUNT); // breed_parent_prices_lamports
 }
 
 /// Mint-only HashBeast configuration for the genesis sale and free/admin genesis mints.

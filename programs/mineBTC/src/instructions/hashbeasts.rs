@@ -70,10 +70,9 @@
 //! ## Breeding economics
 //!
 //! `breed_hashbeasts` enforces an "always above marketplace floor" invariant:
-//!   - Curve price = bonding-curve formula(`breed_base_price`,
-//!     `breed_curve_a`, `total_minted`).
+//!   - Pair price = price table lookup by each parent's current breed count.
 //!   - Floor min price = `floor_history.current_anchor() × 1.5` (150%).
-//!   - Final price = `max(curve, floor)`.
+//!   - Final price = `max(pair_price, floor)`.
 //!
 //! **Floor staleness guard**: we require `last_snapshot_at` to be within
 //! `BREED_FLOOR_MAX_AGE_SECS` (48h, one snapshot interval + grace). If the
@@ -129,8 +128,8 @@
 //!   on-chain Core asset. If you add a new field, update `LEN`, init paths,
 //!   and any state migrations. Never assume "no metadata" means "not a
 //!   HashBeast" — metadata is always present for in-flow assets.
-//! - `total_hashbeasts_minted` is used as a bonding-curve x-coordinate. Don't
-//!   reset or decrement it. Burns from rebirth do NOT decrement.
+//! - `total_hashbeasts_minted` is an ever-minted lifecycle counter. Don't reset
+//!   or decrement it. Burns from rebirth do NOT decrement.
 
 use crate::errors::ErrorCode;
 use anchor_lang::prelude::*;
@@ -1918,13 +1917,22 @@ pub fn int_breed_hashbeasts(ctx: Context<BreedHashBeast>) -> Result<()> {
         ErrorCode::NftNotOwnedByUser
     );
 
-    // Calculate breeding cost. The total price is always at least 1.5x the
-    // current marketplace floor anchor, so breeding cannot mint below floor.
-    let curve_price = crate::genescience::compute_gene_price(
-        hashbeast_config.breed_base_price,
-        hashbeast_config.breed_curve_a,
-        hashbeast_config.total_hashbeasts_minted,
-    )?;
+    // Calculate breeding cost. The pair price is based on each parent's current
+    // breed count (Axie-style), then guarded so new supply cannot mint below
+    // the supported floor.
+    let mom_parent_price = hashbeast_config
+        .breed_parent_prices_lamports
+        .get(mom.breed_count as usize)
+        .copied()
+        .ok_or(ErrorCode::MaxBreedCountReached)?;
+    let dad_parent_price = hashbeast_config
+        .breed_parent_prices_lamports
+        .get(dad.breed_count as usize)
+        .copied()
+        .ok_or(ErrorCode::MaxBreedCountReached)?;
+    let pair_price = mom_parent_price
+        .checked_add(dad_parent_price)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     // Reject stale floor data. The anchor returned by `current_anchor()` is
     // whatever was at `head` last — without checking `last_snapshot_at` we'd
     // happily price against an anchor from months ago if the floor pipeline
@@ -1947,18 +1955,18 @@ pub fn int_breed_hashbeasts(ctx: Context<BreedHashBeast>) -> Result<()> {
         BREED_FLOOR_MULTIPLIER_BPS,
         BASIS_POINTS_DENOMINATOR,
     )?;
-    let breed_cost = curve_price.max(floor_min_price);
+    let breed_cost = pair_price.max(floor_min_price);
     msg!(
-        "   Breed cost: {} SOL curve={} floor_anchor={} floor_min={} total_minted_before={}",
+        "   Breed cost: {} SOL pair_price={} floor_anchor={} floor_min={} total_minted_before={}",
         breed_cost as f64 / 1e9,
-        curve_price,
+        pair_price,
         floor_anchor,
         floor_min_price,
         hashbeast_config.total_hashbeasts_minted
     );
 
     // Payment split: total breed price is 50% SOL and 50% dbTC by SOL value.
-    // SOL leg: 25% fee_recipient, 75% SOL treasury.
+    // SOL leg: 50% fee_recipient, 50% SOL treasury.
     // dbTC leg: 50% burned, 50% returned to the mining emission vault.
     let sol_due = ceil_mul_div_u64(breed_cost, BREED_SOL_SHARE_BPS, BASIS_POINTS_DENOMINATOR)?;
     let dbtc_value_lamports = breed_cost
@@ -2058,7 +2066,7 @@ pub fn int_breed_hashbeasts(ctx: Context<BreedHashBeast>) -> Result<()> {
         .total_hashbeasts_minted
         .checked_add(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    let name = format!("hashbeast #{}", current_mint_number);
+    let name = format!("Hashbeast #{}", current_mint_number);
     let uri = format!(
         "https://assets.minebtc.fun/hashbeasts/{}.json",
         ctx.accounts.offspring_asset.key()
@@ -2171,7 +2179,7 @@ pub fn int_breed_hashbeasts(ctx: Context<BreedHashBeast>) -> Result<()> {
         offspring: offspring.mint,
         faction_id: mom.faction_id,
         rebirth_count: mom_rebirth_count,
-        curve_price_lamports: curve_price,
+        pair_price_lamports: pair_price,
         floor_anchor_lamports: floor_anchor,
         floor_min_price_lamports: floor_min_price,
         total_price_lamports: breed_cost,
@@ -2207,7 +2215,7 @@ pub fn generate_hashbeast_data(
         Clock::get()?.slot + slot_offset,
         faction_id,
     )?;
-    let name = format!("hashbeast #{}", mint_number);
+    let name = format!("Hashbeast #{}", mint_number);
     let uri = format!("https://assets.minebtc.fun/hashbeasts/{}.json", asset_key);
     let multiplier = BASE_MULTIPLIER;
 

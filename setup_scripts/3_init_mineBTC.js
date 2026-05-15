@@ -7,6 +7,8 @@ import * as anchor_spl from "@solana/spl-token";
 import fs from "fs";
 import path from "path";
 import { setIdlAddress } from "./raydium_id_sync.js";
+import { Uploader } from "@irys/upload";
+import { Solana } from "@irys/upload-solana";
 
 // Get the current file's directory
 const __dirname = decodeURIComponent(new URL(".", import.meta.url).pathname);
@@ -14,6 +16,8 @@ const __dirname = decodeURIComponent(new URL(".", import.meta.url).pathname);
 // Load configuration
 const configPath = path.resolve(__dirname, "./config.json");
 const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+const repoRoot = path.resolve(__dirname, "..");
+const irysWalletPath = path.resolve(repoRoot, "mainnet-irys-upload-wallet-keypair.json");
 
 const CLUSTER = config.network.cluster;
 const RPC_URL = config.network.rpc_url;
@@ -246,18 +250,199 @@ async function fetchJsonMetadata(uri, label, requiredFields = []) {
   }
 }
 
+async function validateFetchableUrl(uri, label) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const response = await fetch(uri, {
+      method: "GET",
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`${response.status} ${response.statusText}`);
+    }
+    console.log(COLOR_SUCCESS, `✅ ${label} OK: ${uri}`);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function uploadJsonToIrys(json, label) {
+  if (!fs.existsSync(irysWalletPath)) {
+    throw new Error(`Missing Irys upload wallet: ${irysWalletPath}`);
+  }
+
+  const wallet = JSON.parse(fs.readFileSync(irysWalletPath, "utf8"));
+  const irys = await Uploader(Solana)
+    .withWallet(wallet)
+    .mainnet()
+    .withRpc("https://api.mainnet-beta.solana.com");
+  const data = Buffer.from(`${JSON.stringify(json, null, 2)}\n`);
+  const price = await irys.getPrice(data.length);
+  console.log(
+    COLOR_INFO,
+    `🧾 Uploading ${label} JSON to Irys (${data.length} bytes), price ${irys.utils.fromAtomic(price)} ${irys.token}`
+  );
+  await irys.fund(price);
+  const receipt = await irys.upload(data, {
+    tags: [{ name: "Content-Type", value: "application/json" }],
+  });
+  const uri = `https://gateway.irys.xyz/${receipt.id}`;
+  console.log(COLOR_SUCCESS, `✅ Uploaded ${label} JSON: ${uri}`);
+  return { uri, id: receipt.id, size: data.length };
+}
+
+function hashBeastCreatorPct(identifier, fallback) {
+  const configured = config.hashbeasts_config.creators?.find(
+    (creator) => creator.identifier === identifier
+  );
+  return configured?.percentage ?? fallback;
+}
+
+function buildHashBeastCollectionMetadata() {
+  const collectionImage = config.hashbeasts.collection_image;
+  if (!collectionImage) {
+    throw new Error("config.hashbeasts.collection_image is required");
+  }
+  new URL(collectionImage);
+
+  const inventorySweepShare = hashBeastCreatorPct("inventory_sweep_vault", 50);
+  const multisigShare = hashBeastCreatorPct("multisig_fee_recipient", 50);
+  if (inventorySweepShare + multisigShare !== 100) {
+    throw new Error(
+      `HashBeast creator shares must total 100, got ${
+        inventorySweepShare + multisigShare
+      }`
+    );
+  }
+
+  return {
+    name: config.hashbeasts.collection_name,
+    symbol: config.hashbeasts.collection_symbol,
+    description: config.hashbeasts.collection_description,
+    seller_fee_basis_points: config.hashbeasts_config.royalties,
+    image: collectionImage,
+    external_url: config.token.external_url,
+    collection: {
+      name: config.hashbeasts.collection_name,
+      family: "MineBTC",
+    },
+    attributes: [],
+    properties: {
+      category: "image",
+      files: [
+        {
+          uri: collectionImage,
+          type: "image/png",
+        },
+      ],
+      creators: [
+        {
+          address: inventorySweepVaultAddress().toString(),
+          share: inventorySweepShare,
+        },
+        {
+          address: config.deployment.FEE_RECIPIENT_MULTISIG,
+          share: multisigShare,
+        },
+      ],
+    },
+  };
+}
+
+function inventorySweepVaultAddress() {
+  if (!ID_MineBTC_PROGRAM) {
+    throw new Error(
+      `MINE_BTC_PROGRAM_ID missing in ${deploymentPath}; deploy MineBTC before deriving inventory_sweep_vault`
+    );
+  }
+  const [inventorySweepVaultPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("inventory-sweep-vault")],
+    ID_MineBTC_PROGRAM
+  );
+  return inventorySweepVaultPDA;
+}
+
+function assertMainnetSafety() {
+  if (CLUSTER !== "mainnet") {
+    return;
+  }
+
+  if (/devnet/i.test(RPC_URL)) {
+    throw new Error(`Mainnet config is using a devnet RPC URL: ${RPC_URL}`);
+  }
+
+  const deployerPath = config.deployment?.paths?.deployer_key || "";
+  if (/devnet/i.test(deployerPath)) {
+    throw new Error(
+      `Mainnet config is using a devnet deployer key path: ${deployerPath}. Use ../mainnet-wallet-keypair.json or the intended mainnet deployer.`
+    );
+  }
+}
+
+function assertDeploymentFileCompatibility() {
+  const createdCollection = deploymentFile.hashbeast_collection_created;
+  if (
+    createdCollection?.collection_name &&
+    createdCollection.collection_name !== config.hashbeasts.collection_name
+  ) {
+    throw new Error(
+      `Deployment file has stale HashBeast collection name "${createdCollection.collection_name}" but config expects "${config.hashbeasts.collection_name}". Move/reset ${deploymentPath} before continuing.`
+    );
+  }
+
+  const seededBreeding = deploymentFile.breeding_config_seeded;
+  const configuredBreedPrices =
+    config.hashbeasts_config.breed_parent_prices_lamports || [];
+  if (seededBreeding?.breed_parent_prices_lamports) {
+    const existing = JSON.stringify(
+      seededBreeding.breed_parent_prices_lamports.map((value) =>
+        value.toString()
+      )
+    );
+    const expected = JSON.stringify(
+      configuredBreedPrices.map((value) => value.toString())
+    );
+    if (existing !== expected) {
+      throw new Error(
+        `Deployment file has stale breeding parent prices ${existing}; config expects ${expected}. Move/reset ${deploymentPath} before continuing.`
+      );
+    }
+  }
+}
+
 async function validateInitializationConfig() {
   console.log(COLOR_STEP, "\n================ [ VALIDATING INIT CONFIG ] ================");
+  assertMainnetSafety();
+  assertDeploymentFileCompatibility();
 
   const tokenMetadataUri =
     config.token.metadata_uri || config.token.uri || config.token.image;
   new URL(tokenMetadataUri);
-  new URL(config.hashbeasts.collection_uri);
+  new URL(config.hashbeasts.collection_image);
   await fetchJsonMetadata(tokenMetadataUri, "Token", ["name", "symbol", "image"]);
-  await fetchJsonMetadata(config.hashbeasts.collection_uri, "HashBeast collection", [
-    "name",
-    "image",
-  ]);
+  await validateFetchableUrl(config.hashbeasts.collection_image, "HashBeast collection image source");
+
+  if (deploymentFile.hashbeast_collection_created?.collection_uri) {
+    const hashbeastCollectionMetadata = await fetchJsonMetadata(
+      deploymentFile.hashbeast_collection_created.collection_uri,
+      "HashBeast collection",
+      ["name", "image"]
+    );
+    if (hashbeastCollectionMetadata.name !== config.hashbeasts.collection_name) {
+      throw new Error(
+        `HashBeast collection metadata name mismatch: config has "${config.hashbeasts.collection_name}", uri returns "${hashbeastCollectionMetadata.name}"`
+      );
+    }
+    if (
+      config.hashbeasts.collection_symbol &&
+      hashbeastCollectionMetadata.symbol !== config.hashbeasts.collection_symbol
+    ) {
+      throw new Error(
+        `HashBeast collection metadata symbol mismatch: config has "${config.hashbeasts.collection_symbol}", uri returns "${hashbeastCollectionMetadata.symbol}"`
+      );
+    }
+  }
 
   const hashbeastsCfg = config.hashbeasts_config;
   const expectedPerFactionCap = Math.floor(
@@ -299,10 +484,11 @@ function printFeeEconomicsSummary() {
   const stakerFeePctOfBet =
     (LIVE_FEE_CONFIG.newProtocolFeePct * LIVE_FEE_CONFIG.newStakersPct) / 100;
   const treasuryFeePctOfBet = protocolFeePct - stakerFeePctOfBet;
-  const prizePotPctOfBet = 100 - protocolFeePct;
+  const cycleSolSplitPct = LIVE_FEE_CONFIG.newCycleSolSplitPct;
+  const prizePotPctOfBet = 100 - protocolFeePct - cycleSolSplitPct;
   console.log(
     COLOR_INFO,
-    `Manual SOL bets: ${prizePotPctOfBet}% to prize pot, ${stakerFeePctOfBet}% to SOL stakers, ${treasuryFeePctOfBet}% to protocol treasury`
+    `Manual SOL bets: ${prizePotPctOfBet}% to 60s prize pot, ${cycleSolSplitPct}% to 4h faction-war SOL pool, ${stakerFeePctOfBet}% to SOL stakers, ${treasuryFeePctOfBet}% to protocol treasury`
   );
   console.log(
     COLOR_INFO,
@@ -341,6 +527,51 @@ async function getSolanaBalance(pubkey) {
     );
     throw error;
   }
+}
+
+function expectedMiningDepositAmount() {
+  const mintedAmount =
+    deploymentFile.initial_supply_minted?.actual_minted_amount ??
+    deploymentFile.initial_supply_minted?.amount;
+  const poolSeedAmount =
+    deploymentFile.dbtc_sol_pool_created?.initialDbtcAmount ??
+    (config.raydium?.initial_dbtc_amount !== undefined
+      ? (BigInt(config.raydium.initial_dbtc_amount) *
+          10n ** BigInt(config.token.decimals)).toString()
+      : null);
+
+  if (!mintedAmount || !poolSeedAmount) {
+    return null;
+  }
+
+  return BigInt(mintedAmount) - BigInt(poolSeedAmount);
+}
+
+function calculateTokenTransferFee(amountBaseUnits) {
+  const bps = BigInt(config.token.transfer_tax_bps ?? 0);
+  const maxFee = BigInt(config.token.max_transfer_fee_amount ?? 0);
+  if (bps === 0n || maxFee === 0n) {
+    return 0n;
+  }
+
+  const fee = (amountBaseUnits * bps) / 10_000n;
+  return fee > maxFee ? maxFee : fee;
+}
+
+function formatBaseUnits(amountBaseUnits, decimals) {
+  const amount = BigInt(amountBaseUnits);
+  const scale = 10n ** BigInt(decimals);
+  const whole = amount / scale;
+  const fraction = amount % scale;
+
+  if (fraction === 0n) {
+    return whole.toLocaleString("en-US");
+  }
+
+  return `${whole.toLocaleString("en-US")}.${fraction
+    .toString()
+    .padStart(decimals, "0")
+    .replace(/0+$/, "")}`;
 }
 
 // Epoch / index / oracle scaffolding was removed when the contract moved to
@@ -540,10 +771,9 @@ async function main() {
     // Accounts: hashbeastsConfig, globalConfig, authority, systemProgram
     await initializeHashBeastConfig(minebtcProgram);
 
-    // 9a. Seed breeding config (breeding stays disabled at launch but params
-    //     come from config.json so flipping breeding on later via governance
-    //     uses the correct curve, not the contract's hardcoded zero defaults).
-    // Instruction: update_breeding_config(breeding_allowed, breed_base_price, breed_curve_a)
+    // 9a. Seed breeding config. Breeding stays disabled at launch; parent
+    //     breed-count prices are stored on HashBeastConfig for later tuning.
+    // Instruction: update_breeding_config(breeding_allowed, breed_parent_prices_lamports)
     // Accounts: globalConfig, hashbeastsConfig, authority, systemProgram
     await seedBreedingConfig(minebtcProgram);
 
@@ -552,11 +782,6 @@ async function main() {
     // Creates mint-only PDA [seeds: "hashbeast-mint-config"] for genesis sale curve, ticket tiers, and per-country caps.
     // Accounts: hashbeastMintConfig, globalConfig, authority, systemProgram
     await initializeHashBeastMintConfig(minebtcProgram);
-
-    // 9c. Enable HashBeast minting (default is inactive after init)
-    // Instruction: switch_hashbeast_mining() — toggles is_active to true
-    // Accounts: hashbeastMintConfig, globalConfig, authority
-    await enableHashBeastMining(minebtcProgram);
 
     // 10. Create HashBeast Collection (Metaplex Core)
     // Instruction: create_hashbeast_collection(name: String, uri: String)
@@ -600,6 +825,11 @@ async function main() {
     // Uses @solana/spl-token getOrCreateAssociatedTokenAccount (no program instruction)
     await initializeLpTokenAccounts(minebtcProgram);
     // return;
+
+    // 9c. Enable HashBeast minting (default is inactive after init)
+    // Instruction: switch_hashbeast_mining() — toggles is_active to true
+    // Accounts: hashbeastMintConfig, globalConfig, authority
+    await enableHashBeastMining(minebtcProgram);
 
 
     // // 1.5. Update Fee Recipient (if needed - can be called anytime after initialization)
@@ -1271,8 +1501,8 @@ async function depositMiningTokens(minebtcProgram) {
     );
 
   // Deposit whatever degenBTC is left in the deployer wallet after the
-  // pool seed + addInitialLiquidity steps. Hardcoding this amount used
-  // to break whenever the LP-add proportional sizing changed.
+  // configured launch-pool seed. This should be the full supply minus the
+  // pool's explicit initial dBTC amount.
   const depositorAcc = await anchor_spl.getAccount(
     connection,
     userTokenAccount,
@@ -1280,17 +1510,33 @@ async function depositMiningTokens(minebtcProgram) {
     anchor_spl.TOKEN_2022_PROGRAM_ID
   );
   const depositAmount = new BN(depositorAcc.amount.toString());
+  const expectedDepositAmount = expectedMiningDepositAmount();
 
   if (depositAmount.isZero()) {
     throw new Error(
       `Depositor token account ${userTokenAccount.toString()} has 0 degenBTC — pool/LP setup likely consumed the full mint.`
     );
   }
+  if (expectedDepositAmount && depositAmount.toString() !== expectedDepositAmount.toString()) {
+    throw new Error(
+      `Unexpected deployer dBTC balance. Expected ${formatBaseUnits(expectedDepositAmount, config.token.decimals)} dBTC (${expectedDepositAmount.toString()} base units) after pool seed, found ${formatBaseUnits(BigInt(depositAmount.toString()), config.token.decimals)} dBTC (${depositAmount.toString()} base units).`
+    );
+  }
+
+  const depositAmountBigInt = BigInt(depositAmount.toString());
+  const expectedTransferFee = calculateTokenTransferFee(depositAmountBigInt);
+  const expectedVaultCredit = depositAmountBigInt - expectedTransferFee;
 
   console.log(
     COLOR_INFO,
-    `💰 Depositing ${depositAmount.toString()} tokens (full deployer balance)...`
+    `💰 Depositing ${formatBaseUnits(depositAmountBigInt, config.token.decimals)} dBTC (${depositAmount.toString()} base units, full deployer balance)...`
   );
+  if (expectedTransferFee > 0n) {
+    console.log(
+      COLOR_DIM,
+      `   Token-2022 transfer fee: ${formatBaseUnits(expectedTransferFee, config.token.decimals)} dBTC; expected vault credit before tax harvest: ${formatBaseUnits(expectedVaultCredit, config.token.decimals)} dBTC`
+    );
+  }
     console.log(COLOR_INFO, `   From: ${userTokenAccount.toString()}`);
     console.log(COLOR_INFO, `   To: ${vaultPDA.toString()}`);
 
@@ -1312,6 +1558,9 @@ async function depositMiningTokens(minebtcProgram) {
 
         deploymentFile.mining_tokens_deposited = {
             amount: depositAmount.toString(),
+            amount_readable: `${formatBaseUnits(depositAmountBigInt, config.token.decimals)} dBTC`,
+            expected_transfer_fee: expectedTransferFee.toString(),
+            expected_vault_credit_after_transfer_fee: expectedVaultCredit.toString(),
             tx_signature: tx,
       timestamp: new Date().toISOString(),
         };
@@ -1740,30 +1989,27 @@ async function seedBreedingConfig(minebtcProgram) {
   );
 
   const breedingAllowed = !!config.hashbeasts_config.breeding_allowed;
-  const breedBasePrice = config.hashbeasts_config.breed_base_price;
-  const breedCurveA = config.hashbeasts_config.breed_curve_a;
-
-  if (breedBasePrice == null || breedCurveA == null) {
+  const breedParentPrices = config.hashbeasts_config.breed_parent_prices_lamports || [];
+  if (breedParentPrices.length !== 5) {
     throw new Error(
-      "config.hashbeasts_config.breed_base_price and breed_curve_a must be set"
+      `config.hashbeasts_config.breed_parent_prices_lamports must have exactly 5 entries, got ${breedParentPrices.length}`
     );
   }
 
   console.log(COLOR_INFO, `🐣 Breeding allowed: ${breedingAllowed}`);
   console.log(
     COLOR_INFO,
-    `   breed_base_price: ${breedBasePrice} lamports (${
-      breedBasePrice / 1e9
-    } SOL)`
+    `   parent price table: ${breedParentPrices
+      .map((price, idx) => `${idx}:${price / 1e9} SOL`)
+      .join(", ")}`
   );
-  console.log(COLOR_INFO, `   breed_curve_a:    ${breedCurveA}`);
+  console.log(COLOR_INFO, "   floor guard: 1.5x current floor anchor");
 
   try {
     const tx = await minebtcProgram.methods
       .updateBreedingConfig(
         breedingAllowed,
-        new BN(breedBasePrice),
-        new BN(breedCurveA)
+        breedParentPrices.map((price) => new BN(price))
       )
       .accounts({
         globalConfig: globalConfigPDA,
@@ -1778,8 +2024,10 @@ async function seedBreedingConfig(minebtcProgram) {
 
     deploymentFile.breeding_config_seeded = {
       breeding_allowed: breedingAllowed,
-      breed_base_price: breedBasePrice.toString(),
-      breed_curve_a: breedCurveA.toString(),
+      breed_parent_prices_lamports: breedParentPrices.map((price) =>
+        price.toString()
+      ),
+      floor_multiplier_bps: 15000,
       tx_signature: tx,
       timestamp: new Date().toISOString(),
     };
@@ -1954,11 +2202,45 @@ async function createHashBeastCollection(minebtcProgram) {
 
   console.log(COLOR_INFO, "🎨 Creating Metaplex Core collection...");
     console.log(COLOR_DIM, `   Name: ${config.hashbeasts.collection_name}`);
-    console.log(COLOR_DIM, `   URI: ${config.hashbeasts.collection_uri}`);
+    console.log(COLOR_DIM, `   Image: ${config.hashbeasts.collection_image}`);
   console.log(
     COLOR_INFO,
     "🔐 Collection Authority PDA:",
     collectionAuthorityPDA.toString()
+  );
+
+  const collectionMetadata = buildHashBeastCollectionMetadata();
+  const metadataFingerprint = JSON.stringify(collectionMetadata);
+  let collectionMetadataUpload = deploymentFile.hashbeast_collection_metadata_uploaded;
+  if (
+    !collectionMetadataUpload?.uri ||
+    collectionMetadataUpload.metadata_fingerprint !== metadataFingerprint
+  ) {
+    collectionMetadataUpload = await uploadJsonToIrys(
+      collectionMetadata,
+      "HashBeast collection"
+    );
+    collectionMetadataUpload.metadata_fingerprint = metadataFingerprint;
+    collectionMetadataUpload.metadata = collectionMetadata;
+    collectionMetadataUpload.timestamp = new Date().toISOString();
+    deploymentFile.hashbeast_collection_metadata_uploaded = collectionMetadataUpload;
+    saveDeploymentData();
+  } else {
+    console.log(
+      COLOR_INFO,
+      `ℹ️ Reusing uploaded HashBeast collection metadata: ${collectionMetadataUpload.uri}`
+    );
+  }
+  const collectionUri = collectionMetadataUpload.uri;
+  config.hashbeasts.collection_uri = collectionUri;
+  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 4)}\n`);
+
+  console.log(COLOR_DIM, `   Final URI: ${collectionUri}`);
+  console.log(
+    COLOR_DIM,
+    `   Creators: ${collectionMetadata.properties.creators
+      .map((creator) => `${creator.address} (${creator.share}%)`)
+      .join(", ")}`
   );
 
     // Generate a new keypair for the collection
@@ -1968,7 +2250,7 @@ async function createHashBeastCollection(minebtcProgram) {
     const tx = await minebtcProgram.methods
             .createHashbeastCollection(
                 config.hashbeasts.collection_name,
-                config.hashbeasts.collection_uri
+                collectionUri
             )
             .accounts({
                 authority: walletKeypair.publicKey,
@@ -2004,7 +2286,8 @@ async function createHashBeastCollection(minebtcProgram) {
         deploymentFile.hashbeast_collection_created = {
             collection_address: collectionPubkey.toString(),
             collection_name: config.hashbeasts.collection_name,
-            collection_uri: config.hashbeasts.collection_uri,
+            collection_uri: collectionUri,
+      collection_metadata_upload: collectionMetadataUpload,
       collection_authority: collectionAuthorityPDA.toString(),
             tx_signature: tx,
       timestamp: new Date().toISOString(),
@@ -2056,23 +2339,23 @@ async function initializeHashBeastRoyalties(minebtcProgram) {
   const multisigAddress = new PublicKey(
     config.deployment.FEE_RECIPIENT_MULTISIG
   );
-  const treasuryAddress = new PublicKey(
-    deploymentFile.minebtc_program_initialized.solTreasury_address
-  );
+  const inventorySweepShare = hashBeastCreatorPct("inventory_sweep_vault", 50);
+  const multisigShare = hashBeastCreatorPct("multisig_fee_recipient", 50);
+  if (inventorySweepShare + multisigShare !== 100) {
+    throw new Error(
+      `HashBeast royalty creator shares must total 100, got ${
+        inventorySweepShare + multisigShare
+      }`
+    );
+  }
 
   creators.push({
-    address: multisigAddress,
-    percentage:
-      config.hashbeasts_config.creators.find(
-        (creator) => creator.identifier === "multisig_fee_recipient"
-      )?.percentage || 50,
+    address: inventorySweepVaultAddress(),
+    percentage: inventorySweepShare,
   });
   creators.push({
-    address: treasuryAddress,
-    percentage:
-      config.hashbeasts_config.creators.find(
-        (creator) => creator.identifier === "treasury"
-      )?.percentage || 50,
+    address: multisigAddress,
+    percentage: multisigShare,
   });
 
   console.log(COLOR_INFO, `💎 Royalty: ${basisPoints / 100}%`);

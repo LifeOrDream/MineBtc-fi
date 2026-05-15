@@ -60,14 +60,19 @@
     },
     "hashbeasts_config": {
         "_supply_plan": "36K genesis mint cap via bonding curve (3000 per configured country, 12 countries). No lifetime supply cap — breeding is admin-gated and price-curved instead of hard-capped.",
-        "_pricing_notes": "Genesis curve_a = 2_100_000 targets ~$7M raise at SOL=$82 (range 1.00→3.29 SOL across 36K mints, avg ~2.37 SOL). Breeding uses max(curve, 1.5x floor anchor), paid 50% SOL / 50% degenBTC.",
+        "_pricing_notes": "Genesis curve_a = 1_775_411 targets ~$7M raise at SOL=$90 across 36K mints: 1.00→2.935 SOL, avg ~2.1605 SOL. Breeding uses max(parent breed-count table, 1.5x floor anchor), paid 50% SOL / 50% degenBTC.",
         "base_price": 1000000000,
-        "curve_a": 2100000,
+        "curve_a": 1775411,
         "genesis_mint_limit": 36000,
         "max_genesis_mints_per_faction": 3000,
         "breeding_allowed": false,
-        "breed_base_price": 2000000000,
-        "breed_curve_a": 200000,
+        "breed_parent_prices_lamports": [
+            750000000,
+            1000000000,
+            1350000000,
+            1850000000,
+            2500000000
+        ],
         "royalties": 420,
         "creators": [
             {
@@ -75,7 +80,7 @@
                 "percentage": 50
             },
             {
-                "identifier": "treasury",
+                "identifier": "inventory_sweep_vault",
                 "percentage": 50
             }
         ],
@@ -133,8 +138,11 @@
         }
     ],
     "hashbeasts": {
-        "collection_name": "Bitcoin hashbeasts",
-        "collection_uri": "https://assets.minebtc.fun/collection"
+        "collection_name": "Hashbeasts",
+        "collection_symbol": "HBEAST",
+        "collection_description": "Casino-speed country wars meet evolving NFT beasts. Hashbeasts mutate, breed, rebirth, and help players mine degenBTC on Solana.",
+        "collection_image": "https://gateway.irys.xyz/BCBG92F2ZDTcE1EScogd9q2xo8ommh3v28tktsACBaZ1",
+        "collection_uri": null
     },
     "tax": {
         "_notes": "Splits sum need not be 100; the residual (100 - faction_treasury - burn) flows back to the mining vault. NFT market making is now funded from SOL — see global sol_fee_config.nft_market_making_pct, default 3%.",

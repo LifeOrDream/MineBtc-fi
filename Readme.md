@@ -129,7 +129,7 @@ These are deployment setup values, not governance promises forever.
 | Base genesis mint price | 1 SOL |
 | Gameplay HashBeast multiplier cap | 4.2x |
 | Passive HashBeast staking cap | 3x |
-| Breed floor guard | At least 1.5x floor anchor |
+| Breed pricing | Parent breed-count table, guarded by at least 1.5x floor anchor |
 | Max rebirth count | 7 |
 
 ## Repository Map

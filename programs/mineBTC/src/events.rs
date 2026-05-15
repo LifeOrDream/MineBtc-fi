@@ -130,7 +130,7 @@ pub struct HashBeastBred {
     pub offspring: Pubkey,
     pub faction_id: u8,
     pub rebirth_count: u8,
-    pub curve_price_lamports: u64,
+    pub pair_price_lamports: u64,
     pub floor_anchor_lamports: u64,
     pub floor_min_price_lamports: u64,
     pub total_price_lamports: u64,
@@ -856,6 +856,12 @@ pub struct CycleEndRoundSnapshotted {
 ///   accumulation when a country wins. `score_added` equals the round's
 ///   total weighted points bet on that country (any direction). `user` is
 ///   `Pubkey::default()` — no specific user owns this contribution.
+///
+/// - `score_source = GAMEPLAY_SCORE_SOURCE_JACKPOT_HIT (2)`: jackpot
+///   accumulation when the independently selected jackpot country actually
+///   receives the pot. `score_added` equals the round's total weighted points
+///   bet on that jackpot country (any direction). `user` is
+///   `Pubkey::default()`.
 ///
 /// - `score_source = GAMEPLAY_SCORE_SOURCE_MUTATION_BONUS (1)`: per-claim
 ///   bonus when a player's round-claim mutation roll succeeds and the
