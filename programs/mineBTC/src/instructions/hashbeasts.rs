@@ -140,6 +140,7 @@ use anchor_spl::token_interface::{Mint as Mint2022, TokenAccount as TokenAccount
 use mpl_core::ID as MPL_CORE_PROGRAM_ID;
 
 use crate::events::*;
+use crate::instructions::economy::WSOL_MINT_PUBKEY;
 use crate::instructions::helper;
 use crate::instructions::stake;
 use crate::state::*;
@@ -393,6 +394,11 @@ pub fn int_batch_mint_hashbeasts<'info>(
         ctx.accounts.hashbeast_collection.is_some(),
         ErrorCode::InvalidAccount
     );
+    require_keys_eq!(
+        ctx.accounts.wsol_mint.key(),
+        WSOL_MINT_PUBKEY,
+        ErrorCode::InvalidMint
+    );
 
     let global_config = &ctx.accounts.global_config;
     let hashbeast_config = &mut ctx.accounts.hashbeast_config;
@@ -452,35 +458,45 @@ pub fn int_batch_mint_hashbeasts<'info>(
             .as_mut()
             .ok_or(ErrorCode::ReferralRewardsAccountRequired)?;
 
-        // Transfer SOL from user to referrer_rewards PDA (stored as extra lamports)
-        anchor_lang::system_program::transfer(
-            CpiContext::new(
-                ctx.accounts.system_program.to_account_info(),
-                anchor_lang::system_program::Transfer {
-                    from: ctx.accounts.user.to_account_info(),
-                    to: referrer_rewards.to_account_info(),
-                },
-            ),
-            cut,
-        )?;
-        referrer_rewards.pending_sol_rewards = referrer_rewards
-            .pending_sol_rewards
-            .checked_add(cut)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        referrer_rewards.total_sol_earned = referrer_rewards
-            .total_sol_earned
-            .checked_add(cut)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        let remaining_cap = crate::state::MAX_REFERRER_SOL_LIFETIME
+            .saturating_sub(referrer_rewards.total_sol_earned);
+        let payable_cut = cut.min(remaining_cap);
+
+        // Transfer SOL from user to referrer_rewards PDA (stored as extra
+        // lamports). Any over-cap referral slice stays in the mint payment and
+        // goes to the multisig with the rest of the mint proceeds, so capped
+        // referrers cannot make referred mints cheaper.
+        if payable_cut > 0 {
+            anchor_lang::system_program::transfer(
+                CpiContext::new(
+                    ctx.accounts.system_program.to_account_info(),
+                    anchor_lang::system_program::Transfer {
+                        from: ctx.accounts.user.to_account_info(),
+                        to: referrer_rewards.to_account_info(),
+                    },
+                ),
+                payable_cut,
+            )?;
+            referrer_rewards.pending_sol_rewards = referrer_rewards
+                .pending_sol_rewards
+                .checked_add(payable_cut)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            referrer_rewards.total_sol_earned = referrer_rewards
+                .total_sol_earned
+                .checked_add(payable_cut)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+        }
         msg!(
-            "   Referral commission ({} bps, same_faction={}): {} lamports sent to referrer PDA",
+            "   Referral commission ({} bps, same_faction={}): requested={} paid={} lamports sent to referrer PDA",
             bps,
             same_faction,
-            cut
+            cut,
+            payable_cut
         );
         (
-            cut,
+            payable_cut,
             total_price
-                .checked_sub(cut)
+                .checked_sub(payable_cut)
                 .ok_or(ErrorCode::ArithmeticOverflow)?,
         )
     } else {
@@ -1617,6 +1633,8 @@ pub fn int_rebirth_hashbeast(ctx: Context<RebirthHashBeast>) -> Result<()> {
             .checked_add(accumulated_val)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
+    ctx.accounts.hashbeast_metadata.accumulated_val = 0;
+    ctx.accounts.hashbeast_metadata.last_update_ts = current_time;
 
     // 2) Decide cascade: country lootbox queue first, else burn.
     let queue_has_space = (ctx.accounts.lootbox_queue.filled_count as usize) < LOOTBOX_QUEUE_SIZE;
@@ -2627,7 +2645,7 @@ pub struct MintHashBeast<'info> {
     )]
     pub user_wsol_account: Account<'info, anchor_spl::token::TokenAccount>,
 
-    /// CHECK: WSOL mint
+    /// CHECK: Canonical WSOL mint.
     pub wsol_mint: UncheckedAccount<'info>,
 
     /// Metaplex Core asset (will be created)
@@ -2727,7 +2745,7 @@ pub struct BatchMintHashBeast<'info> {
     )]
     pub user_wsol_account: Account<'info, anchor_spl::token::TokenAccount>,
 
-    /// CHECK: WSOL mint
+    /// CHECK: Canonical WSOL mint.
     pub wsol_mint: UncheckedAccount<'info>,
 
     /// CHECK: HashBeast collection (Metaplex Core)

@@ -1221,9 +1221,24 @@ pub fn int_settle_round<'info>(accounts: &mut SettleRound<'info>, war_id: u64) -
 
         let winning_points = game_session.points_bets_by_faction_direction[winning_faction_index]
             [winning_direction_index];
-        if sol_staker_fees > 0 && winning_points > 0 {
+        let redirected_sol_staker_fees = if sol_staker_fees > 0 && winning_points > 0 {
+            let (_sol_rewards_vault, sol_rewards_vault_bump) = Pubkey::find_program_address(
+                &[STAKER_SOL_REWARD_VAULT_SEED.as_ref()],
+                &crate::id(),
+            );
+            helper::transfer_from_sol_rewards_vault(
+                &accounts.sol_rewards_vault.to_account_info(),
+                &accounts.sol_prize_pot_vault.to_account_info(),
+                &accounts.system_program.to_account_info(),
+                sol_staker_fees,
+                sol_rewards_vault_bump,
+            )?
+        } else {
+            0
+        };
+        if redirected_sol_staker_fees > 0 && winning_points > 0 {
             let sol_reward_delta =
-                helper::mul_div(sol_staker_fees, INDEX_PRECISION, winning_points)?;
+                helper::mul_div(redirected_sol_staker_fees, INDEX_PRECISION, winning_points)?;
             game_session.sol_rewards_index = game_session
                 .sol_rewards_index
                 .checked_add(sol_reward_delta)
@@ -1604,6 +1619,16 @@ pub struct SettleRound<'info> {
         bump
     )]
     pub sol_rewards_vault: UncheckedAccount<'info>,
+
+    /// CHECK: SOL prize pot vault. Receives redirected staker SOL when the
+    /// winning faction has no active stakers, because winner claims are paid
+    /// from this vault.
+    #[account(
+        mut,
+        seeds = [JACKPOT_POT_VAULT_SEED.as_ref()],
+        bump
+    )]
+    pub sol_prize_pot_vault: UncheckedAccount<'info>,
 
     /// Faction-war config (mut for auto-settle + auto-start)
     #[account(

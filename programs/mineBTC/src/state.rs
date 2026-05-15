@@ -2444,9 +2444,9 @@ impl LootboxQueue {
     pub const LEN: usize = DISCRIMINATOR_SIZE + 1 + 1 + (LOOTBOX_QUEUE_SIZE * 32) + 1;
 }
 
-/// Per-user winning-loser reservation. Created `init_if_needed` inside the
-/// claim-rewards ix when a roll wins; closed by `claim_lootbox_nft` after a
-/// user or cranker delivers the NFT to the recorded winner.
+/// Per-user winning-loser reservation. Created lazily inside the claim-rewards
+/// ix only when a loser-roll wins; closed by `claim_lootbox_nft` after a user
+/// or cranker delivers the NFT to the recorded winner.
 ///
 /// `asset == Pubkey::default()` is treated as "no active reservation" by
 /// the eligibility check in claim-rewards.

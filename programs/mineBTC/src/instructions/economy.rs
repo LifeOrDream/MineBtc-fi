@@ -1147,8 +1147,17 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
         return Ok(());
     }
 
-    // Transfer SOL from buybacks vault to sol_token_account (the canonical
-    // `authority_pda`-owned WSOL ATA enforced by the Accounts struct).
+    // Read any pre-existing WSOL before we wrap this LP slice. Anyone can send
+    // WSOL to a token account, so do not assume this account starts at zero; use
+    // pre/post deltas below so donated dust cannot grief the LP cycle.
+    let sol_balance_before_wrap = {
+        let info = ctx.accounts.sol_token_account.to_account_info();
+        let data = info.try_borrow_data()?;
+        anchor_spl::token::TokenAccount::try_deserialize(&mut &data[..])?.amount
+    };
+
+    // Transfer SOL from buybacks vault to sol_token_account (the
+    // `authority_pda`-owned WSOL account enforced by the Accounts struct).
     msg!(
         "\n   💸 === TRANSFERRING {} SOL FOR LP from buybacks vault to sol_token_account ===",
         total_sol_for_lp as f64 / 1e9
@@ -1375,11 +1384,18 @@ pub fn add_lp_and_burn_internal(ctx: Context<AddLpAndBurn>, lp_token_amount: u64
         let data = info.try_borrow_data()?;
         anchor_spl::token::TokenAccount::try_deserialize(&mut &data[..])?.amount
     };
+    let expected_sol_balance_before_deposit = sol_balance_before_wrap
+        .checked_add(total_sol_for_lp)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!("   💰 SOL balance after: {}", sol_balance_after);
-    msg!("   💰 SOL balance before: {}", total_sol_for_lp);
-    let sol_consumed = total_sol_for_lp
+    msg!(
+        "   💰 SOL balance before deposit: {}",
+        expected_sol_balance_before_deposit
+    );
+    let sol_consumed = expected_sol_balance_before_deposit
         .checked_sub(sol_balance_after)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
+    require!(sol_consumed <= total_sol_for_lp, ErrorCode::InvalidAmount);
     msg!("   💰 SOL consumed: {}", sol_consumed);
 
     // ✅ RIGHT: Reloads fresh data from the account info

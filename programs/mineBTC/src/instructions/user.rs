@@ -1098,7 +1098,9 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
         game_session,
         player_data,
         &mut ctx.accounts.lootbox_queue,
-        &mut ctx.accounts.lootbox_claim,
+        &ctx.accounts.lootbox_claim.to_account_info(),
+        &ctx.accounts.caller.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
         ctx.bumps.lootbox_claim,
         owner_key,
         round_id,
@@ -1225,7 +1227,9 @@ pub fn internal_claim_autominer_rewards(
         game_session,
         player_data,
         &mut ctx.accounts.lootbox_queue,
-        &mut ctx.accounts.lootbox_claim,
+        &ctx.accounts.lootbox_claim.to_account_info(),
+        &ctx.accounts.caller.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
         ctx.bumps.lootbox_claim,
         owner_key,
         round_id,
@@ -2022,6 +2026,7 @@ fn internal_process_bets<'info>(
         msg!("🎮 [user.internal_process_bets] no cycle SOL split to transfer");
     }
 
+    let mut unpaid_referral_cut = 0u64;
     if total_referral_cut > 0 && has_referrer {
         helper::validate_referrer_rewards_account(
             &player_data.referral_code,
@@ -2030,6 +2035,9 @@ fn internal_process_bets<'info>(
         let rr = referrer_rewards.ok_or(ErrorCode::ReferralRewardsAccountRequired)?;
         let remaining_cap = MAX_REFERRER_SOL_LIFETIME.saturating_sub(rr.total_sol_earned);
         let referrer_cut = total_referral_cut.min(remaining_cap);
+        unpaid_referral_cut = total_referral_cut
+            .checked_sub(referrer_cut)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         if referrer_cut > 0 {
             do_transfer(&rr.to_account_info(), referrer_cut)?;
             rr.pending_sol_rewards = rr
@@ -2046,6 +2054,17 @@ fn internal_process_bets<'info>(
                 MAX_REFERRER_SOL_LIFETIME.saturating_sub(rr.total_sol_earned) as f64 / 1e9,
             );
         }
+        if unpaid_referral_cut > 0 {
+            msg!(
+                "   Referrer cap reached: redirecting {} SOL unpaid referral cut to sol_treasury",
+                unpaid_referral_cut as f64 / 1e9
+            );
+        }
+    }
+    if unpaid_referral_cut > 0 {
+        total_protocol_fee = total_protocol_fee
+            .checked_add(unpaid_referral_cut)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
     if total_stakers_fee > 0 {
         msg!(
@@ -2782,13 +2801,15 @@ fn apply_mutation_bonus_score<'info>(
 /// reserved asset. Asset stays on `inventory_pda`; user or cranker calls
 /// `claim_lootbox_nft` separately to actually deliver it to the recorded user.
 #[inline(never)]
-pub fn maybe_run_loser_lootbox_roll(
+pub fn maybe_run_loser_lootbox_roll<'info>(
     claim_won: bool,
     user_bet: &UserGameBet,
     game_session: &GameSession,
     player_data: &PlayerData,
     lootbox_queue: &mut LootboxQueue,
-    lootbox_claim: &mut LootboxClaim,
+    lootbox_claim_info: &AccountInfo<'info>,
+    payer: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
     lootbox_claim_bump: u8,
     user_key: Pubkey,
     round_id: u64,
@@ -2796,8 +2817,33 @@ pub fn maybe_run_loser_lootbox_roll(
     if claim_won {
         return Ok(());
     }
-    // Already has an outstanding reservation → block re-rolling.
-    if lootbox_claim.asset != Pubkey::default() {
+    let existing_claim = if lootbox_claim_info.lamports() > 0 && !lootbox_claim_info.data_is_empty()
+    {
+        require_keys_eq!(
+            *lootbox_claim_info.owner,
+            crate::ID,
+            ErrorCode::InvalidAccount
+        );
+        let data = lootbox_claim_info.try_borrow_data()?;
+        let claim = LootboxClaim::try_deserialize(&mut &data[..])?;
+        require!(
+            claim.user == Pubkey::default() || claim.user == user_key,
+            ErrorCode::InvalidOwner
+        );
+        Some(claim)
+    } else {
+        require!(
+            *lootbox_claim_info.owner == anchor_lang::system_program::ID
+                && lootbox_claim_info.data_is_empty(),
+            ErrorCode::InvalidAccount
+        );
+        None
+    };
+
+    if existing_claim
+        .as_ref()
+        .is_some_and(|claim| claim.asset != Pubkey::default())
+    {
         msg!("🎟  [loser_roll] skipped: user already has a pending claim");
         return Ok(());
     }
@@ -2874,14 +2920,35 @@ pub fn maybe_run_loser_lootbox_roll(
         .checked_sub(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-    // Populate the reservation. (Anchor `init_if_needed` already created
-    // the account at struct-load time if it didn't exist; we just write
-    // the fields here.)
+    // Populate the reservation. The PDA is intentionally created only after a
+    // winning roll so ordinary reward claims do not pay rent for empty
+    // lootbox reservations.
     let now = Clock::get()?.unix_timestamp;
-    lootbox_claim.bump = lootbox_claim_bump;
-    lootbox_claim.user = user_key;
-    lootbox_claim.asset = won_asset;
-    lootbox_claim.faction_id = player_data.faction_id;
+    let claim = LootboxClaim {
+        bump: lootbox_claim_bump,
+        user: user_key,
+        asset: won_asset,
+        faction_id: player_data.faction_id,
+    };
+    if existing_claim.is_some() {
+        helper::store_account_data(lootbox_claim_info, &claim)?;
+    } else {
+        let user_bytes = user_key.to_bytes();
+        let seeds: &[&[u8]] = &[
+            LOOTBOX_CLAIM_SEED,
+            user_bytes.as_ref(),
+            core::slice::from_ref(&lootbox_claim_bump),
+        ];
+        let created = helper::init_pda_account_if_needed::<LootboxClaim>(
+            payer,
+            lootbox_claim_info,
+            system_program,
+            seeds,
+            LootboxClaim::LEN,
+            &claim,
+        )?;
+        require!(created, ErrorCode::InvalidState);
+    }
 
     emit!(LootboxRollWon {
         user: user_key,
@@ -3873,17 +3940,15 @@ pub struct ClaimRoundRewards<'info> {
     )]
     pub lootbox_queue: Box<Account<'info, LootboxQueue>>,
 
-    /// Per-user reservation. `init_if_needed` so it exists for the eligibility
-    /// check; populated only when a winning roll lands. Closed by
-    /// `claim_lootbox_nft`.
+    /// CHECK: Per-user reservation PDA. Address is pinned by seeds, and the
+    /// handler either verifies the existing program-owned `LootboxClaim` data or
+    /// lazily creates it only after a winning loser-roll lands.
     #[account(
-        init_if_needed,
-        payer = caller,
-        space = LootboxClaim::LEN,
+        mut,
         seeds = [LOOTBOX_CLAIM_SEED, user_wallet.key().as_ref()],
         bump,
     )]
-    pub lootbox_claim: Box<Account<'info, LootboxClaim>>,
+    pub lootbox_claim: UncheckedAccount<'info>,
 
     pub system_program: Program<'info, System>,
 }
@@ -3987,15 +4052,15 @@ pub struct ClaimAutominerRewards<'info> {
     )]
     pub lootbox_queue: Box<Account<'info, LootboxQueue>>,
 
-    /// Per-user reservation, init_if_needed.
+    /// CHECK: Per-user reservation PDA. Address is pinned by seeds, and the
+    /// handler either verifies the existing program-owned `LootboxClaim` data or
+    /// lazily creates it only after a winning loser-roll lands.
     #[account(
-        init_if_needed,
-        payer = caller,
-        space = LootboxClaim::LEN,
+        mut,
         seeds = [LOOTBOX_CLAIM_SEED, owner_wallet.key().as_ref()],
         bump,
     )]
-    pub lootbox_claim: Box<Account<'info, LootboxClaim>>,
+    pub lootbox_claim: UncheckedAccount<'info>,
 
     pub system_program: Program<'info, System>,
 }
