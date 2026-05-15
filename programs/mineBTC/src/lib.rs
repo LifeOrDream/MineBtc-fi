@@ -53,7 +53,7 @@ pub use state::{
     HashBeastMintConfig, PredictionDirection, SolFeeConfig, TaxConfig, TicketTier,
 };
 
-declare_id!("3uERKkvfgkTzJ7wFZC7ymWZygEbbeXuWVAiP2zu1Y1ye");
+declare_id!("GU8sF4tKmBzzPA822QcBqysBXXGZEY2reJsdfx8qiTf");
 
 #[macro_export]
 macro_rules! log_fn {
@@ -208,16 +208,10 @@ pub mod minebtc {
     pub fn update_breeding_config(
         ctx: Context<UpdateHashBeastConfig>,
         breeding_allowed: bool,
-        breed_base_price: u64,
-        breed_curve_a: u64,
+        breed_parent_prices_lamports: [u64; 5],
     ) -> Result<()> {
         crate::log_fn!("lib", "update_breeding_config");
-        admin::update_breeding_config_internal(
-            ctx,
-            breeding_allowed,
-            breed_base_price,
-            breed_curve_a,
-        )
+        admin::update_breeding_config_internal(ctx, breeding_allowed, breed_parent_prices_lamports)
     }
 
     /// Update emission adjustment parameters (admin only)

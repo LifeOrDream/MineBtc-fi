@@ -70,10 +70,9 @@
 //! ## Breeding economics
 //!
 //! `breed_hashbeasts` enforces an "always above marketplace floor" invariant:
-//!   - Curve price = bonding-curve formula(`breed_base_price`,
-//!     `breed_curve_a`, `total_minted`).
+//!   - Pair price = price table lookup by each parent's current breed count.
 //!   - Floor min price = `floor_history.current_anchor() × 1.5` (150%).
-//!   - Final price = `max(curve, floor)`.
+//!   - Final price = `max(pair_price, floor)`.
 //!
 //! **Floor staleness guard**: we require `last_snapshot_at` to be within
 //! `BREED_FLOOR_MAX_AGE_SECS` (48h, one snapshot interval + grace). If the
@@ -129,8 +128,8 @@
 //!   on-chain Core asset. If you add a new field, update `LEN`, init paths,
 //!   and any state migrations. Never assume "no metadata" means "not a
 //!   HashBeast" — metadata is always present for in-flow assets.
-//! - `total_hashbeasts_minted` is used as a bonding-curve x-coordinate. Don't
-//!   reset or decrement it. Burns from rebirth do NOT decrement.
+//! - `total_hashbeasts_minted` is an ever-minted lifecycle counter. Don't reset
+//!   or decrement it. Burns from rebirth do NOT decrement.
 
 use crate::errors::ErrorCode;
 use anchor_lang::prelude::*;
@@ -141,6 +140,7 @@ use anchor_spl::token_interface::{Mint as Mint2022, TokenAccount as TokenAccount
 use mpl_core::ID as MPL_CORE_PROGRAM_ID;
 
 use crate::events::*;
+use crate::instructions::economy::WSOL_MINT_PUBKEY;
 use crate::instructions::helper;
 use crate::instructions::stake;
 use crate::state::*;
@@ -394,6 +394,11 @@ pub fn int_batch_mint_hashbeasts<'info>(
         ctx.accounts.hashbeast_collection.is_some(),
         ErrorCode::InvalidAccount
     );
+    require_keys_eq!(
+        ctx.accounts.wsol_mint.key(),
+        WSOL_MINT_PUBKEY,
+        ErrorCode::InvalidMint
+    );
 
     let global_config = &ctx.accounts.global_config;
     let hashbeast_config = &mut ctx.accounts.hashbeast_config;
@@ -453,35 +458,45 @@ pub fn int_batch_mint_hashbeasts<'info>(
             .as_mut()
             .ok_or(ErrorCode::ReferralRewardsAccountRequired)?;
 
-        // Transfer SOL from user to referrer_rewards PDA (stored as extra lamports)
-        anchor_lang::system_program::transfer(
-            CpiContext::new(
-                ctx.accounts.system_program.to_account_info(),
-                anchor_lang::system_program::Transfer {
-                    from: ctx.accounts.user.to_account_info(),
-                    to: referrer_rewards.to_account_info(),
-                },
-            ),
-            cut,
-        )?;
-        referrer_rewards.pending_sol_rewards = referrer_rewards
-            .pending_sol_rewards
-            .checked_add(cut)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
-        referrer_rewards.total_sol_earned = referrer_rewards
-            .total_sol_earned
-            .checked_add(cut)
-            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        let remaining_cap = crate::state::MAX_REFERRER_SOL_LIFETIME
+            .saturating_sub(referrer_rewards.total_sol_earned);
+        let payable_cut = cut.min(remaining_cap);
+
+        // Transfer SOL from user to referrer_rewards PDA (stored as extra
+        // lamports). Any over-cap referral slice stays in the mint payment and
+        // goes to the multisig with the rest of the mint proceeds, so capped
+        // referrers cannot make referred mints cheaper.
+        if payable_cut > 0 {
+            anchor_lang::system_program::transfer(
+                CpiContext::new(
+                    ctx.accounts.system_program.to_account_info(),
+                    anchor_lang::system_program::Transfer {
+                        from: ctx.accounts.user.to_account_info(),
+                        to: referrer_rewards.to_account_info(),
+                    },
+                ),
+                payable_cut,
+            )?;
+            referrer_rewards.pending_sol_rewards = referrer_rewards
+                .pending_sol_rewards
+                .checked_add(payable_cut)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            referrer_rewards.total_sol_earned = referrer_rewards
+                .total_sol_earned
+                .checked_add(payable_cut)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+        }
         msg!(
-            "   Referral commission ({} bps, same_faction={}): {} lamports sent to referrer PDA",
+            "   Referral commission ({} bps, same_faction={}): requested={} paid={} lamports sent to referrer PDA",
             bps,
             same_faction,
-            cut
+            cut,
+            payable_cut
         );
         (
-            cut,
+            payable_cut,
             total_price
-                .checked_sub(cut)
+                .checked_sub(payable_cut)
                 .ok_or(ErrorCode::ArithmeticOverflow)?,
         )
     } else {
@@ -1618,6 +1633,8 @@ pub fn int_rebirth_hashbeast(ctx: Context<RebirthHashBeast>) -> Result<()> {
             .checked_add(accumulated_val)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
+    ctx.accounts.hashbeast_metadata.accumulated_val = 0;
+    ctx.accounts.hashbeast_metadata.last_update_ts = current_time;
 
     // 2) Decide cascade: country lootbox queue first, else burn.
     let queue_has_space = (ctx.accounts.lootbox_queue.filled_count as usize) < LOOTBOX_QUEUE_SIZE;
@@ -1918,13 +1935,22 @@ pub fn int_breed_hashbeasts(ctx: Context<BreedHashBeast>) -> Result<()> {
         ErrorCode::NftNotOwnedByUser
     );
 
-    // Calculate breeding cost. The total price is always at least 1.5x the
-    // current marketplace floor anchor, so breeding cannot mint below floor.
-    let curve_price = crate::genescience::compute_gene_price(
-        hashbeast_config.breed_base_price,
-        hashbeast_config.breed_curve_a,
-        hashbeast_config.total_hashbeasts_minted,
-    )?;
+    // Calculate breeding cost. The pair price is based on each parent's current
+    // breed count (Axie-style), then guarded so new supply cannot mint below
+    // the supported floor.
+    let mom_parent_price = hashbeast_config
+        .breed_parent_prices_lamports
+        .get(mom.breed_count as usize)
+        .copied()
+        .ok_or(ErrorCode::MaxBreedCountReached)?;
+    let dad_parent_price = hashbeast_config
+        .breed_parent_prices_lamports
+        .get(dad.breed_count as usize)
+        .copied()
+        .ok_or(ErrorCode::MaxBreedCountReached)?;
+    let pair_price = mom_parent_price
+        .checked_add(dad_parent_price)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     // Reject stale floor data. The anchor returned by `current_anchor()` is
     // whatever was at `head` last — without checking `last_snapshot_at` we'd
     // happily price against an anchor from months ago if the floor pipeline
@@ -1947,18 +1973,18 @@ pub fn int_breed_hashbeasts(ctx: Context<BreedHashBeast>) -> Result<()> {
         BREED_FLOOR_MULTIPLIER_BPS,
         BASIS_POINTS_DENOMINATOR,
     )?;
-    let breed_cost = curve_price.max(floor_min_price);
+    let breed_cost = pair_price.max(floor_min_price);
     msg!(
-        "   Breed cost: {} SOL curve={} floor_anchor={} floor_min={} total_minted_before={}",
+        "   Breed cost: {} SOL pair_price={} floor_anchor={} floor_min={} total_minted_before={}",
         breed_cost as f64 / 1e9,
-        curve_price,
+        pair_price,
         floor_anchor,
         floor_min_price,
         hashbeast_config.total_hashbeasts_minted
     );
 
     // Payment split: total breed price is 50% SOL and 50% dbTC by SOL value.
-    // SOL leg: 25% fee_recipient, 75% SOL treasury.
+    // SOL leg: 50% fee_recipient, 50% SOL treasury.
     // dbTC leg: 50% burned, 50% returned to the mining emission vault.
     let sol_due = ceil_mul_div_u64(breed_cost, BREED_SOL_SHARE_BPS, BASIS_POINTS_DENOMINATOR)?;
     let dbtc_value_lamports = breed_cost
@@ -2058,7 +2084,7 @@ pub fn int_breed_hashbeasts(ctx: Context<BreedHashBeast>) -> Result<()> {
         .total_hashbeasts_minted
         .checked_add(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
-    let name = format!("hashbeast #{}", current_mint_number);
+    let name = format!("Hashbeast #{}", current_mint_number);
     let uri = format!(
         "https://assets.minebtc.fun/hashbeasts/{}.json",
         ctx.accounts.offspring_asset.key()
@@ -2171,7 +2197,7 @@ pub fn int_breed_hashbeasts(ctx: Context<BreedHashBeast>) -> Result<()> {
         offspring: offspring.mint,
         faction_id: mom.faction_id,
         rebirth_count: mom_rebirth_count,
-        curve_price_lamports: curve_price,
+        pair_price_lamports: pair_price,
         floor_anchor_lamports: floor_anchor,
         floor_min_price_lamports: floor_min_price,
         total_price_lamports: breed_cost,
@@ -2207,7 +2233,7 @@ pub fn generate_hashbeast_data(
         Clock::get()?.slot + slot_offset,
         faction_id,
     )?;
-    let name = format!("hashbeast #{}", mint_number);
+    let name = format!("Hashbeast #{}", mint_number);
     let uri = format!("https://assets.minebtc.fun/hashbeasts/{}.json", asset_key);
     let multiplier = BASE_MULTIPLIER;
 
@@ -2619,7 +2645,7 @@ pub struct MintHashBeast<'info> {
     )]
     pub user_wsol_account: Account<'info, anchor_spl::token::TokenAccount>,
 
-    /// CHECK: WSOL mint
+    /// CHECK: Canonical WSOL mint.
     pub wsol_mint: UncheckedAccount<'info>,
 
     /// Metaplex Core asset (will be created)
@@ -2719,7 +2745,7 @@ pub struct BatchMintHashBeast<'info> {
     )]
     pub user_wsol_account: Account<'info, anchor_spl::token::TokenAccount>,
 
-    /// CHECK: WSOL mint
+    /// CHECK: Canonical WSOL mint.
     pub wsol_mint: UncheckedAccount<'info>,
 
     /// CHECK: HashBeast collection (Metaplex Core)

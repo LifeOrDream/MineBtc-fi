@@ -48,8 +48,9 @@
 //! 2. **Winning direction** (Down/Neutral/Up) — sampled uniformly from
 //!    directions with at least one points bet on the winning faction.
 //! 3. **Jackpot roll** — independent 1-in-`JACKPOT_CHANCE` chance. If it
-//!    fires, the receiving faction is sampled by an inverse-weight: under-bet
-//!    factions are likelier targets (`weight_bps = 5000 + (10000 - bet_share_bps)`).
+//!    fires, the receiving faction is sampled from every faction except the
+//!    round winner by an inverse-weight: under-bet factions are likelier targets
+//!    (`weight_bps = 5000 + (10000 - bet_share_bps)`).
 //!
 //! Entropy source: the scheduled slot hash from the `SlotHashes` sysvar.
 //! If that slot has aged out of the ring buffer (~3.4 min), `end_round` falls
@@ -94,7 +95,10 @@
 //! - `total_sol_bets` → `total_cycle_sol` (mutation roll denominator)
 //! - `cycle_sol_pool` → `sol_reward_pool` (cycle SOL pot for war claims)
 //! - Winning country's `gameplay_scores` += `round_score` (winning country's
-//!   wgtd_points on the winning direction) → drives cycle leaderboard rank
+//!   total wgtd_points across directions) → drives cycle leaderboard rank
+//! - Jackpot country's `gameplay_scores` += its round weighted points when
+//!   the jackpot pot is actually paid out. The jackpot country is sampled from
+//!   the non-winning countries and receives no SOL from the jackpot.
 //! - `round_wins[winner]++` (rank tiebreaker)
 //!
 //! Idempotency: track only fires when `last_processed_round_id != round_id`,
@@ -631,22 +635,7 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
     game_session.jackpot_hit = jackpot_random == 0;
 
     if game_session.jackpot_hit {
-        let total_sol = game_session.total_sol_bets.max(1);
-        let mut weights = [0u64; NUM_FACTIONS];
-        let mut total_weight: u128 = 0;
-
-        #[allow(clippy::needless_range_loop)]
-        for i in 0..faction_count {
-            let faction_bets = game_session.sol_bets_by_faction[i];
-            let bet_share_bps = (faction_bets as u128 * BASIS_POINTS_DENOMINATOR as u128
-                / total_sol as u128) as u64;
-            let inverse_share_bps = BASIS_POINTS_DENOMINATOR.saturating_sub(bet_share_bps);
-            let weight_bps = 5000u64 + inverse_share_bps;
-            weights[i] = weight_bps.max(100);
-            total_weight += weights[i] as u128;
-        }
-
-        let jackpot_faction_roll = u64::from_le_bytes([
+        let jackpot_faction_seed = u64::from_le_bytes([
             final_hash_bytes[12],
             final_hash_bytes[13],
             final_hash_bytes[14],
@@ -655,17 +644,15 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
             0,
             0,
             0,
-        ]) % total_weight as u64;
+        ]);
 
-        let mut cumulative: u128 = 0;
-        #[allow(clippy::needless_range_loop)]
-        for i in 0..faction_count {
-            cumulative += weights[i] as u128;
-            if jackpot_faction_roll < cumulative as u64 {
-                game_session.jackpot_faction_id = i as u8;
-                break;
-            }
-        }
+        game_session.jackpot_faction_id = select_jackpot_faction_excluding_winner(
+            jackpot_faction_seed,
+            &game_session.sol_bets_by_faction,
+            game_session.total_sol_bets,
+            faction_count,
+            winning_faction_id,
+        )?;
     } else {
         game_session.jackpot_faction_id = u8::MAX; // sentinel: no jackpot this round
     }
@@ -818,6 +805,81 @@ fn find_valid_winning_direction(
     Ok(winning_direction)
 }
 
+/// Select the jackpot faction from non-winning factions only.
+///
+/// The jackpot is intentionally a second country story beat. It uses the same
+/// inverse-volume weighting as before, but removes the round winner from the
+/// candidate set so jackpot score/payout can never collapse onto the country
+/// that already won the round.
+fn select_jackpot_faction_excluding_winner(
+    random_seed: u64,
+    sol_bets_by_faction: &[u64; NUM_FACTIONS],
+    total_sol_bets: u64,
+    faction_count: usize,
+    winning_faction_id: u8,
+) -> Result<u8> {
+    require!(
+        faction_count > 1 && faction_count <= NUM_FACTIONS,
+        ErrorCode::InvalidFactionId
+    );
+
+    let winning_faction_index = winning_faction_id as usize;
+    require!(
+        winning_faction_index < faction_count,
+        ErrorCode::InvalidFactionId
+    );
+
+    let total_sol = total_sol_bets.max(1);
+    let mut total_weight: u128 = 0;
+    let mut weights = [0u64; NUM_FACTIONS];
+
+    for faction_index in 0..faction_count {
+        if faction_index == winning_faction_index {
+            continue;
+        }
+
+        let faction_bets = sol_bets_by_faction[faction_index];
+        let bet_share_bps =
+            (faction_bets as u128 * BASIS_POINTS_DENOMINATOR as u128 / total_sol as u128) as u64;
+        let inverse_share_bps = BASIS_POINTS_DENOMINATOR.saturating_sub(bet_share_bps);
+        let weight_bps = 5000u64
+            .checked_add(inverse_share_bps)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            .max(100);
+        weights[faction_index] = weight_bps;
+        total_weight = total_weight
+            .checked_add(weight_bps as u128)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+    }
+
+    require!(total_weight > 0, ErrorCode::InvalidState);
+
+    let jackpot_faction_roll = random_seed as u128 % total_weight;
+    let mut cumulative: u128 = 0;
+
+    for (faction_index, weight) in weights.iter().enumerate().take(faction_count) {
+        if faction_index == winning_faction_index || *weight == 0 {
+            continue;
+        }
+
+        cumulative = cumulative
+            .checked_add(*weight as u128)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        if jackpot_faction_roll < cumulative {
+            let jackpot_faction_id =
+                u8::try_from(faction_index).map_err(|_| ErrorCode::InvalidFactionId)?;
+            msg!(
+                "🎰 jackpot_faction={} (round_winner={} excluded)",
+                jackpot_faction_id,
+                winning_faction_id
+            );
+            return Ok(jackpot_faction_id);
+        }
+    }
+
+    err!(ErrorCode::InvalidState)
+}
+
 fn calculate_dbtc_split(
     dbtc_rewards: u64,
     dbtc_stakers_pct: u8,
@@ -904,6 +966,38 @@ fn require_canonical_faction_state(
     Ok(())
 }
 
+fn add_country_gameplay_score(
+    war_state: &mut FactionWarState,
+    faction_id: u8,
+    score_source: u8,
+    score_added: u64,
+) -> Result<()> {
+    if score_added == 0 {
+        return Ok(());
+    }
+
+    let faction_index = faction_id as usize;
+    require!(
+        faction_index < war_state.faction_count as usize,
+        ErrorCode::InvalidFactionId
+    );
+
+    war_state.gameplay_scores[faction_index] = war_state.gameplay_scores[faction_index]
+        .checked_add(score_added)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+
+    emit!(crate::events::GameplayScoreAccumulated {
+        war_id: war_state.war_id,
+        faction_id,
+        score_source,
+        score_added,
+        faction_total_score: war_state.gameplay_scores[faction_index],
+        user: Pubkey::default(),
+    });
+
+    Ok(())
+}
+
 #[inline(never)]
 fn track_war_round_completion(
     war_config: &mut FactionWarConfig,
@@ -945,19 +1039,35 @@ fn track_war_round_completion(
             .ok_or(ErrorCode::ArithmeticOverflow)?;
     }
 
-    if round_score > 0 {
-        war_state.gameplay_scores[winning_faction_index] = war_state.gameplay_scores
-            [winning_faction_index]
-            .checked_add(round_score)
+    add_country_gameplay_score(
+        war_state,
+        winning_faction_id,
+        GAMEPLAY_SCORE_SOURCE_ROUND_WIN,
+        round_score,
+    )?;
+
+    if game_session.jackpot_hit
+        && game_session.jackpot_distributed
+        && game_session.jackpot_pot_size_on_hit > 0
+    {
+        let jackpot_faction_index = game_session.jackpot_faction_id as usize;
+        require!(
+            jackpot_faction_index < active_factions,
+            ErrorCode::InvalidFactionId
+        );
+        let jackpot_score: u64 = game_session.wgtd_points_bets_by_faction_direction
+            [jackpot_faction_index]
+            .iter()
+            .copied()
+            .try_fold(0u64, |acc, v| acc.checked_add(v))
             .ok_or(ErrorCode::ArithmeticOverflow)?;
-        emit!(crate::events::GameplayScoreAccumulated {
-            war_id: war_state.war_id,
-            faction_id: winning_faction_id,
-            score_source: GAMEPLAY_SCORE_SOURCE_ROUND_WIN,
-            score_added: round_score,
-            faction_total_score: war_state.gameplay_scores[winning_faction_index],
-            user: Pubkey::default(),
-        });
+
+        add_country_gameplay_score(
+            war_state,
+            game_session.jackpot_faction_id,
+            GAMEPLAY_SCORE_SOURCE_JACKPOT_HIT,
+            jackpot_score,
+        )?;
     }
 
     war_state.total_dbtc_mined_in_rounds = war_state
@@ -1111,9 +1221,24 @@ pub fn int_settle_round<'info>(accounts: &mut SettleRound<'info>, war_id: u64) -
 
         let winning_points = game_session.points_bets_by_faction_direction[winning_faction_index]
             [winning_direction_index];
-        if sol_staker_fees > 0 && winning_points > 0 {
+        let redirected_sol_staker_fees = if sol_staker_fees > 0 && winning_points > 0 {
+            let (_sol_rewards_vault, sol_rewards_vault_bump) = Pubkey::find_program_address(
+                &[STAKER_SOL_REWARD_VAULT_SEED.as_ref()],
+                &crate::id(),
+            );
+            helper::transfer_from_sol_rewards_vault(
+                &accounts.sol_rewards_vault.to_account_info(),
+                &accounts.sol_prize_pot_vault.to_account_info(),
+                &accounts.system_program.to_account_info(),
+                sol_staker_fees,
+                sol_rewards_vault_bump,
+            )?
+        } else {
+            0
+        };
+        if redirected_sol_staker_fees > 0 && winning_points > 0 {
             let sol_reward_delta =
-                helper::mul_div(sol_staker_fees, INDEX_PRECISION, winning_points)?;
+                helper::mul_div(redirected_sol_staker_fees, INDEX_PRECISION, winning_points)?;
             game_session.sol_rewards_index = game_session
                 .sol_rewards_index
                 .checked_add(sol_reward_delta)
@@ -1495,6 +1620,16 @@ pub struct SettleRound<'info> {
     )]
     pub sol_rewards_vault: UncheckedAccount<'info>,
 
+    /// CHECK: SOL prize pot vault. Receives redirected staker SOL when the
+    /// winning faction has no active stakers, because winner claims are paid
+    /// from this vault.
+    #[account(
+        mut,
+        seeds = [JACKPOT_POT_VAULT_SEED.as_ref()],
+        bump
+    )]
+    pub sol_prize_pot_vault: UncheckedAccount<'info>,
+
     /// Faction-war config (mut for auto-settle + auto-start)
     #[account(
         mut,
@@ -1625,6 +1760,47 @@ mod tests {
     fn find_valid_winning_direction_no_active_errors() {
         let points = [0u64; PredictionDirection::COUNT];
         assert!(find_valid_winning_direction(0, &points).is_err());
+    }
+
+    // ------------------------------------------------------------------------
+    // select_jackpot_faction_excluding_winner
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn select_jackpot_faction_excludes_round_winner() {
+        let mut sol_bets = [0u64; NUM_FACTIONS];
+        sol_bets[0] = 100;
+        sol_bets[1] = 100;
+        sol_bets[2] = 100;
+
+        let jackpot = select_jackpot_faction_excluding_winner(0, &sol_bets, 300, 3, 0).unwrap();
+
+        // Seed 0 would hit faction 0 in a normal cumulative walk; the helper
+        // must remove the round winner before rolling jackpot candidates.
+        assert_eq!(jackpot, 1);
+    }
+
+    #[test]
+    fn select_jackpot_faction_never_returns_round_winner_across_seeds() {
+        let mut sol_bets = [0u64; NUM_FACTIONS];
+        sol_bets[0] = 100;
+        sol_bets[1] = 20;
+        sol_bets[5] = 900;
+        sol_bets[8] = 50;
+
+        for seed in 0..1_000 {
+            let jackpot =
+                select_jackpot_faction_excluding_winner(seed, &sol_bets, 1_070, 12, 5).unwrap();
+            assert_ne!(jackpot, 5);
+            assert!((jackpot as usize) < 12);
+        }
+    }
+
+    #[test]
+    fn select_jackpot_faction_rejects_single_faction_pool() {
+        let sol_bets = [0u64; NUM_FACTIONS];
+
+        assert!(select_jackpot_faction_excluding_winner(0, &sol_bets, 0, 1, 0).is_err());
     }
 
     // ------------------------------------------------------------------------

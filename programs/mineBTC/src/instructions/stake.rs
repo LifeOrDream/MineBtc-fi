@@ -1599,8 +1599,14 @@ pub fn int_claim_referral_rewards(ctx: Context<ClaimReferralRewards>) -> Result<
         // Transfer lamports from ReferralRewards PDA to user
         // This is safe because the PDA is owned by our program
         let user_info = ctx.accounts.authority.to_account_info();
-        **referral_info.try_borrow_mut_lamports()? -= transfer_amount;
-        **user_info.try_borrow_mut_lamports()? += transfer_amount;
+        **referral_info.try_borrow_mut_lamports()? = referral_info
+            .lamports()
+            .checked_sub(transfer_amount)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        **user_info.try_borrow_mut_lamports()? = user_info
+            .lamports()
+            .checked_add(transfer_amount)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
 
         // Update pending to reflect any remainder (if withdrawable < pending_sol)
         referral_rewards.pending_sol_rewards = pending_sol - transfer_amount;

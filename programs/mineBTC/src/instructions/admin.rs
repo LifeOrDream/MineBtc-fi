@@ -986,8 +986,7 @@ pub fn initialize_hashbeast_config_internal(ctx: Context<InitializeHashBeastConf
     hashbeasts_config.hashbeast_collection = Pubkey::default();
     hashbeasts_config.total_hashbeasts_minted = 0;
     hashbeasts_config.breeding_allowed = false;
-    hashbeasts_config.breed_base_price = 0;
-    hashbeasts_config.breed_curve_a = 100;
+    hashbeasts_config.breed_parent_prices_lamports = DEFAULT_BREED_PARENT_PRICE_LAMPORTS;
 
     msg!(
         "✅ [initialize_hashbeast_config] total_hashbeasts_minted={} breeding_allowed={}",
@@ -1422,19 +1421,26 @@ pub fn update_hashbeast_mint_config_internal(
 pub fn update_breeding_config_internal(
     ctx: Context<UpdateHashBeastConfig>,
     breeding_allowed: bool,
-    breed_base_price: u64,
-    breed_curve_a: u64,
+    breed_parent_prices_lamports: [u64; BREED_PARENT_PRICE_COUNT],
 ) -> Result<()> {
     crate::log_fn!("admin", "update_breeding_config_internal");
+    require!(
+        breed_parent_prices_lamports.iter().all(|price| *price > 0),
+        ErrorCode::InvalidParameters
+    );
+    require!(
+        breed_parent_prices_lamports
+            .windows(2)
+            .all(|pair| pair[1] >= pair[0]),
+        ErrorCode::InvalidParameters
+    );
     let hashbeasts_config = &mut ctx.accounts.hashbeasts_config;
     hashbeasts_config.breeding_allowed = breeding_allowed;
-    hashbeasts_config.breed_base_price = breed_base_price;
-    hashbeasts_config.breed_curve_a = breed_curve_a;
+    hashbeasts_config.breed_parent_prices_lamports = breed_parent_prices_lamports;
     msg!(
-        "🧬 [update_breeding_config] breeding_allowed={} breed_base_price={} breed_curve_a={} total_hashbeasts_minted={}",
+        "🧬 [update_breeding_config] breeding_allowed={} breed_parent_prices={:?} total_hashbeasts_minted={}",
         breeding_allowed,
-        breed_base_price,
-        breed_curve_a,
+        breed_parent_prices_lamports,
         hashbeasts_config.total_hashbeasts_minted
     );
 

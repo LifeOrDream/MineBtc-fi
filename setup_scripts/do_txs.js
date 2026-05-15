@@ -145,6 +145,8 @@ const [factionWarConfigPda] = PublicKey.findProgramAddressSync(
   [Buffer.from("faction-war-config")], pid);
 const [solRewardsVaultPda] = PublicKey.findProgramAddressSync(
   [Buffer.from("staker-sol-reward-vault")], pid);
+const [solPrizePotVaultPda] = PublicKey.findProgramAddressSync(
+  [Buffer.from("jackpot-pot")], pid);
 const [taxConfigPda] = PublicKey.findProgramAddressSync(
   [Buffer.from("tax-config")], pid);
 const [withdrawWithheldAuthorityPda] = PublicKey.findProgramAddressSync(
@@ -689,6 +691,7 @@ async function settleRound() {
     globalConfig: globalConfigPda,
     factionState: factionStatePda,
     solRewardsVault: solRewardsVaultPda,
+    solPrizePotVault: solPrizePotVaultPda,
     warConfig: factionWarConfigPda,
     warState: deriveFactionWarStatePda(factionWarId),
     dbtcMining: mineBtcMiningPda,
