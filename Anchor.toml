@@ -11,10 +11,10 @@ degenbtc_market = "MarKEt1111111111111111111111111111111111111"
 raydium_cp_swap = "DFbiecJY7wg2y6H2VVdQV8nEGPZdd5FFvN5MjNMdi4a1"
 
 [programs.devnet]
-minebtc = "GU8sF4tKmBzzPA822QcBqysBXXGZEY2reJsdfx8qiTf"
-degenbtc_market = "6pPnqugm79XwbrxdYAzVpZg6tixszCh8eo2qJCgmyd2J"
+minebtc = "4tRYtt7fYnggL1mRSiv9WeAGyHLNHEV83LmZ9RptJ8UZ"
+degenbtc_market = "AUFtfniP5h2UYNgzfVRkcKpQu3R45uSCtL7VZRCvCNnE"
 mpl-core = "AKDm1gXxpnJE23aYTtmNE8E9CagM7gkvjKGegDZ9qTPD"
-raydium_cp_swap = "EoBVWzQ5RsWgo7xWBAUkV6r4CCAt1kfcvFYLco4Z8fwv"
+raydium_cp_swap = "8b52ussHiWPCFRysaCBJEDPHzRDpEw5XtGpfLqGU5idE"
 
 [provider]
 cluster = "devnet"
