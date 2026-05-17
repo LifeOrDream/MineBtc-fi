@@ -602,6 +602,8 @@ pub struct RoundEnded {
 pub struct DegenBtcStakingRewardsDistributed {
     pub round_id: u64,
     pub faction_id: u8,
+    /// Hashpower denominator used to compute the emitted reward indexes.
+    pub total_degenbtc_hashpower: u64,
     pub dbtc_staker_rewards: u64,
     pub sol_staker_rewards: u64,
     pub degenbtc_degenbtc_reward_index: u128,
@@ -612,16 +614,18 @@ pub struct DegenBtcStakingRewardsDistributed {
 pub struct LpStakingRewardsDistributed {
     pub round_id: u64,
     pub faction_id: u8,
+    /// Hashpower denominator used to compute the emitted reward indexes.
+    pub total_lp_hashpower: u64,
     pub dbtc_staker_rewards: u64,
     pub sol_staker_rewards: u64,
     pub lp_degenbtc_reward_index: u128,
     pub lp_sol_reward_index: u128,
 }
 
-/// Event emitted by `distribute_jackpot_rewards` when the jackpot pot was
+/// Event emitted by `settle_round` when the global jackpot pot was
 /// successfully paid out to bettors on `faction_id`. Note that `faction_id`
 /// here is the JACKPOT faction (selected by inverse-volume weighting), NOT
-/// the round winner — see game.rs:777-783.
+/// the round winner.
 #[event]
 pub struct JackpotHit {
     pub round_id: u64,
@@ -642,6 +646,12 @@ pub struct RewardsDistributedForRound {
     pub round_id: u64,
     pub winning_faction_id: u8,
     pub winning_direction: u8,
+    /// Final exact-winner SOL index after settle_round redirects any orphaned
+    /// staker SOL fees back to exact winners.
+    pub sol_rewards_index: u128,
+    /// Final exact-winner degenBTC index after settle_round redirects any
+    /// orphaned staker degenBTC back to exact winners.
+    pub dbtc_rewards_index: u128,
     /// Frozen value of the winning faction's `sol_volume_since_last_win` at
     /// round-end, BEFORE the counter was reset to 0. Late claims hours later
     /// will still see this same number when computing volume_factor.
@@ -832,14 +842,12 @@ pub struct CycleEndRoundSnapshotted {
 ///
 /// - `score_source = GAMEPLAY_SCORE_SOURCE_ROUND_WIN (0)`: end-of-round
 ///   accumulation when a country wins. `score_added` equals the round's
-///   total weighted points bet on that country (any direction). `user` is
-///   `Pubkey::default()` — no specific user owns this contribution.
+///   total weighted points bet on that country (any direction).
 ///
 /// - `score_source = GAMEPLAY_SCORE_SOURCE_JACKPOT_HIT (2)`: jackpot
 ///   accumulation when the independently selected jackpot country actually
 ///   receives the pot. `score_added` equals the round's total weighted points
-///   bet on that jackpot country (any direction). `user` is
-///   `Pubkey::default()`.
+///   bet on that jackpot country (any direction).
 ///
 /// - `score_source = GAMEPLAY_SCORE_SOURCE_MUTATION_BONUS (1)`: per-claim
 ///   bonus when a player's round-claim mutation roll succeeds and the
@@ -857,7 +865,6 @@ pub struct GameplayScoreAccumulated {
     pub score_source: u8,
     pub score_added: u64,
     pub faction_total_score: u64,
-    pub user: Pubkey,
 }
 
 /// Event emitted when a faction war MVP is determined at settlement.

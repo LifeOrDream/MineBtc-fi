@@ -2767,7 +2767,6 @@ fn apply_mutation_bonus_score<'info>(
         // to this value.
         score_added: leaderboard_score_add,
         faction_total_score: total_after,
-        user: owner_key,
     });
 
     msg!(

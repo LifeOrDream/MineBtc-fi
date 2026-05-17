@@ -127,7 +127,7 @@ pub const REFERRAL_FEE_PCT: u8 = 1;
 pub const REFERRAL_FEE_BPS_CROSS_FACTION: u16 = 50; // 0.5%
 /// Referral fee basis points for same-faction recruits (same country as referrer)
 pub const REFERRAL_FEE_BPS_SAME_FACTION: u16 = 100; // 1.0%
-/// Default cycle SOL split: 5% of user bet reserved for faction-war jackpot.
+/// Default cycle SOL split: 5% of user bet reserved for faction-war rewards.
 pub const DEFAULT_CYCLE_SOL_SPLIT_PCT: u8 = 5;
 /// Default share of `distribute_sol_fees` SOL routed to `inventory_sweep_vault`
 /// to fund permissionless NFT market making (sweep buys + keeper bounties).
@@ -468,7 +468,7 @@ pub struct SolFeeConfig {
     /// Whole-percent share of SOL fees that goes to stakers. `100` = 100%.
     pub stakers_pct: u8,
     /// Whole-percent share of the user's SOL bet reserved for the faction-war
-    /// cycle SOL jackpot. Taken directly from the gross bet, in addition to the
+    /// cycle SOL reward pool. Taken directly from the gross bet, in addition to the
     /// protocol fee. `100` = 100%.
     pub cycle_sol_split_pct: u8,
     /// Whole-percent share of `distribute_sol_fees` SOL routed to the
@@ -929,7 +929,7 @@ pub struct GlobalGameSate {
     pub last_round_id: u64,
 
     /// Global jackpot pot that accumulates across all rounds and factions.
-    /// When the jackpot hits, this pot is distributed to exact winners of the selected faction.
+    /// When the jackpot hits, this pot is distributed to any-direction bettors on the selected faction.
     pub jackpot_pot: u64,
 }
 

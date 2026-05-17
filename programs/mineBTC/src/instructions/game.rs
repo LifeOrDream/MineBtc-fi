@@ -1000,7 +1000,6 @@ fn add_country_gameplay_score(
         score_source,
         score_added,
         faction_total_score: war_state.gameplay_scores[faction_index],
-        user: Pubkey::default(),
     });
 
     Ok(())
@@ -1364,6 +1363,8 @@ pub fn int_settle_round<'info>(accounts: &mut SettleRound<'info>, war_id: u64) -
         round_id: round_id_for_event,
         winning_faction_id: winning_faction_for_event,
         winning_direction: winning_direction_for_event,
+        sol_rewards_index: accounts.game_session.sol_rewards_index,
+        dbtc_rewards_index: accounts.game_session.dbtc_rewards_index,
         winning_faction_volume_at_round: volume_snapshot,
         timestamp: Clock::get()?.unix_timestamp,
     });
@@ -1429,6 +1430,7 @@ fn distribute_rewards_amg_stakers(
         emit!(DegenBtcStakingRewardsDistributed {
             round_id,
             faction_id: faction_state.faction_id,
+            total_degenbtc_hashpower: faction_state.total_degenbtc_hashpower,
             dbtc_staker_rewards: dbtc_dbtc_share,
             sol_staker_rewards: degenbtc_sol_share,
             degenbtc_degenbtc_reward_index: faction_state.degenbtc_degenbtc_reward_index,
@@ -1460,6 +1462,7 @@ fn distribute_rewards_amg_stakers(
         emit!(LpStakingRewardsDistributed {
             round_id,
             faction_id: faction_state.faction_id,
+            total_lp_hashpower: faction_state.total_lp_hashpower,
             dbtc_staker_rewards: lp_dbtc_share,
             sol_staker_rewards: lp_sol_share,
             lp_degenbtc_reward_index: faction_state.lp_degenbtc_reward_index,
@@ -1586,7 +1589,7 @@ pub struct SettleRound<'info> {
     )]
     pub global_config: Box<Account<'info, GlobalConfig>>,
 
-    /// Winning faction state (for updating staker rewards and jackpot payout)
+    /// Winning faction state for updating staker rewards.
     /// Validated manually against the winning faction ID and canonical
     /// `[FACTION_STATE_SEED, supported_factions[winning_faction_id]]` PDA.
     #[account(mut)]
