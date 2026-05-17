@@ -1789,9 +1789,9 @@ fn internal_process_bets<'info>(
     // Read from global_config — mid-war faction additions are not expected
     // (the active-cycle guard blocks new rounds during settle), so the
     // snapshot vs. live read is effectively the same for in-flight bets.
-    let active_faction_count = global_config.supported_factions.len();
+    let supported_faction_count = global_config.supported_factions.len();
     require!(
-        active_faction_count == NUM_FACTIONS,
+        supported_faction_count == NUM_FACTIONS,
         ErrorCode::InvalidFactionId
     );
 
@@ -2120,7 +2120,7 @@ fn internal_process_bets<'info>(
     for bet_type in bet_types {
         let (faction_id, direction) = prediction_bet_parts(&bet_type)?;
         require!(
-            (faction_id as usize) < active_faction_count,
+            (faction_id as usize) < supported_faction_count,
             ErrorCode::InvalidFactionId
         );
         let faction_index = faction_id as usize;

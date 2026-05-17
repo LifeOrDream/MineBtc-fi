@@ -1086,11 +1086,8 @@ pub struct GameSession {
     /// Global jackpot pot size when hit (if applicable).
     pub jackpot_pot_size_on_hit: u64,
     /// degenBTC rewards index for jackpot winners (all directions on jackpot faction).
-    /// Set by `distribute_jackpot_rewards`; read by `claim_round_rewards`.
+    /// Set during `settle_round`; read by `claim_round_rewards`.
     pub jackpot_rewards_index: u128,
-    /// Whether jackpot was already distributed for this round.
-    /// Prevents double-processing by cranker retries.
-    pub jackpot_distributed: bool,
 
     // --- Mutation tracking per round ---
     /// Number of mutations that have occurred per faction this round.
@@ -1152,7 +1149,6 @@ impl GameSession {
         1 +     // jackpot_faction_id
         8 +     // jackpot_pot_size_on_hit
         16 +    // jackpot_rewards_index
-        1 +     // jackpot_distributed
         (NUM_FACTIONS * 1) + // mutations_per_faction
         1 + // total_mutations_this_round
         8 + // war_id_when_played

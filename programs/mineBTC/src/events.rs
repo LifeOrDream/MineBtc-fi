@@ -634,28 +634,6 @@ pub struct JackpotHit {
     pub jackpot_rewards_index: u128,
 }
 
-/// Event emitted when the jackpot roll was close to hitting (within top 10 closest rolls).
-/// Used by the frontend to hook users with near-miss notifications.
-#[event]
-pub struct JackpotNearMiss {
-    pub round_id: u64,
-    pub roll: u64,
-    pub threshold: u64,
-    pub pot_size: u64,
-    pub timestamp: i64,
-}
-
-/// Event emitted when the jackpot hits but there are no eligible winners
-/// to receive it. The pot rolls over and keeps accumulating.
-#[event]
-pub struct JackpotRolledOver {
-    pub round_id: u64,
-    pub faction_id: u8,
-    pub pot_size: u64,
-    pub reason: u8, // 0 = no exact winners, 1+ reserved for future
-    pub timestamp: i64,
-}
-
 /// Event emitted by `settle_round` after `track_war_round_completion`
 /// runs. Carries the drought-volume snapshot that fed into the mutation roll for
 /// this round's claimers (state.rs:1048-1053, used at user.rs:1689).
