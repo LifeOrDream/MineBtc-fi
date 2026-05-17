@@ -458,6 +458,14 @@ pub mod minebtc {
     }
 
 
+    /// Initialize faction_war configuration (admin only).
+    /// FactionWar duration is tied to the economy cycle -- one faction_war per LP burn.
+    pub fn initialize_war_config(ctx: Context<InitializeFactionWarConfig>) -> Result<()> {
+        crate::log_fn!("lib", "initialize_war_config");
+        faction_war::initialize_war_config_internal(ctx)
+    }
+
+
     // ----------------------------------------------------------------------------------------
     // ------------ GAME STATE MANAGEMENT (ADMIN) ------------------------------------
     // ----------------------------------------------------------------------------------------
@@ -526,11 +534,58 @@ pub mod minebtc {
         economy::add_lp_and_burn_internal(ctx, lp_token_amount)
     }
 
+ 
+
+    // ----------------------------------------------------------------------------------------
+    // ------------ GAME ROUND MANAGEMENT (SLOT-HASH RANDOMNESS) ------------------------
+    // ----------------------------------------------------------------------------------------
+
+    /// DONE -::- Start a new round and initialize its GameSession.
+    /// round_id should be current_round_id + 1 (validated in the function)
+    pub fn start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
+        crate::log_fn!("lib", "start_round");
+        game::int_start_round(ctx, round_id)
+    }
+
+    /// DONE -::- Finalize the current round using scheduled slot-hash entropy.
+    pub fn end_round(ctx: Context<EndRound>) -> Result<()> {
+        crate::log_fn!("lib", "end_round");
+        game::int_end_round(ctx)
+    }
+
+    /// DONE -::- Finalize round staking, global jackpot settlement, and faction-war mining.
+    pub fn settle_round(ctx: Context<SettleRound>, war_id: u64) -> Result<()> {
+        crate::log_fn!("lib", "settle_round");
+        game::int_settle_round(ctx.accounts, war_id)
+    }
+
+
+    // ----------------------------------------------------------------------------------------
+    // ------------ FACTION_WAR MINING SYSTEM -------------------------------------------------------
+    // ----------------------------------------------------------------------------------------
+
+
+    /// DONE -::- Initialize a new faction war state PDA.
+    /// Must be called once per war cycle before the first round's settle_round.
+    /// Permissionless — anyone can initialize the war state for the current war ID.
+    pub fn initialize_faction_war(ctx: Context<InitializeFactionWar>, war_id: u64) -> Result<()> {
+        crate::log_fn!("lib", "initialize_faction_war");
+        faction_war::initialize_war_internal(ctx, war_id)
+    }
+
+
+    /// DONE -::- Settle faction_war: finalize gameplay-score rankings and compute reward pools.
+    /// Permissionless -- anyone can call once the economy cycle's LP burn has completed.
+    pub fn settle_war(ctx: Context<SettleFactionWar>) -> Result<()> {
+        crate::log_fn!("lib", "settle_war");
+        faction_war::settle_war_internal(ctx)
+    }
+
     // ----------------------------------------------------------------------------------------
     // ------------ TAX SYSTEM FUNCTIONS ------------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// STEP 1: Harvest fees from user token accounts to the mint
+    /// DONE -::- STEP 1: Harvest fees from user token accounts to the mint
     /// Callable by anyone - keeper bot should call this in batches
     pub fn crank_harvest_fees<'info>(
         ctx: Context<'_, '_, '_, 'info, CrankHarvestFees<'info>>,
@@ -539,21 +594,16 @@ pub mod minebtc {
         tax::internal_crank_harvest_fees(ctx)
     }
 
-    /// STEP 2: Withdraw total tax from mint and distribute it
+    /// DONE -::- STEP 2: Withdraw total tax from mint and distribute it
     /// Callable by anyone - program-controlled withdraw authority
     pub fn crank_distribute_tax(ctx: Context<CrankDistributeTax>, war_id: u64) -> Result<()> {
         crate::log_fn!("lib", "crank_distribute_tax");
         let bumps = ctx.bumps;
         let accounts = ctx.accounts;
-        tax::internal_crank_distribute_tax(
-            accounts,
-            war_id,
-            bumps.war_state,
-            bumps.withdraw_withheld_authority,
-        )
+        tax::internal_crank_distribute_tax(accounts, war_id, bumps.withdraw_withheld_authority)
     }
 
-    /// Claim faction treasury rewards for a settled faction_war.
+    /// DONE -::- Claim faction treasury rewards for a settled faction_war.
     /// Uses the gameplay-score leaderboard (faction_war final_ranks) -- permissionless.
     pub fn claim_faction_treasury_for_faction_war(
         ctx: Context<ClaimFactionTreasuryForFactionWar>,
@@ -563,66 +613,12 @@ pub mod minebtc {
         tax::internal_claim_faction_treasury_for_faction_war(ctx, war_id)
     }
 
-    // ----------------------------------------------------------------------------------------
-    // ------------ FACTION_WAR MINING SYSTEM -------------------------------------------------------
-    // ----------------------------------------------------------------------------------------
-
-    /// Initialize faction_war configuration (admin only).
-    /// FactionWar duration is tied to the economy cycle -- one faction_war per LP burn.
-    pub fn initialize_war_config(ctx: Context<InitializeFactionWarConfig>) -> Result<()> {
-        crate::log_fn!("lib", "initialize_war_config");
-        faction_war::initialize_war_config_internal(ctx)
-    }
-
-    /// Settle faction_war: finalize gameplay-score rankings and compute reward pools.
-    /// Permissionless -- anyone can call once the economy cycle's LP burn has completed.
-    pub fn settle_war(ctx: Context<SettleFactionWar>) -> Result<()> {
-        crate::log_fn!("lib", "settle_war");
-        faction_war::settle_war_internal(ctx)
-    }
-
-    /// User claims their faction-war rewards (closes user_war_bets account).
-    pub fn claim_war_rewards(ctx: Context<ClaimFactionWarRewards>, war_id: u64) -> Result<()> {
-        crate::log_fn!("lib", "claim_war_rewards");
-        faction_war::claim_war_rewards_internal(ctx, war_id)
-    }
-
-    // ----------------------------------------------------------------------------------------
-    // ------------ GAME ROUND MANAGEMENT (SLOT-HASH RANDOMNESS) ------------------------
-    // ----------------------------------------------------------------------------------------
-
-    /// Start a new round and initialize its GameSession.
-    /// round_id should be current_round_id + 1 (validated in the function)
-    pub fn start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
-        crate::log_fn!("lib", "start_round");
-        game::int_start_round(ctx, round_id)
-    }
-
-    /// Finalize the current round using scheduled slot-hash entropy.
-    pub fn end_round(ctx: Context<EndRound>) -> Result<()> {
-        crate::log_fn!("lib", "end_round");
-        game::int_end_round(ctx)
-    }
-
-    /// Finalize the round's faction-level staking/jackpot distribution and track faction-war mining.
-    pub fn settle_round(ctx: Context<SettleRound>, war_id: u64) -> Result<()> {
-        crate::log_fn!("lib", "settle_round");
-        game::int_settle_round(ctx.accounts, war_id)
-    }
-
-    /// Initialize a new faction war state PDA.
-    /// Must be called once per war cycle before the first round's settle_round.
-    /// Permissionless — anyone can initialize the war state for the current war ID.
-    pub fn initialize_faction_war(ctx: Context<InitializeFactionWar>, war_id: u64) -> Result<()> {
-        crate::log_fn!("lib", "initialize_faction_war");
-        faction_war::initialize_war_internal(ctx, war_id)
-    }
 
     // ----------------------------------------------------------------------------------------
     // ------------ PLAYER & BETTING FUNCTIONS ------------------------------------------------
     // ----------------------------------------------------------------------------------------
 
-    /// Initialize a player account for the DegenBTC country arena
+    /// DONE -::- Initialize a player account for the DegenBTC country arena
     pub fn initialize_player(
         ctx: Context<InitializePlayer>,
         faction_id: u8,
@@ -726,6 +722,12 @@ pub mod minebtc {
     ) -> Result<()> {
         crate::log_fn!("lib", "claim_autominer_rewards");
         user::internal_claim_autominer_rewards(round_id, ctx)
+    }
+
+    /// User claims their faction-war rewards (closes user_war_bets account).
+    pub fn claim_war_rewards(ctx: Context<ClaimFactionWarRewards>, war_id: u64) -> Result<()> {
+        crate::log_fn!("lib", "claim_war_rewards");
+        faction_war::claim_war_rewards_internal(ctx, war_id)
     }
 
     // ----------------------------------------------------------------------------------------
