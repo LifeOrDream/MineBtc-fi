@@ -706,7 +706,7 @@ impl DegenBtcMining {
 pub struct BuybacksAccount {
     /// Total SOL accumulated for buybacks (in lamports)
     pub total_sol_accumulated: u64,
-    /// SOL earnmarked for Protocol Owned Liquidity (in lamports)
+    /// SOL earmarked for Protocol Owned Liquidity (in lamports)
     pub sol_for_pol: u64,
 }
 

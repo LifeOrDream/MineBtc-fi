@@ -1110,22 +1110,6 @@ pub fn finalize_war_settlement(
         )?;
         war_settlement.sol_mvp_pool = sol_mvp_eligible;
 
-        // Emit per-MVP events for the indexer (kept here, not in the helper,
-        // since `emit!` needs program context).
-        let clock_ts = Clock::get()?.unix_timestamp;
-        for fid in 0..active_factions {
-            if war_state.mvp_user[fid] != Pubkey::default() && war_settlement.mvp_bonus[fid] > 0 {
-                emit!(crate::events::FactionWarMvp {
-                    war_id: war_state.war_id,
-                    faction_id: fid as u8,
-                    user: war_state.mvp_user[fid],
-                    mvp_score: war_state.mvp_score[fid],
-                    bonus_amount: war_settlement.mvp_bonus[fid],
-                    timestamp: clock_ts,
-                });
-            }
-        }
-
         // Total SOL residual across base + HB + MVP lanes — drained to
         // sol_treasury by settle_war_internal after this function returns.
         war_settlement.undistributed_sol = base_hb_sol_residual
@@ -1272,6 +1256,8 @@ pub fn settle_war_internal(ctx: Context<SettleFactionWar>) -> Result<()> {
         undistributed_sol: war_settlement.undistributed_sol,
         mvp_bonus: war_settlement.mvp_bonus,
         mvp_user: war_state.mvp_user,
+        mvp_score: war_state.mvp_score,
+        faction_mutation_scores: war_state.faction_mutation_score,
         round_wins: war_state.round_wins,
         gameplay_scores: war_state.gameplay_scores,
         timestamp: clock.unix_timestamp,

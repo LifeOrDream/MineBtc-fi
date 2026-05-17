@@ -167,25 +167,6 @@ pub fn internal_crank_harvest_fees<'info>(
 ///
 /// Callable by anyone - program-controlled withdraw authority
 
-#[inline(never)]
-fn load_war_state_boxed<'info>(account: &AccountInfo<'info>) -> Result<Box<FactionWarState>> {
-    require!(
-        account.owner == &FactionWarState::owner(),
-        ErrorCode::InvalidAccount
-    );
-    let data = account.try_borrow_data()?;
-    require!(data.len() >= DISCRIMINATOR_SIZE, ErrorCode::InvalidAccount);
-    require!(
-        &data[..DISCRIMINATOR_SIZE] == FactionWarState::DISCRIMINATOR,
-        ErrorCode::InvalidAccount
-    );
-    let mut boxed: Box<FactionWarState> =
-        unsafe { helper::alloc_zeroed_boxed::<FactionWarState>() };
-    let mut cursor: &[u8] = &data[DISCRIMINATOR_SIZE..];
-    FactionWarState::deserialize_into(&mut boxed, &mut cursor)?;
-    Ok(boxed)
-}
-
 fn post_fee_amount<'info>(
     mint_account_info: &AccountInfo<'info>,
     pre_fee_amount: u64,
@@ -241,12 +222,10 @@ fn require_canonical_faction_state(
 pub fn internal_crank_distribute_tax<'info>(
     accounts: &mut CrankDistributeTax<'info>,
     war_id: u64,
-    _war_state_bump: u8,
     withdraw_authority_bump: u8,
 ) -> Result<()> {
     crate::log_fn!("tax", "internal_crank_distribute_tax");
     msg!("💰 [crank_distribute_tax] Withdrawing *total* tax from mint");
-    let war_state_info = accounts.war_state.as_ref();
 
     // 1. Get the total amount of tax sitting on the mint account
     // We must reload to get the most up-to-date data after harvesting
@@ -415,51 +394,45 @@ pub fn internal_crank_distribute_tax<'info>(
         );
     }
 
+    let mut credited_to_active_war = false;
     if faction_treasury_credit > 0 {
-        if war_state_info.lamports() > 0 && !war_state_info.data_is_empty() {
-            let mut war_state = load_war_state_boxed(war_state_info)?;
-            if war_state.war_id == accounts.war_config.current_war_id && war_state.stage == 0 {
-                war_state.treasury_reward_base_amount = war_state
-                    .treasury_reward_base_amount
-                    .checked_add(faction_treasury_credit)
-                    .ok_or(ErrorCode::ArithmeticOverflow)?;
-                msg!(
-                    "   🏴 Attributed {} delivered degenBTC treasury tax to faction war {} (base now {})",
-                    (faction_treasury_credit as f64) / 1e6,
-                    war_state.war_id,
-                    (war_state.treasury_reward_base_amount as f64) / 1e6
-                );
-                helper::store_account_data(war_state_info, war_state.as_ref())?;
-            } else {
-                tax_config.unassigned_war_treasury_amount = tax_config
-                    .unassigned_war_treasury_amount
-                    .checked_add(faction_treasury_credit)
-                    .ok_or(ErrorCode::ArithmeticOverflow)?;
-                msg!(
-                    "   💤 Faction war state not ready; queued {} delivered degenBTC treasury tax for the next war (queued total {})",
-                    (faction_treasury_credit as f64) / 1e6,
-                    (tax_config.unassigned_war_treasury_amount as f64) / 1e6
-                );
-            }
+        let war_state = &mut accounts.war_state;
+        if war_state.war_id == accounts.war_config.current_war_id && war_state.stage == 0 {
+            war_state.treasury_reward_base_amount = war_state
+                .treasury_reward_base_amount
+                .checked_add(faction_treasury_credit)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            credited_to_active_war = true;
+            msg!(
+                "   🏴 Attributed {} delivered degenBTC treasury tax to faction war {} (base now {})",
+                (faction_treasury_credit as f64) / 1e6,
+                war_state.war_id,
+                (war_state.treasury_reward_base_amount as f64) / 1e6
+            );
         } else {
             tax_config.unassigned_war_treasury_amount = tax_config
                 .unassigned_war_treasury_amount
                 .checked_add(faction_treasury_credit)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
             msg!(
-                "   💤 Faction wars inactive; queued {} delivered degenBTC treasury tax for the next war (queued total {})",
+                "   💤 Faction war state not ready; queued {} delivered degenBTC treasury tax for the next war (queued total {})",
                 (faction_treasury_credit as f64) / 1e6,
                 (tax_config.unassigned_war_treasury_amount as f64) / 1e6
             );
         }
     }
 
-    let total_burnt = accounts.tax_config.total_burnt;
+    let total_burnt = tax_config.total_burnt;
     emit!(TaxDistributed {
         total_tax_amount: withheld_amount,
         faction_treasury_amount,
+        faction_treasury_credit,
         burn_amount,
+        vault_return_amount: vault_return,
         total_burnt,
+        war_id,
+        credited_to_active_war,
+        unassigned_war_treasury_amount: tax_config.unassigned_war_treasury_amount,
         timestamp: clock.unix_timestamp,
     });
 
@@ -806,11 +779,9 @@ pub struct CrankDistributeTax<'info> {
     #[account(
         mut,
         seeds = [FACTION_WAR_STATE_SEED, &war_id.to_le_bytes()],
-        bump,
+        bump = war_state.bump,
     )]
-    /// CHECK: Program PDA; initialized manually in handler to keep parser stack small.
-    /// Must remain `mut` because helper::store_account_data persists treasury attribution state.
-    pub war_state: UncheckedAccount<'info>,
+    pub war_state: Box<Account<'info, FactionWarState>>,
 
     #[account(mut)]
     pub caller: Signer<'info>,

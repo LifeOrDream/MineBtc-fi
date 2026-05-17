@@ -19,7 +19,9 @@ pub struct ReferralRewardsClaimed {
 pub struct SolFeesWithdrawn {
     pub available_solana: u64,
     pub buyback_amount: u64,
+    pub nft_market_making_amount: u64,
     pub dev_earnings_amount: u64,
+    pub timestamp: i64,
 }
 
 #[event]
@@ -47,15 +49,15 @@ pub struct FactionAdded {
 /// Price snapshot taken every 30 minutes (1-8 snapshots per 4-hour cycle)
 #[event]
 pub struct PriceSnapshotTaken {
-    pub snapshot_number: u8,         // 1-8 (which snapshot in the cycle)
-    pub sol_swapped: u64,            // SOL amount swapped (lamports)
-    pub dbtc_received: u64,          // MINE_BTC received from swap (6 decimals)
-    pub current_price: u64,          // Calculated price (9 decimals: SOL per MINE_BTC)
-    pub weighted_avg_price: u64,     // Weighted average price so far (9 decimals)
-    pub sol_earnmarked_for_pol: u64, // SOL earnmarked for POL this snapshot (lamports)
-    pub total_pol_balance: u64,      // Total SOL earnmarked for POL (lamports)
-    pub price_history_count: u8,     // Number of entries in price history (1-8)
-    pub timestamp: i64,              // Unix timestamp
+    pub snapshot_number: u8,        // 1-8 (which snapshot in the cycle)
+    pub sol_swapped: u64,           // SOL amount swapped (lamports)
+    pub dbtc_received: u64,         // MINE_BTC received from swap (6 decimals)
+    pub current_price: u64,         // Calculated price (9 decimals: SOL per MINE_BTC)
+    pub weighted_avg_price: u64,    // Weighted average price so far (9 decimals)
+    pub sol_earmarked_for_pol: u64, // SOL earmarked for POL this snapshot (lamports)
+    pub total_pol_balance: u64,     // Total SOL earmarked for POL (lamports)
+    pub price_history_count: u8,    // Number of entries in price history (1-8)
+    pub timestamp: i64,             // Unix timestamp
 }
 
 /// Liquidity added to Raydium pool (before burning LP tokens)
@@ -667,9 +669,17 @@ pub struct RewardsDistributedForRound {
 #[event]
 pub struct TaxDistributed {
     pub total_tax_amount: u64,
+    /// Pre-fee amount transferred toward the faction treasury vault.
     pub faction_treasury_amount: u64,
+    /// Post-fee amount actually delivered and credited to a faction war.
+    pub faction_treasury_credit: u64,
     pub burn_amount: u64,
+    /// Amount returned to the degenBTC emission vault.
+    pub vault_return_amount: u64,
     pub total_burnt: u64,
+    pub war_id: u64,
+    pub credited_to_active_war: bool,
+    pub unassigned_war_treasury_amount: u64,
     pub timestamp: i64,
 }
 
@@ -804,6 +814,10 @@ pub struct FactionWarSettled {
     pub mvp_bonus: [u64; NUM_FACTIONS],
     /// Per-faction MVP user (default pubkey = no MVP this cycle).
     pub mvp_user: [Pubkey; NUM_FACTIONS],
+    /// Per-faction winning MVP score.
+    pub mvp_score: [u64; NUM_FACTIONS],
+    /// Per-faction HashBeast mutation-score denominator for HB bonus claims.
+    pub faction_mutation_scores: [u64; NUM_FACTIONS],
     pub round_wins: [u16; NUM_FACTIONS],
     pub gameplay_scores: [u64; NUM_FACTIONS],
     pub timestamp: i64,
@@ -865,18 +879,6 @@ pub struct GameplayScoreAccumulated {
     pub score_source: u8,
     pub score_added: u64,
     pub faction_total_score: u64,
-}
-
-/// Event emitted when a faction war MVP is determined at settlement.
-/// The #1 ranked faction's top contributor receives a bonus.
-#[event]
-pub struct FactionWarMvp {
-    pub war_id: u64,
-    pub faction_id: u8,
-    pub user: Pubkey,
-    pub mvp_score: u64,
-    pub bonus_amount: u64,
-    pub timestamp: i64,
 }
 
 /// Event emitted when a user claims faction_war rewards. dBTC amounts are
