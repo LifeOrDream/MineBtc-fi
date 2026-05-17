@@ -414,7 +414,9 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
     emit!(SolFeesWithdrawn {
         available_solana,
         buyback_amount: sol_for_buybacks,
+        nft_market_making_amount: sol_for_nft_mm,
         dev_earnings_amount: dev_earnings,
+        timestamp: Clock::get()?.unix_timestamp,
     });
 
     msg!(
@@ -425,7 +427,7 @@ pub fn distribute_sol_fees_internal(ctx: Context<DistributeSolFees>) -> Result<(
 }
 
 /// INSTRUCTION 1: Take a price snapshot (can be called by anyone every 30 minutes)
-/// Performs a small SOL → MINE_BTC swap for price discovery and earnmarks SOL for POL
+/// Performs a small SOL → MINE_BTC swap for price discovery and earmarks SOL for POL
 pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
     crate::log_fn!("economy", "snapshot_price_internal");
     msg!("🌟 === STARTING PRICE SNAPSHOT ===");
@@ -535,12 +537,12 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
         buybacks_vault_rent_exempt as f64 / 1e9
     );
     msg!(
-        "   💰 Previously earnmarked POL: {} lamports ({} SOL)",
+        "   💰 Previously earmarked POL: {} lamports ({} SOL)",
         buybacks_account.sol_for_pol,
         buybacks_account.sol_for_pol as f64 / 1e9
     );
 
-    // Calculate available SOL (subtract rent-exempt minimum and already earnmarked SOL for POL)
+    // Calculate available SOL (subtract rent-exempt minimum and already earmarked SOL for POL)
     let available_sol = buybacks_vault_balance
         .saturating_sub(buybacks_vault_rent_exempt)
         .saturating_sub(buybacks_account.sol_for_pol);
@@ -550,7 +552,7 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
         available_sol,
         available_sol as f64 / 1e9
     );
-    msg!("      (balance - rent_exempt - earnmarked_pol)");
+    msg!("      (balance - rent_exempt - earmarked_pol)");
 
     // Ensure we have enough SOL available
     if available_sol == 0 {
@@ -558,10 +560,10 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
         return Ok(());
     }
 
-    // Calculate 10% for swap (SOL → MINE_BTC), 10% for POL earnmarking
+    // Calculate 10% for swap (SOL → MINE_BTC), 10% for POL earmarking
     msg!("\n💱 === CALCULATING BUYBACK AND POL AMOUNTS ===");
     let sol_for_swap = available_sol / 10; // 10% for price oracle swap
-    let sol_for_pol_earnmark = available_sol / 10; // 10% for POL
+    let sol_for_pol_earmark = available_sol / 10; // 10% for POL
     if sol_for_swap < PRICE_SNAPSHOT_MIN_SWAP_LAMPORTS {
         msg!(
             "   ⚠️ Snapshot swap too small ({} lamports < {}); waiting for more buyback SOL",
@@ -582,14 +584,14 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
         sol_for_swap as f64 / 1e9
     );
     msg!(
-        "   💰 SOL for POL earnmark: {} lamports ({} SOL) [10% of available]",
-        sol_for_pol_earnmark,
-        sol_for_pol_earnmark as f64 / 1e9
+        "   💰 SOL for POL earmark: {} lamports ({} SOL) [10% of available]",
+        sol_for_pol_earmark,
+        sol_for_pol_earmark as f64 / 1e9
     );
     msg!(
         "   📊 Total SOL to be used: {} lamports ({} SOL)",
-        sol_for_swap + sol_for_pol_earnmark,
-        (sol_for_swap + sol_for_pol_earnmark) as f64 / 1e9
+        sol_for_swap + sol_for_pol_earmark,
+        (sol_for_swap + sol_for_pol_earmark) as f64 / 1e9
     );
 
     // Transfer SOL from buybacks vault to sol_token_account for swap
@@ -741,17 +743,17 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
         dbtc_mining.price_history.len()
     );
 
-    // Earnmark SOL for POL in buybacks account
-    msg!("\n💰 === EARNMARKING SOL FOR POL ===");
+    // Earmark SOL for POL in buybacks account
+    msg!("\n💰 === EARMARKING SOL FOR POL ===");
     let previous_pol = buybacks_account.sol_for_pol;
     buybacks_account.sol_for_pol = buybacks_account
         .sol_for_pol
-        .checked_add(sol_for_pol_earnmark)
+        .checked_add(sol_for_pol_earmark)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
-        "   💵 Earnmarking: {} lamports ({} SOL)",
-        sol_for_pol_earnmark,
-        sol_for_pol_earnmark as f64 / 1e9
+        "   💵 Earmarking: {} lamports ({} SOL)",
+        sol_for_pol_earmark,
+        sol_for_pol_earmark as f64 / 1e9
     );
     msg!(
         "   📊 Previous POL balance: {} lamports ({} SOL)",
@@ -820,7 +822,7 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
     );
     msg!("   💰 MINE_BTC received from swap: {}", dbtc_received);
     msg!(
-        "   💎 SOL earnmarked for POL: {} SOL",
+        "   💎 SOL earmarked for POL: {} SOL",
         buybacks_account.sol_for_pol as f64 / 1e9
     );
     msg!("   ⏱️  Next snapshot available in: ~30 minutes");
@@ -832,7 +834,7 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
         dbtc_received,
         current_price,
         weighted_avg_price: current_weighted_avg,
-        sol_earnmarked_for_pol: sol_for_pol_earnmark,
+        sol_earmarked_for_pol: sol_for_pol_earmark,
         total_pol_balance: buybacks_account.sol_for_pol,
         price_history_count: dbtc_mining.price_history.len() as u8,
         timestamp: current_time,
@@ -2088,7 +2090,7 @@ pub struct AddLpAndBurn<'info> {
 
     /// SOL token account for LP addition. **Must be the canonical WSOL ATA
     /// owned by `authority_pda`** — without this binding, a caller could pass
-    /// an attacker-owned WSOL account and siphon the earnmarked
+    /// an attacker-owned WSOL account and siphon the earmarked
     /// `buybacks_account.sol_for_pol` through the early-return path (e.g. by
     /// also passing a zero-balance `sol_vault`). With the constraint, any
     /// SOL transferred here is held under `authority_pda`'s signer authority

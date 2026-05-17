@@ -232,7 +232,6 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
     game_session.jackpot_faction_id = 0;
     game_session.jackpot_pot_size_on_hit = 0;
     game_session.jackpot_rewards_index = 0;
-    game_session.jackpot_distributed = false;
     game_session.mutations_per_faction = [0u8; NUM_FACTIONS];
     game_session.total_mutations_this_round = 0;
     game_session.winning_faction_volume_at_round = 0;
@@ -632,9 +631,7 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
         0,
         0,
     ]) % JACKPOT_CHANCE;
-    game_session.jackpot_hit = jackpot_random == 0;
-
-    if game_session.jackpot_hit {
+    if jackpot_random == 0 {
         let jackpot_faction_seed = u64::from_le_bytes([
             final_hash_bytes[12],
             final_hash_bytes[13],
@@ -646,25 +643,36 @@ pub fn int_end_round(ctx: Context<EndRound>) -> Result<()> {
             0,
         ]);
 
-        game_session.jackpot_faction_id = select_jackpot_faction_excluding_winner(
+        let jackpot_faction_id = select_jackpot_faction_excluding_winner(
             jackpot_faction_seed,
             &game_session.sol_bets_by_faction,
             game_session.total_sol_bets,
             faction_count,
             winning_faction_id,
         )?;
+
+        let jackpot_faction_index = jackpot_faction_id as usize;
+        let total_jackpot_wgtd_pts: u64 = game_session.wgtd_points_bets_by_faction_direction
+            [jackpot_faction_index]
+            .iter()
+            .copied()
+            .try_fold(0u64, |acc, v| acc.checked_add(v))
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+
+        if total_jackpot_wgtd_pts > 0 {
+            game_session.jackpot_hit = true;
+            game_session.jackpot_faction_id = jackpot_faction_id;
+        } else {
+            game_session.jackpot_hit = false;
+            game_session.jackpot_faction_id = u8::MAX;
+            msg!(
+                "🎰 [end_round] jackpot roll ignored: selected_faction={} pot={} reason=no_eligible_bettors",
+                jackpot_faction_id,
+                global_state.jackpot_pot
+            );
+        }
     } else {
         game_session.jackpot_faction_id = u8::MAX; // sentinel: no jackpot this round
-    }
-
-    if !game_session.jackpot_hit && jackpot_random <= 10 {
-        emit!(crate::events::JackpotNearMiss {
-            round_id: game_session.round_id,
-            roll: jackpot_random,
-            threshold: 0,
-            pot_size: global_state.jackpot_pot,
-            timestamp: clock.unix_timestamp,
-        });
     }
 
     msg!(
@@ -992,7 +1000,6 @@ fn add_country_gameplay_score(
         score_source,
         score_added,
         faction_total_score: war_state.gameplay_scores[faction_index],
-        user: Pubkey::default(),
     });
 
     Ok(())
@@ -1046,10 +1053,7 @@ fn track_war_round_completion(
         round_score,
     )?;
 
-    if game_session.jackpot_hit
-        && game_session.jackpot_distributed
-        && game_session.jackpot_pot_size_on_hit > 0
-    {
+    if game_session.jackpot_hit && game_session.jackpot_pot_size_on_hit > 0 {
         let jackpot_faction_index = game_session.jackpot_faction_id as usize;
         require!(
             jackpot_faction_index < active_factions,
@@ -1256,66 +1260,41 @@ pub fn int_settle_round<'info>(accounts: &mut SettleRound<'info>, war_id: u64) -
     }
 
     // --- JACKPOT DISTRIBUTION (inline) ---
-    if !game_session.jackpot_distributed && game_session.jackpot_hit {
-        if global_state.jackpot_pot == 0 {
-            game_session.jackpot_distributed = true;
-        } else {
-            let jackpot_faction_id = game_session.jackpot_faction_id as usize;
-            require!(
-                jackpot_faction_id < NUM_FACTIONS,
-                ErrorCode::InvalidFactionId
-            );
-            let total_jackpot_wgtd_pts: u64 = game_session.wgtd_points_bets_by_faction_direction
-                [jackpot_faction_id]
-                .iter()
-                .copied()
-                .try_fold(0u64, |acc, v| acc.checked_add(v))
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
+    if game_session.jackpot_hit && global_state.jackpot_pot > 0 {
+        let jackpot_faction_id = game_session.jackpot_faction_id as usize;
+        require!(
+            jackpot_faction_id < NUM_FACTIONS,
+            ErrorCode::InvalidFactionId
+        );
+        let total_jackpot_wgtd_pts: u64 = game_session.wgtd_points_bets_by_faction_direction
+            [jackpot_faction_id]
+            .iter()
+            .copied()
+            .try_fold(0u64, |acc, v| acc.checked_add(v))
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        require!(total_jackpot_wgtd_pts > 0, ErrorCode::InvalidState);
 
-            let jackpot_bonus = global_state.jackpot_pot;
+        let jackpot_bonus = global_state.jackpot_pot;
+        global_state.jackpot_pot = 0;
+        game_session.jackpot_pot_size_on_hit = jackpot_bonus;
 
-            if total_jackpot_wgtd_pts > 0 {
-                global_state.jackpot_pot = 0;
-                game_session.jackpot_pot_size_on_hit = jackpot_bonus;
+        let jackpot_index =
+            helper::mul_div(jackpot_bonus, INDEX_PRECISION, total_jackpot_wgtd_pts)?;
+        game_session.jackpot_rewards_index = jackpot_index as u128;
 
-                let jackpot_index =
-                    helper::mul_div(jackpot_bonus, INDEX_PRECISION, total_jackpot_wgtd_pts)?;
-                game_session.jackpot_rewards_index = jackpot_index as u128;
-                game_session.jackpot_distributed = true;
+        msg!(
+            "🎰 jackpot_paid={} index={} faction={}",
+            jackpot_bonus,
+            jackpot_index,
+            jackpot_faction_id
+        );
 
-                msg!(
-                    "🎰 jackpot_paid={} index={} faction={}",
-                    jackpot_bonus,
-                    jackpot_index,
-                    jackpot_faction_id
-                );
-
-                emit!(crate::events::JackpotHit {
-                    round_id: game_session.round_id,
-                    faction_id: jackpot_faction_id as u8,
-                    jackpot_pot_size_on_hit: jackpot_bonus,
-                    jackpot_rewards_index: game_session.jackpot_rewards_index,
-                });
-            } else {
-                game_session.jackpot_pot_size_on_hit = 0;
-                game_session.jackpot_rewards_index = 0;
-                game_session.jackpot_distributed = true;
-
-                msg!(
-                    "🎰 jackpot rolled over: faction={} pot={}",
-                    jackpot_faction_id,
-                    jackpot_bonus
-                );
-
-                emit!(crate::events::JackpotRolledOver {
-                    round_id: game_session.round_id,
-                    faction_id: jackpot_faction_id as u8,
-                    pot_size: jackpot_bonus,
-                    reason: 0,
-                    timestamp: Clock::get()?.unix_timestamp,
-                });
-            }
-        }
+        emit!(crate::events::JackpotHit {
+            round_id: game_session.round_id,
+            faction_id: jackpot_faction_id as u8,
+            jackpot_pot_size_on_hit: jackpot_bonus,
+            jackpot_rewards_index: game_session.jackpot_rewards_index,
+        });
     }
 
     // --- FACTION_WAR MINING TRACKING (inline) ---
@@ -1384,6 +1363,8 @@ pub fn int_settle_round<'info>(accounts: &mut SettleRound<'info>, war_id: u64) -
         round_id: round_id_for_event,
         winning_faction_id: winning_faction_for_event,
         winning_direction: winning_direction_for_event,
+        sol_rewards_index: accounts.game_session.sol_rewards_index,
+        dbtc_rewards_index: accounts.game_session.dbtc_rewards_index,
         winning_faction_volume_at_round: volume_snapshot,
         timestamp: Clock::get()?.unix_timestamp,
     });
@@ -1449,6 +1430,7 @@ fn distribute_rewards_amg_stakers(
         emit!(DegenBtcStakingRewardsDistributed {
             round_id,
             faction_id: faction_state.faction_id,
+            total_degenbtc_hashpower: faction_state.total_degenbtc_hashpower,
             dbtc_staker_rewards: dbtc_dbtc_share,
             sol_staker_rewards: degenbtc_sol_share,
             degenbtc_degenbtc_reward_index: faction_state.degenbtc_degenbtc_reward_index,
@@ -1480,6 +1462,7 @@ fn distribute_rewards_amg_stakers(
         emit!(LpStakingRewardsDistributed {
             round_id,
             faction_id: faction_state.faction_id,
+            total_lp_hashpower: faction_state.total_lp_hashpower,
             dbtc_staker_rewards: lp_dbtc_share,
             sol_staker_rewards: lp_sol_share,
             lp_degenbtc_reward_index: faction_state.lp_degenbtc_reward_index,
@@ -1606,7 +1589,7 @@ pub struct SettleRound<'info> {
     )]
     pub global_config: Box<Account<'info, GlobalConfig>>,
 
-    /// Winning faction state (for updating staker rewards and jackpot payout)
+    /// Winning faction state for updating staker rewards.
     /// Validated manually against the winning faction ID and canonical
     /// `[FACTION_STATE_SEED, supported_factions[winning_faction_id]]` PDA.
     #[account(mut)]

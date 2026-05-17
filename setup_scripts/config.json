@@ -28,7 +28,7 @@
         "max_transfer_fee_amount": 1000000
     },
     "raydium": {
-        "program_id": "8b52ussHiWPCFRysaCBJEDPHzRDpEw5XtGpfLqGU5idE",
+        "program_id": "G2dhDdeFtehXgwT5L3qfPdrfCK7p8HzHPnH9QZkrQCkM",
         "use_official_program": false,
         "amm_config_index": 3,
         "trade_fee_rate": 10000,
@@ -142,7 +142,7 @@
         "collection_symbol": "HBEAST",
         "collection_description": "Casino-speed country wars meet evolving NFT beasts. Hashbeasts mutate, breed, rebirth, and help players mine degenBTC on Solana.",
         "collection_image": "https://gateway.irys.xyz/BCBG92F2ZDTcE1EScogd9q2xo8ommh3v28tktsACBaZ1",
-        "collection_uri": "https://gateway.irys.xyz/EW6DMffo9NYGD9aNbW46kW4K1WAQm2KMhBGAgRBCPhB6"
+        "collection_uri": "https://gateway.irys.xyz/94Xqjy7MUCyEt6JyvoX5GxWuUAeL9G3TdwBKL3fGqNTT"
     },
     "tax": {
         "_notes": "Splits sum need not be 100; the residual (100 - faction_treasury - burn) flows back to the mining vault. NFT market making is now funded from SOL — see global sol_fee_config.nft_market_making_pct, default 3%.",

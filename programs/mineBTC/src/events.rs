@@ -19,7 +19,9 @@ pub struct ReferralRewardsClaimed {
 pub struct SolFeesWithdrawn {
     pub available_solana: u64,
     pub buyback_amount: u64,
+    pub nft_market_making_amount: u64,
     pub dev_earnings_amount: u64,
+    pub timestamp: i64,
 }
 
 #[event]
@@ -47,15 +49,15 @@ pub struct FactionAdded {
 /// Price snapshot taken every 30 minutes (1-8 snapshots per 4-hour cycle)
 #[event]
 pub struct PriceSnapshotTaken {
-    pub snapshot_number: u8,         // 1-8 (which snapshot in the cycle)
-    pub sol_swapped: u64,            // SOL amount swapped (lamports)
-    pub dbtc_received: u64,          // MINE_BTC received from swap (6 decimals)
-    pub current_price: u64,          // Calculated price (9 decimals: SOL per MINE_BTC)
-    pub weighted_avg_price: u64,     // Weighted average price so far (9 decimals)
-    pub sol_earnmarked_for_pol: u64, // SOL earnmarked for POL this snapshot (lamports)
-    pub total_pol_balance: u64,      // Total SOL earnmarked for POL (lamports)
-    pub price_history_count: u8,     // Number of entries in price history (1-8)
-    pub timestamp: i64,              // Unix timestamp
+    pub snapshot_number: u8,        // 1-8 (which snapshot in the cycle)
+    pub sol_swapped: u64,           // SOL amount swapped (lamports)
+    pub dbtc_received: u64,         // MINE_BTC received from swap (6 decimals)
+    pub current_price: u64,         // Calculated price (9 decimals: SOL per MINE_BTC)
+    pub weighted_avg_price: u64,    // Weighted average price so far (9 decimals)
+    pub sol_earmarked_for_pol: u64, // SOL earmarked for POL this snapshot (lamports)
+    pub total_pol_balance: u64,     // Total SOL earmarked for POL (lamports)
+    pub price_history_count: u8,    // Number of entries in price history (1-8)
+    pub timestamp: i64,             // Unix timestamp
 }
 
 /// Liquidity added to Raydium pool (before burning LP tokens)
@@ -602,6 +604,8 @@ pub struct RoundEnded {
 pub struct DegenBtcStakingRewardsDistributed {
     pub round_id: u64,
     pub faction_id: u8,
+    /// Hashpower denominator used to compute the emitted reward indexes.
+    pub total_degenbtc_hashpower: u64,
     pub dbtc_staker_rewards: u64,
     pub sol_staker_rewards: u64,
     pub degenbtc_degenbtc_reward_index: u128,
@@ -612,16 +616,18 @@ pub struct DegenBtcStakingRewardsDistributed {
 pub struct LpStakingRewardsDistributed {
     pub round_id: u64,
     pub faction_id: u8,
+    /// Hashpower denominator used to compute the emitted reward indexes.
+    pub total_lp_hashpower: u64,
     pub dbtc_staker_rewards: u64,
     pub sol_staker_rewards: u64,
     pub lp_degenbtc_reward_index: u128,
     pub lp_sol_reward_index: u128,
 }
 
-/// Event emitted by `distribute_jackpot_rewards` when the jackpot pot was
+/// Event emitted by `settle_round` when the global jackpot pot was
 /// successfully paid out to bettors on `faction_id`. Note that `faction_id`
 /// here is the JACKPOT faction (selected by inverse-volume weighting), NOT
-/// the round winner — see game.rs:777-783.
+/// the round winner.
 #[event]
 pub struct JackpotHit {
     pub round_id: u64,
@@ -634,28 +640,6 @@ pub struct JackpotHit {
     pub jackpot_rewards_index: u128,
 }
 
-/// Event emitted when the jackpot roll was close to hitting (within top 10 closest rolls).
-/// Used by the frontend to hook users with near-miss notifications.
-#[event]
-pub struct JackpotNearMiss {
-    pub round_id: u64,
-    pub roll: u64,
-    pub threshold: u64,
-    pub pot_size: u64,
-    pub timestamp: i64,
-}
-
-/// Event emitted when the jackpot hits but there are no eligible winners
-/// to receive it. The pot rolls over and keeps accumulating.
-#[event]
-pub struct JackpotRolledOver {
-    pub round_id: u64,
-    pub faction_id: u8,
-    pub pot_size: u64,
-    pub reason: u8, // 0 = no exact winners, 1+ reserved for future
-    pub timestamp: i64,
-}
-
 /// Event emitted by `settle_round` after `track_war_round_completion`
 /// runs. Carries the drought-volume snapshot that fed into the mutation roll for
 /// this round's claimers (state.rs:1048-1053, used at user.rs:1689).
@@ -664,6 +648,12 @@ pub struct RewardsDistributedForRound {
     pub round_id: u64,
     pub winning_faction_id: u8,
     pub winning_direction: u8,
+    /// Final exact-winner SOL index after settle_round redirects any orphaned
+    /// staker SOL fees back to exact winners.
+    pub sol_rewards_index: u128,
+    /// Final exact-winner degenBTC index after settle_round redirects any
+    /// orphaned staker degenBTC back to exact winners.
+    pub dbtc_rewards_index: u128,
     /// Frozen value of the winning faction's `sol_volume_since_last_win` at
     /// round-end, BEFORE the counter was reset to 0. Late claims hours later
     /// will still see this same number when computing volume_factor.
@@ -679,9 +669,17 @@ pub struct RewardsDistributedForRound {
 #[event]
 pub struct TaxDistributed {
     pub total_tax_amount: u64,
+    /// Pre-fee amount transferred toward the faction treasury vault.
     pub faction_treasury_amount: u64,
+    /// Post-fee amount actually delivered and credited to a faction war.
+    pub faction_treasury_credit: u64,
     pub burn_amount: u64,
+    /// Amount returned to the degenBTC emission vault.
+    pub vault_return_amount: u64,
     pub total_burnt: u64,
+    pub war_id: u64,
+    pub credited_to_active_war: bool,
+    pub unassigned_war_treasury_amount: u64,
     pub timestamp: i64,
 }
 
@@ -816,6 +814,10 @@ pub struct FactionWarSettled {
     pub mvp_bonus: [u64; NUM_FACTIONS],
     /// Per-faction MVP user (default pubkey = no MVP this cycle).
     pub mvp_user: [Pubkey; NUM_FACTIONS],
+    /// Per-faction winning MVP score.
+    pub mvp_score: [u64; NUM_FACTIONS],
+    /// Per-faction HashBeast mutation-score denominator for HB bonus claims.
+    pub faction_mutation_scores: [u64; NUM_FACTIONS],
     pub round_wins: [u16; NUM_FACTIONS],
     pub gameplay_scores: [u64; NUM_FACTIONS],
     pub timestamp: i64,
@@ -854,14 +856,12 @@ pub struct CycleEndRoundSnapshotted {
 ///
 /// - `score_source = GAMEPLAY_SCORE_SOURCE_ROUND_WIN (0)`: end-of-round
 ///   accumulation when a country wins. `score_added` equals the round's
-///   total weighted points bet on that country (any direction). `user` is
-///   `Pubkey::default()` — no specific user owns this contribution.
+///   total weighted points bet on that country (any direction).
 ///
 /// - `score_source = GAMEPLAY_SCORE_SOURCE_JACKPOT_HIT (2)`: jackpot
 ///   accumulation when the independently selected jackpot country actually
 ///   receives the pot. `score_added` equals the round's total weighted points
-///   bet on that jackpot country (any direction). `user` is
-///   `Pubkey::default()`.
+///   bet on that jackpot country (any direction).
 ///
 /// - `score_source = GAMEPLAY_SCORE_SOURCE_MUTATION_BONUS (1)`: per-claim
 ///   bonus when a player's round-claim mutation roll succeeds and the
@@ -879,19 +879,6 @@ pub struct GameplayScoreAccumulated {
     pub score_source: u8,
     pub score_added: u64,
     pub faction_total_score: u64,
-    pub user: Pubkey,
-}
-
-/// Event emitted when a faction war MVP is determined at settlement.
-/// The #1 ranked faction's top contributor receives a bonus.
-#[event]
-pub struct FactionWarMvp {
-    pub war_id: u64,
-    pub faction_id: u8,
-    pub user: Pubkey,
-    pub mvp_score: u64,
-    pub bonus_amount: u64,
-    pub timestamp: i64,
 }
 
 /// Event emitted when a user claims faction_war rewards. dBTC amounts are

@@ -24,6 +24,7 @@
  *     crankDistributeTax()      // splits mint-withheld into faction/burn/recycle
  *
  *   ── game cranker ──
+ *     initializeFactionWar()    // ONE-OFF per 4h cycle, before first start_round
  *     startRound(roundId)
  *     endRound()                // reveals entropy + picks winner
  *     settleRound()             // pays stakers, folds round into faction-war cycle
@@ -31,6 +32,39 @@
  *
  *   ── NFT marketplace cranker ──
  *     recordFloorSnapshot()
+ *
+ * ───────────────────────────────────────────────────────────────────
+ *  LIFECYCLE — read this before editing `main()`
+ * ───────────────────────────────────────────────────────────────────
+ *
+ *  ONE-TIME (run by 1_/2_/3_init_* scripts, not here): initialize, add_faction,
+ *  initialize_war_config, initialize_mining, etc.
+ *
+ *  PER 4H CYCLE (war_id):
+ *    1. initializeFactionWar()              // creates faction-war PDA for current war_id
+ *    2. snapshotPrice()  x8                 // every ~30 min during the cycle
+ *    3. updateRate()                        // after 8th snapshot
+ *    4. addLpAndBurn()                      // burns LP — when lp_op_count crosses
+ *                                           //   `settle_at_lp_op_count`, the contract
+ *                                           //   emits CycleEndRoundSnapshotted and
+ *                                           //   locks cycle_end_round_id.
+ *
+ *  PER ROUND (every ~2 min within the active cycle):
+ *    a. startRound()                        // requires war_state for war_id
+ *    b. (users place bets — join_bets)
+ *    c. endRound()                          // entropy reveal, picks winner
+ *    d. settleRound()                       // pays stakers + faction-war mining
+ *
+ *  END OF CYCLE (once cycle_end_round_id has been settled):
+ *    5. settleFactionWar()                  // permissionless, finalizes ranks
+ *    6. crankDistributeTax(war_id)          // splits accumulated tax to factions
+ *
+ *  → THEN GO BACK TO STEP 1 with the NEXT war_id.
+ *
+ *  Periodic (any time):
+ *    distributeSolFees()                    // drain sol_treasury to buyback + dev
+ *    crankHarvestFees()                     // pull withheld fees from holder ATAs
+ *    recordFloorSnapshot()                  // daily, for NFT floor anchor
  */
 
 import {
@@ -623,6 +657,49 @@ async function crankDistributeTax() {
 //  GAME CRANKER
 // ════════════════════════════════════════════════════════════════════
 
+/**
+ * Initialize the FactionWarState + FactionWarSettlement PDAs for the current
+ * war_id. Must be called once per 4h cycle BEFORE the cycle's first
+ * `start_round`, otherwise start_round errors with AccountNotInitialized on
+ * `war_state` (3012 / 0xbc4). Permissionless — anyone can call.
+ *
+ * Idempotent in practice: if the PDAs already exist on-chain for this war_id
+ * the call fails (account already initialized) — catch and continue.
+ */
+async function initializeFactionWar(warId) {
+  if (warId == null) warId = await fetchFactionWarId();
+  banner(`INIT FACTION WAR ${warId}`);
+
+  // Skip if already initialized — avoids a wasted tx + the AccountAlreadyInitialized revert.
+  try {
+    const existing = await program.account.factionWarState.fetch(
+      deriveFactionWarStatePda(warId)
+    );
+    if (existing) {
+      ok(`war ${warId} already initialized — skipping`);
+      return { warId, sig: null };
+    }
+  } catch (_) {
+    // not found yet — proceed with init
+  }
+
+  const tx = await program.methods.initializeFactionWar(new BN(warId)).accounts({
+    globalConfig: globalConfigPda,
+    warConfig: factionWarConfigPda,
+    warState: deriveFactionWarStatePda(warId),
+    warSettlement: deriveFactionWarSettlementPda(warId),
+    taxConfig: taxConfigPda,
+    dbtcMining: mineBtcMiningPda,
+    authority: walletKeypair.publicKey,
+    systemProgram: SystemProgram.programId,
+  }).transaction();
+
+  const sig = await send(tx, 400_000);
+  ok(`war ${warId} initialized: ${sig}`);
+  console.log(`   ${explorer(sig)}`);
+  return { warId, sig };
+}
+
 async function startRound(roundId) {
   if (!roundId) {
     const gs = await program.account.globalGameSate.fetch(globalGameStatePda);
@@ -630,12 +707,23 @@ async function startRound(roundId) {
   }
   banner(`START ROUND ${roundId}`);
 
+  // start_round requires war_state for war_config.current_war_id. If it's
+  // missing the on-chain ix reverts AccountNotInitialized (3012). Init lazily
+  // so the cranker is self-healing across cycle boundaries.
+  const warId = await fetchFactionWarId();
+  await initializeFactionWar(warId).catch((err) => {
+    // Tolerate "already initialized" — anything else should bubble.
+    if (!/already in use|already initialized|AccountAlready/i.test(String(err?.message || ""))) {
+      throw err;
+    }
+  });
+
   const tx = await program.methods.startRound(new BN(roundId)).accounts({
     globalConfig: globalConfigPda,
     globalGameState: globalGameStatePda,
     gameSession: deriveGameSessionPda(roundId),
     warConfig: factionWarConfigPda,
-    warState: deriveFactionWarStatePda(await fetchFactionWarId()),
+    warState: deriveFactionWarStatePda(warId),
     authority: walletKeypair.publicKey,
     systemProgram: SystemProgram.programId,
   }).transaction();
@@ -707,11 +795,6 @@ async function settleRound() {
     { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
   logEvents(txInfo);
   return { roundId, sig };
-}
-
-async function distributeJackpotRewards() {
-  warn("distribute_jackpot_rewards was removed; jackpot settlement is part of settle_round.");
-  return { skipped: true };
 }
 
 async function settleFactionWar() {
@@ -800,31 +883,47 @@ async function recordFloorSnapshot() {
 // ════════════════════════════════════════════════════════════════════
 
 async function main() {
-  // ── status / inspection ──
+  // ── status / inspection (run anytime) ──
   // await printState();
   // await printGameState();
 
-  // ── economy cranker ──
-  // await sendSolToTreasury(0.05);
+  // ════════════════════════════════════════════════════════════════
+  //  PER 4H CYCLE — call ONCE when current_war_id advances
+  // ════════════════════════════════════════════════════════════════
+  // await initializeFactionWar();   // creates war_state PDA for current war_id
+                                     // (startRound now lazy-inits this too, but
+                                     //  calling explicitly makes the cycle boundary
+                                     //  observable in tx history.)
 
-  await distributeSolFees();
-  // await snapshotPrice();          // 8x with ~5min gaps to fill price_history
-  // await updateRate();             // run after 8th snapshot
-  // await addLpAndBurn();           // run after update_rate (lp_operation_pending=true)
-  // await crankHarvestFees();       // pull withheld fees from holder ATAs → mint
-  // await crankDistributeTax();     // split mint-withheld 25% faction / 50% burn / 25% recycle
+  // ════════════════════════════════════════════════════════════════
+  //  PER ROUND LOOP  — repeat a → c → d every ~2 min
+  // ════════════════════════════════════════════════════════════════
+  // await startRound();             // a. opens new round (auto-inits war_state if needed)
+  await endRound();                // c. reveal entropy + pick winner (wait for round timer)
+  await settleRound();             // d. pay stakers + advance faction-war mining
 
-  // ── game cranker ──
-  // await startRound();             // auto-picks current+1; pass an id to override
+  // ════════════════════════════════════════════════════════════════
+  //  PRICE / EMISSION RAIL  — runs ~every 30 min inside the cycle
+  // ════════════════════════════════════════════════════════════════
+  // await snapshotPrice();          // 8x per cycle (every ~30 min)
+  // await updateRate();             // ONCE after 8th snapshot
+  // await addLpAndBurn();           // ONCE after update_rate flips lp_operation_pending
+  //                                 // (crosses settle_at_lp_op_count → locks cycle_end_round_id)
 
-  // await endRound();                // reveals entropy + picks winner
-  // await distributeJackpotRewards(); // removed; jackpot handling is inside settleRound()
-  // await settleRound();             // pays stakers, advances faction-war mining
+  // ════════════════════════════════════════════════════════════════
+  //  END OF CYCLE — runs ONCE after cycle_end_round_id is settled
+  // ════════════════════════════════════════════════════════════════
+  // await settleFactionWar();        // permissionless, finalizes ranks
+  // await crankDistributeTax();      // split accumulated tax: 25% faction / 50% burn / 25% recycle
+  //                                  // → loop back: call initializeFactionWar() for the NEW war_id
 
-  // await settleFactionWar();        // permissionless, gated by LP-burn count
-
-  // ── nft marketplace cranker ──
-  // await recordFloorSnapshot();     // daily floor anchor snapshot for breeding/sweep
+  // ════════════════════════════════════════════════════════════════
+  //  PERIODIC (independent of round/cycle cadence)
+  // ════════════════════════════════════════════════════════════════
+  // await sendSolToTreasury(0.05);   // top up sol_treasury for testing
+  // await distributeSolFees();       // drain sol_treasury → buyback + dev multisig
+  // await crankHarvestFees();        // pull withheld fees from holder ATAs into mint
+  // await recordFloorSnapshot();     // ~daily floor anchor for breed/sweep pricing
 }
 
 main().catch((err) => {
