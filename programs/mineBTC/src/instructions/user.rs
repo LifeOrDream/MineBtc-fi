@@ -391,10 +391,6 @@ pub fn internal_execute_autominer_bet<'info>(
     custody_bump: u8,
 ) -> Result<()> {
     crate::log_fn!("user", "internal_execute_autominer_bet");
-    require!(
-        accounts.system_program.key() == anchor_lang::system_program::ID,
-        ErrorCode::InvalidProgramId
-    );
     let (expected_sol_treasury, _) =
         Pubkey::find_program_address(&[SOL_TREASURY_SEED.as_ref()], &crate::ID);
     require!(
