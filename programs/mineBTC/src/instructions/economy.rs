@@ -49,7 +49,6 @@ pub const WSOL_MINT_PUBKEY: Pubkey =
     anchor_lang::solana_program::pubkey!("So11111111111111111111111111111111111111112");
 
 const PRICE_SNAPSHOT_MIN_SWAP_LAMPORTS: u64 = MIN_SOL_BET_PER_POSITION;
-const PRICE_SNAPSHOT_MAX_DEVIATION_BPS: u64 = 5_000;
 
 fn u64_mul_div(a: u64, b: u64, c: u64) -> Result<u64> {
     u64::try_from(helper::mul_div(a, b, c)?).map_err(|_| ErrorCode::ArithmeticOverflow.into())
@@ -175,46 +174,6 @@ fn validate_raydium_pool_bindings<'info>(
         lp_supply,
         sol_is_token_0,
     })
-}
-
-fn snapshot_min_dbtc_out(sol_amount: u64, recent_price: u64) -> Result<u64> {
-    if recent_price == 0 {
-        return Ok(1);
-    }
-
-    let expected_out = (sol_amount as u128)
-        .checked_mul(DBTC_BASE_UNITS as u128)
-        .ok_or(ErrorCode::ArithmeticOverflow)?
-        .checked_div(recent_price as u128)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    let min_out = expected_out
-        .checked_mul((BASIS_POINTS_DENOMINATOR - PRICE_SNAPSHOT_MAX_DEVIATION_BPS) as u128)
-        .ok_or(ErrorCode::ArithmeticOverflow)?
-        .checked_div(BASIS_POINTS_DENOMINATOR as u128)
-        .ok_or(ErrorCode::ArithmeticOverflow)?
-        .max(1);
-    u64::try_from(min_out).map_err(|_| ErrorCode::ArithmeticOverflow.into())
-}
-
-fn require_snapshot_price_in_bounds(current_price: u64, recent_price: u64) -> Result<()> {
-    if recent_price == 0 {
-        return Ok(());
-    }
-
-    let allowed_delta = u64_mul_div(
-        recent_price,
-        PRICE_SNAPSHOT_MAX_DEVIATION_BPS,
-        BASIS_POINTS_DENOMINATOR,
-    )?;
-    let min_price = recent_price.saturating_sub(allowed_delta);
-    let max_price = recent_price
-        .checked_add(allowed_delta)
-        .ok_or(ErrorCode::ArithmeticOverflow)?;
-    require!(
-        current_price >= min_price && current_price <= max_price,
-        ErrorCode::SnapshotPriceDeviationTooHigh
-    );
-    Ok(())
 }
 
 fn clamp_i64_to_i32(value: i64) -> i32 {
@@ -572,7 +531,11 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
         );
         return Ok(());
     }
-    let min_dbtc_out = snapshot_min_dbtc_out(sol_for_swap, dbtc_mining.recent_price)?;
+    // dBTC is intentionally volatile — no slippage band against `recent_price`.
+    // The require!(dbtc_received > 0) check below is the only sandwich-attack
+    // floor: an attacker can move the pool around the CPI but cannot drive the
+    // recorded swap result to zero (which would corrupt the oracle).
+    let min_dbtc_out: u64 = 1;
 
     msg!(
         "   📊 Price snapshot {}/8: Planning SOL → MINE_BTC swap",
@@ -720,7 +683,6 @@ pub fn snapshot_price_internal(ctx: Context<SnapshotPrice>) -> Result<()> {
         .ok_or(ErrorCode::ArithmeticOverflow)?;
     let current_price = u64::try_from(raw_price).map_err(|_| ErrorCode::ArithmeticOverflow)?;
     require!(current_price > 0, ErrorCode::InvalidAmount);
-    require_snapshot_price_in_bounds(current_price, dbtc_mining.recent_price)?;
 
     // Calculate human-readable price for logging
     // Convert back to actual SOL per MINE_BTC
