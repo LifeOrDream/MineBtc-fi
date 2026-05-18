@@ -329,6 +329,13 @@ pub fn int_stake_degenbtc(
         new_sol_rewards,
         new_dbtc_rewards,
         unrefined_dbtc: 0,
+        // After int_update_dbtc_staking_rewards, player.*_reward_debt was
+        // set to the current faction index. These two fields let the indexer
+        // mirror that without a chain read.
+        new_degenbtc_sol_reward_debt: player_data.degenbtc_sol_reward_debt,
+        new_degenbtc_dbtc_reward_debt: player_data.degenbtc_degenbtc_reward_debt,
+        total_pending_sol_rewards: player_data.pending_sol_rewards,
+        total_pending_staking_dbtc_rewards: player_data.pending_staking_dbtc_rewards,
         timestamp: current_ts,
     });
 
@@ -617,6 +624,10 @@ pub fn int_unstake_degenbtc(ctx: Context<UnstakeMineBtc>, position_index: u8) ->
         unrefined_dbtc: 0,
         original_amount: staked_amount,
         returned_amount: return_amount,
+        new_degenbtc_sol_reward_debt: player_data.degenbtc_sol_reward_debt,
+        new_degenbtc_dbtc_reward_debt: player_data.degenbtc_degenbtc_reward_debt,
+        total_pending_sol_rewards: player_data.pending_sol_rewards,
+        total_pending_staking_dbtc_rewards: player_data.pending_staking_dbtc_rewards,
         timestamp: current_ts,
     });
 
@@ -882,6 +893,10 @@ pub fn int_stake_lp_tokens(
         new_sol_rewards,
         new_dbtc_rewards,
         unrefined_dbtc: 0,
+        new_lp_sol_reward_debt: player_data.lp_sol_reward_debt,
+        new_lp_dbtc_reward_debt: player_data.lp_degenbtc_reward_debt,
+        total_pending_sol_rewards: player_data.pending_sol_rewards,
+        total_pending_staking_dbtc_rewards: player_data.pending_staking_dbtc_rewards,
         timestamp: current_ts,
     });
 
@@ -1160,6 +1175,10 @@ pub fn int_unstake_lp_tokens(ctx: Context<UnstakeLpTokens>, position_index: u8) 
         unrefined_dbtc: 0,
         original_amount: staked_amount,
         returned_amount: return_amount,
+        new_lp_sol_reward_debt: player_data.lp_sol_reward_debt,
+        new_lp_dbtc_reward_debt: player_data.lp_degenbtc_reward_debt,
+        total_pending_sol_rewards: player_data.pending_sol_rewards,
+        total_pending_staking_dbtc_rewards: player_data.pending_staking_dbtc_rewards,
         timestamp: current_ts,
     });
 
