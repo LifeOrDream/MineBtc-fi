@@ -47,3 +47,4 @@ raydium/tsconfig.json
 raydium/yarn.lock
 raydium/tests/
 .superstack/learnings.md
+new-mainnet-keypair.json
