@@ -169,12 +169,10 @@
 //! # File layout
 //!
 //! 1. **Helpers** — pure/computation functions (rankings, reward pools, etc.)
-//! 2. **Lifecycle functions** — ordered by call sequence
-//!      · `initialize_war_config_internal`     (admin, once)
-//!      · `initialize_war_internal`            (cranker, per cycle start)
-//!      · `finalize_war_settlement`            (internal, called by settle)
-//!      · `settle_war_internal`                (cranker, per cycle end)
-//!      · `claim_war_rewards_internal`         (user claim)
+//! 2. **Lifecycle functions** — ordered by call sequence:
+//!    `initialize_war_config_internal`, `initialize_war_internal`,
+//!    `finalize_war_settlement`, `settle_war_internal`, and
+//!    `claim_war_rewards_internal`.
 //! 3. **Account structs** — all `#[derive(Accounts)]` grouped at the end,
 //!    same order as the handlers above.
 
@@ -2403,8 +2401,8 @@ mod tests {
     fn mvp_distribute_all_eligible_top_4() {
         let pool: u64 = 740_000;
         let mut mvp_user = no_mvps();
-        for fid in 0..4 {
-            mvp_user[fid] = user(fid as u8 + 1);
+        for (fid, slot) in mvp_user.iter_mut().enumerate().take(4) {
+            *slot = user(fid as u8 + 1);
         }
         // Final ranks: faction id == rank for simplicity
         let final_ranks = [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0];
@@ -2464,8 +2462,8 @@ mod tests {
         // Target eligible share = pool × 3600 / 10000 = 360_000.
         // Residual ≈ 640_000 (with up to ±1 rounding).
         let allocated: u64 = bonuses.iter().sum();
-        assert!(allocated >= 359_999 && allocated <= 360_001);
-        assert!(residual >= 639_999 && residual <= 640_001);
+        assert!((359_999..=360_001).contains(&allocated));
+        assert!((639_999..=640_001).contains(&residual));
         // rank 0 > rank 5 (#1 weight > #5 weight)
         assert!(bonuses[0] > bonuses[5]);
     }
@@ -2486,8 +2484,8 @@ mod tests {
     #[test]
     fn mvp_distribute_rank_zero_gets_most() {
         let mut mvp_user = no_mvps();
-        for fid in 0..3 {
-            mvp_user[fid] = user(fid as u8 + 1);
+        for (fid, slot) in mvp_user.iter_mut().enumerate().take(3) {
+            *slot = user(fid as u8 + 1);
         }
         let final_ranks = [0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         let mut bonuses = [0u64; NUM_FACTIONS];
@@ -2507,9 +2505,9 @@ mod tests {
         final_ranks[7] = 0;
         final_ranks[3] = 1;
         // others at rank 2..
-        for fid in 0..NUM_FACTIONS {
+        for (fid, rank) in final_ranks.iter_mut().enumerate().take(NUM_FACTIONS) {
             if fid != 7 && fid != 3 {
-                final_ranks[fid] = (fid as u8 + 2).min(11);
+                *rank = (fid as u8 + 2).min(11);
             }
         }
         let mut bonuses = [0u64; NUM_FACTIONS];
@@ -2527,8 +2525,8 @@ mod tests {
     #[test]
     fn split_sol_mvp_all_eligible_no_residual() {
         let mut mvp_user = no_mvps();
-        for fid in 0..4 {
-            mvp_user[fid] = user(fid as u8 + 1);
+        for (fid, slot) in mvp_user.iter_mut().enumerate().take(4) {
+            *slot = user(fid as u8 + 1);
         }
         let final_ranks = [0, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0];
         let (eligible, residual) =
@@ -2558,7 +2556,7 @@ mod tests {
         // Lamports conserved.
         assert_eq!(eligible + residual, 1_000_000);
         // Eligible weight = 3000 + 600 = 3600 of 10_000 total → ~36%.
-        assert!(eligible >= 359_999 && eligible <= 360_001);
+        assert!((359_999..=360_001).contains(&eligible));
     }
 
     #[test]

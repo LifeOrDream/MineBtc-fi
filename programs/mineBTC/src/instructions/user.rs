@@ -2595,13 +2595,13 @@ fn sync_claim_hashbeast_state<'info>(
     Ok(())
 }
 
-/// Join a round by betting SOL or using free tickets (single prediction).
-/// Each bet selects a faction and a faction_war direction.
-///
-/// Parameters:
-/// - bet_types: Vector of bet types (`FactionDirection { faction_id, direction }`)
-/// - amount_per_bet: Bet amount in lamports (for SOL) or points (for tickets). 1 point = 1 SOL lamport
-/// - use_ticket: Optional ticket type index (0-4). If None, uses SOL. If Some(index), uses ticket from free_tickets[index]
+// Join a round by betting SOL or using free tickets (single prediction).
+// Each bet selects a faction and a faction_war direction.
+//
+// Parameters:
+// - bet_types: Vector of bet types (`FactionDirection { faction_id, direction }`)
+// - amount_per_bet: Bet amount in lamports (for SOL) or points (for tickets). 1 point = 1 SOL lamport
+// - use_ticket: Optional ticket type index (0-4). If None, uses SOL. If Some(index), uses ticket from free_tickets[index]
 // The cycle's FactionWarState PDA is created exclusively by
 // `initialize_war_internal` (cranker). The cranker must run that ix before
 // any rounds (and therefore any bets) can land in the cycle — start_round
