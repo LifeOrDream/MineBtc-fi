@@ -924,7 +924,7 @@ async function main() {
   //  END OF CYCLE — runs ONCE after cycle_end_round_id is settled
   // ════════════════════════════════════════════════════════════════
   // await settleFactionWar();        // permissionless, finalizes ranks
-  await crankDistributeTax();      // split accumulated tax: 25% faction / 50% burn / 25% recycle
+  // await crankDistributeTax();      // split accumulated tax: 25% faction / 50% burn / 25% recycle
   //                                  // → loop back: call initializeFactionWar() for the NEW war_id
 
   // ════════════════════════════════════════════════════════════════

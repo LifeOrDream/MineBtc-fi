@@ -1633,7 +1633,7 @@ impl AutominerVault {
         1 +     // can_reload (bool)
         1 + 1 + // use_ticket Option<u8> (1 byte discriminator + 1 byte value)
         4 +     // pending_autominer_claims (u32)
-        8;      // accrued_reload_sol (u64)
+        8; // accrued_reload_sol (u64)
 }
 
 // ========================================================================================

@@ -457,14 +457,12 @@ pub mod minebtc {
         tax::internal_update_tax_config(ctx, treasury_pct, burn_pct)
     }
 
-
     /// Initialize faction_war configuration (admin only).
     /// FactionWar duration is tied to the economy cycle -- one faction_war per LP burn.
     pub fn initialize_war_config(ctx: Context<InitializeFactionWarConfig>) -> Result<()> {
         crate::log_fn!("lib", "initialize_war_config");
         faction_war::initialize_war_config_internal(ctx)
     }
-
 
     // ----------------------------------------------------------------------------------------
     // ------------ GAME STATE MANAGEMENT (ADMIN) ------------------------------------
@@ -534,8 +532,6 @@ pub mod minebtc {
         economy::add_lp_and_burn_internal(ctx, lp_token_amount)
     }
 
- 
-
     // ----------------------------------------------------------------------------------------
     // ------------ GAME ROUND MANAGEMENT (SLOT-HASH RANDOMNESS) ------------------------
     // ----------------------------------------------------------------------------------------
@@ -559,11 +555,9 @@ pub mod minebtc {
         game::int_settle_round(ctx.accounts, war_id)
     }
 
-
     // ----------------------------------------------------------------------------------------
     // ------------ FACTION_WAR MINING SYSTEM -------------------------------------------------------
     // ----------------------------------------------------------------------------------------
-
 
     /// DONE -::- Initialize a new faction war state PDA.
     /// Must be called once per war cycle before the first round's settle_round.
@@ -572,7 +566,6 @@ pub mod minebtc {
         crate::log_fn!("lib", "initialize_faction_war");
         faction_war::initialize_war_internal(ctx, war_id)
     }
-
 
     /// DONE -::- Settle faction_war: finalize gameplay-score rankings and compute reward pools.
     /// Permissionless -- anyone can call once the economy cycle's LP burn has completed.
@@ -612,7 +605,6 @@ pub mod minebtc {
         crate::log_fn!("lib", "claim_faction_treasury_for_faction_war");
         tax::internal_claim_faction_treasury_for_faction_war(ctx, war_id)
     }
-
 
     // ----------------------------------------------------------------------------------------
     // ------------ PLAYER & BETTING FUNCTIONS ------------------------------------------------
