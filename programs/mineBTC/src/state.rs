@@ -1604,6 +1604,16 @@ pub struct AutominerVault {
     /// Ticket mode still reserves SOL upfront to compensate the keeper for each execution.
     /// Bet amount is determined by the ticket value in player_data.free_tickets[tier].
     pub use_ticket: Option<u8>,
+
+    /// Autominer-placed bets that haven't been claimed yet. Incremented in
+    /// `execute_autominer_bet` after a successful bet, decremented in
+    /// `claim_autominer_rewards`. When this hits 0 in claim, that claim is the
+    /// last unclaimed bet of the current funded cycle → bulk-reload trigger.
+    pub pending_autominer_claims: u32,
+    /// SOL rewards won during the current funded cycle, parked in
+    /// `autominer_custody`, awaiting bulk-conversion to additional rounds on
+    /// the final claim. Refunded to owner on `stop_autominer`.
+    pub accrued_reload_sol: u64,
 }
 
 impl AutominerVault {
@@ -1621,7 +1631,9 @@ impl AutominerVault {
         1 +     // vault_bump
         8 +     // sol_balance
         1 +     // can_reload (bool)
-        1 + 1; // use_ticket Option<u8> (1 byte discriminator + 1 byte value)
+        1 + 1 + // use_ticket Option<u8> (1 byte discriminator + 1 byte value)
+        4 +     // pending_autominer_claims (u32)
+        8;      // accrued_reload_sol (u64)
 }
 
 // ========================================================================================
