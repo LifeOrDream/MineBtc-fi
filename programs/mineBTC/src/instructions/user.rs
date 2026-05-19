@@ -294,6 +294,8 @@ pub fn internal_init_autominer(
     autominer_vault.sol_balance = total_sol;
     autominer_vault.can_reload = can_reload;
     autominer_vault.use_ticket = use_ticket;
+    autominer_vault.pending_autominer_claims = 0;
+    autominer_vault.accrued_reload_sol = 0;
 
     // Transfer SOL to global autominer custody.
     if total_sol > 0 {
@@ -540,6 +542,14 @@ pub fn internal_execute_autominer_bet<'info>(
         accounts.referrer_rewards.as_mut(),
     )?;
 
+    // Bet placed successfully; this bet now expects a future claim. Drives the
+    // bulk-reload trigger in `claim_autominer_rewards`.
+    accounts.autominer_vault.pending_autominer_claims = accounts
+        .autominer_vault
+        .pending_autominer_claims
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+
     Ok(())
 }
 
@@ -648,29 +658,36 @@ pub fn internal_stop_autominer(ctx: Context<StopAutominer>) -> Result<()> {
     let owner_key = ctx.accounts.autominer_vault.owner;
     let rounds_remaining = ctx.accounts.autominer_vault.rounds_remaining;
     let sol_balance = ctx.accounts.autominer_vault.sol_balance;
+    let accrued_reload_sol = ctx.accounts.autominer_vault.accrued_reload_sol;
 
     require!(
         ctx.accounts.authority.key() == owner_key,
         ErrorCode::Unauthorized
     );
 
-    // Refund remaining SOL to owner (transfer from custody PDA to owner)
-    if sol_balance > 0 {
+    // Refund both the funded-rounds reserve (`sol_balance`) and any earned-but-
+    // not-yet-converted SOL parked in `accrued_reload_sol`. Both buckets sit in
+    // the same custody PDA, so a single transfer of the sum returns it all.
+    let refund_amount = sol_balance
+        .checked_add(accrued_reload_sol)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    if refund_amount > 0 {
         helper::transfer_from_autominer_custody(
             &ctx.accounts.autominer_custody.to_account_info(),
             &ctx.accounts.owner.to_account_info(),
             &ctx.accounts.system_program.to_account_info(),
-            sol_balance,
+            refund_amount,
             ctx.bumps.autominer_custody,
         )?;
     }
+    ctx.accounts.autominer_vault.accrued_reload_sol = 0;
 
     emit!(AutominerStopped {
         owner: owner_key,
         player_data: ctx.accounts.player_data.key(),
         autominer_vault: ctx.accounts.autominer_vault.key(),
         rounds_remaining,
-        refund_amount: sol_balance,
+        refund_amount,
         timestamp: Clock::get()?.unix_timestamp,
     });
 
@@ -937,138 +954,109 @@ pub fn internal_claim_autominer_rewards(
     }
     let mut sol_reward_paid = 0u64;
 
-    if autominer_vault.can_reload && autominer_vault.use_ticket.is_some() {
-        let reserve_per_round = get_ticket_caller_compensation();
-        require!(reserve_per_round > 0, ErrorCode::InvalidState);
-        let rounds_to_add = payable_sol_reward / reserve_per_round;
-        let leftover_sol = payable_sol_reward % reserve_per_round;
+    // Each claim consumes one queued autominer bet. Drives the bulk-reload trigger below.
+    autominer_vault.pending_autominer_claims = autominer_vault
+        .pending_autominer_claims
+        .checked_sub(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
 
-        let mut rounds_added_u32 = 0u32;
-        let mut sol_for_rounds_paid_total = 0u64;
-        let mut leftover_paid_total = 0u64;
-        if rounds_to_add > 0 {
-            let sol_for_rounds = rounds_to_add
-                .checked_mul(reserve_per_round)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-            let sol_for_rounds_paid = helper::transfer_from_sol_prize_pot_vault(
+    // reserve_per_round = the unit cost the bulk reload will quote each "round" at.
+    //   - Ticket mode:  fixed keeper-compensation reserve (ticket value drives bet points).
+    //   - SOL mode:     autominer_vault.sol_per_round.
+    //   - Either way:   zero means reload is not applicable for this vault config.
+    let reserve_per_round: u64 = if autominer_vault.use_ticket.is_some() {
+        get_ticket_caller_compensation()
+    } else {
+        autominer_vault.sol_per_round
+    };
+    let reload_eligible = autominer_vault.can_reload && reserve_per_round > 0;
+
+    if payable_sol_reward > 0 {
+        if reload_eligible {
+            // Park this round's reward in autominer_custody; book it as accrued.
+            // No event, no transfer to owner yet — wait for the last unclaimed
+            // bet of the cycle to convert the accrued bucket in one shot.
+            let parked = helper::transfer_from_sol_prize_pot_vault(
                 &ctx.accounts.sol_prize_pot_vault.to_account_info(),
                 &ctx.accounts.autominer_custody.to_account_info(),
                 &ctx.accounts.system_program.to_account_info(),
-                sol_for_rounds,
+                payable_sol_reward,
                 ctx.bumps.sol_prize_pot_vault,
             )?;
-            let rounds_added = u32::try_from(sol_for_rounds_paid / reserve_per_round)
-                .map_err(|_| ErrorCode::ArithmeticOverflow)?;
-            sol_for_rounds_paid_total = sol_for_rounds_paid;
-            rounds_added_u32 = rounds_added;
+            autominer_vault.accrued_reload_sol = autominer_vault
+                .accrued_reload_sol
+                .checked_add(parked)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
             sol_reward_paid = sol_reward_paid
-                .checked_add(sol_for_rounds_paid)
+                .checked_add(parked)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
-            autominer_vault.sol_balance = autominer_vault
-                .sol_balance
-                .checked_add(sol_for_rounds_paid)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-            autominer_vault.rounds_remaining = autominer_vault
-                .rounds_remaining
-                .checked_add(rounds_added)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-        }
-
-        if leftover_sol > 0 {
-            let leftover_paid = helper::transfer_from_sol_prize_pot_vault(
+        } else {
+            // No-reload path: pay payable_sol_reward straight to owner this claim.
+            let paid = helper::transfer_from_sol_prize_pot_vault(
                 &ctx.accounts.sol_prize_pot_vault.to_account_info(),
                 &ctx.accounts.owner_wallet.to_account_info(),
                 &ctx.accounts.system_program.to_account_info(),
-                leftover_sol,
+                payable_sol_reward,
                 ctx.bumps.sol_prize_pot_vault,
             )?;
             sol_reward_paid = sol_reward_paid
-                .checked_add(leftover_paid)
+                .checked_add(paid)
                 .ok_or(ErrorCode::ArithmeticOverflow)?;
-            leftover_paid_total = leftover_paid;
         }
+    }
+
+    // FINAL-CLAIM BULK RELOAD: only fires once per funded cycle, when this
+    // claim was the last unclaimed autominer bet AND we have accrued reward
+    // SOL to convert. Translates the accrued bucket into additional rounds,
+    // and sends the sub-round-size leftover back to the owner wallet.
+    if reload_eligible
+        && autominer_vault.pending_autominer_claims == 0
+        && autominer_vault.accrued_reload_sol > 0
+    {
+        let accrued = autominer_vault.accrued_reload_sol;
+        let rounds_to_add_u64 = accrued / reserve_per_round;
+        let sol_for_rounds = rounds_to_add_u64
+            .checked_mul(reserve_per_round)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        let leftover = accrued
+            .checked_sub(sol_for_rounds)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+
+        let rounds_to_add_u32 = u32::try_from(rounds_to_add_u64)
+            .map_err(|_| ErrorCode::ArithmeticOverflow)?;
+        if rounds_to_add_u32 > 0 {
+            // SOL is already in autominer_custody from the accrual transfers.
+            // Just bump the bookkeeping that locks it to rounds.
+            autominer_vault.rounds_remaining = autominer_vault
+                .rounds_remaining
+                .checked_add(rounds_to_add_u32)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+            autominer_vault.sol_balance = autominer_vault
+                .sol_balance
+                .checked_add(sol_for_rounds)
+                .ok_or(ErrorCode::ArithmeticOverflow)?;
+        }
+
+        let mut leftover_paid: u64 = 0;
+        if leftover > 0 {
+            leftover_paid = helper::transfer_from_autominer_custody(
+                &ctx.accounts.autominer_custody.to_account_info(),
+                &ctx.accounts.owner_wallet.to_account_info(),
+                &ctx.accounts.system_program.to_account_info(),
+                leftover,
+                ctx.bumps.autominer_custody,
+            )?;
+        }
+
+        autominer_vault.accrued_reload_sol = 0;
 
         emit!(AutominerReloaded {
             autominer_vault: autominer_vault.key(),
-            rounds_to_add: rounds_added_u32,
-            sol_for_rounds: sol_for_rounds_paid_total,
-            leftover_sol: leftover_paid_total,
+            rounds_to_add: rounds_to_add_u32,
+            sol_for_rounds,
+            leftover_sol: leftover_paid,
             timestamp: Clock::get()?.unix_timestamp,
         });
-    } else if payable_sol_reward > 0
-        && autominer_vault.can_reload
-        && autominer_vault.sol_per_round > 0
-    {
-        // SOL MODE RELOAD: Use SOL winnings to fund more rounds
-        let sol_per_round = autominer_vault.sol_per_round;
-        let rounds_to_add = payable_sol_reward / sol_per_round;
-        let leftover_sol = payable_sol_reward % sol_per_round;
-
-        let mut rounds_added_u32 = 0u32;
-        let mut sol_for_rounds_paid_total = 0u64;
-        let mut leftover_paid_total = 0u64;
-        if rounds_to_add > 0 {
-            let sol_for_rounds = rounds_to_add
-                .checked_mul(sol_per_round)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-
-            let sol_for_rounds_paid = helper::transfer_from_sol_prize_pot_vault(
-                &ctx.accounts.sol_prize_pot_vault.to_account_info(),
-                &ctx.accounts.autominer_custody.to_account_info(),
-                &ctx.accounts.system_program.to_account_info(),
-                sol_for_rounds,
-                ctx.bumps.sol_prize_pot_vault,
-            )?;
-            let rounds_added = u32::try_from(sol_for_rounds_paid / sol_per_round)
-                .map_err(|_| ErrorCode::ArithmeticOverflow)?;
-            sol_for_rounds_paid_total = sol_for_rounds_paid;
-            rounds_added_u32 = rounds_added;
-            sol_reward_paid = sol_reward_paid
-                .checked_add(sol_for_rounds_paid)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-
-            autominer_vault.sol_balance = autominer_vault
-                .sol_balance
-                .checked_add(sol_for_rounds_paid)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-            autominer_vault.rounds_remaining = autominer_vault
-                .rounds_remaining
-                .checked_add(rounds_added)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-        }
-
-        // Transfer leftover SOL to owner
-        if leftover_sol > 0 {
-            let leftover_paid = helper::transfer_from_sol_prize_pot_vault(
-                &ctx.accounts.sol_prize_pot_vault.to_account_info(),
-                &ctx.accounts.owner_wallet.to_account_info(),
-                &ctx.accounts.system_program.to_account_info(),
-                leftover_sol,
-                ctx.bumps.sol_prize_pot_vault,
-            )?;
-            sol_reward_paid = sol_reward_paid
-                .checked_add(leftover_paid)
-                .ok_or(ErrorCode::ArithmeticOverflow)?;
-            leftover_paid_total = leftover_paid;
-        }
-        if rounds_added_u32 > 0 {
-            emit!(AutominerReloaded {
-                autominer_vault: autominer_vault.key(),
-                rounds_to_add: rounds_added_u32,
-                sol_for_rounds: sol_for_rounds_paid_total,
-                leftover_sol: leftover_paid_total,
-                timestamp: Clock::get()?.unix_timestamp,
-            });
-        }
-    } else if payable_sol_reward > 0 {
-        // No reload (or no sol_per_round) - transfer all SOL to owner
-        sol_reward_paid = helper::transfer_from_sol_prize_pot_vault(
-            &ctx.accounts.sol_prize_pot_vault.to_account_info(),
-            &ctx.accounts.owner_wallet.to_account_info(),
-            &ctx.accounts.system_program.to_account_info(),
-            payable_sol_reward,
-            ctx.bumps.sol_prize_pot_vault,
-        )?;
     }
 
     emit!(RoundRewardsClaimed {
