@@ -60,9 +60,9 @@
     },
     "hashbeasts_config": {
         "_supply_plan": "36K genesis mint cap via bonding curve (3000 per configured country, 12 countries). No lifetime supply cap — breeding is admin-gated and price-curved instead of hard-capped.",
-        "_pricing_notes": "Genesis curve_a = 1_775_411 targets ~$7M raise at SOL=$90 across 36K mints: 1.00→2.935 SOL, avg ~2.1605 SOL. Breeding uses max(parent breed-count table, 1.5x floor anchor), paid 50% SOL / 50% degenBTC.",
+        "_pricing_notes": "Genesis curve_a = 2_935_780 anchors mint #36000 at about 4.20 SOL: 1.00 → 4.20 SOL, avg ~2.919 SOL, ~105,083 SOL total raise at full sellout (~$9.46M at SOL=$90). Formula: price(n) = base_price + curve_a · floor(n^(2/3)). Breeding uses max(parent breed-count table, 1.5x floor anchor), paid 50% SOL / 50% degenBTC.",
         "base_price": 1000000000,
-        "curve_a": 1775411,
+        "curve_a": 2935780,
         "genesis_mint_limit": 36000,
         "max_genesis_mints_per_faction": 3000,
         "breeding_allowed": false,

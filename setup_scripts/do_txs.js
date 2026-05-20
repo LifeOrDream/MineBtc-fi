@@ -620,6 +620,15 @@ async function crankDistributeTax() {
   const factionWarId = await fetchFactionWarId();
   console.log(`   current war_id: ${factionWarId}`);
 
+  // crank_distribute_tax now requires war_state to exist (typed
+  // Box<Account<FactionWarState>>). Init lazily so the cranker is self-healing
+  // across cycle boundaries — same pattern as startRound.
+  await initializeFactionWar(factionWarId).catch((err) => {
+    if (!/already in use|already initialized|AccountAlready/i.test(String(err?.message || ""))) {
+      throw err;
+    }
+  });
+
   // Withdraw-authority ATA must exist before withdraw_withheld_tokens_from_mint.
   const withdrawAuthAta = await ensureAta(
     withdrawWithheldAuthorityPda, dbtcMint, TOKEN_2022_PROGRAM_ID, true,
@@ -905,6 +914,7 @@ async function main() {
   // ════════════════════════════════════════════════════════════════
   //  PRICE / EMISSION RAIL  — runs ~every 30 min inside the cycle
   // ════════════════════════════════════════════════════════════════
+  // await distributeSolFees();       // drain sol_treasury → buyback + dev multisig
   // await snapshotPrice();          // 8x per cycle (every ~30 min)
   // await updateRate();             // ONCE after 8th snapshot
   // await addLpAndBurn();           // ONCE after update_rate flips lp_operation_pending
@@ -921,7 +931,6 @@ async function main() {
   //  PERIODIC (independent of round/cycle cadence)
   // ════════════════════════════════════════════════════════════════
   // await sendSolToTreasury(0.05);   // top up sol_treasury for testing
-  // await distributeSolFees();       // drain sol_treasury → buyback + dev multisig
   // await crankHarvestFees();        // pull withheld fees from holder ATAs into mint
   // await recordFloorSnapshot();     // ~daily floor anchor for breed/sweep pricing
 }

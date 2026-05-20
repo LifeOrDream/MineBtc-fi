@@ -1,5 +1,13 @@
 #!/usr/bin/env node
 
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const config = JSON.parse(fs.readFileSync(path.join(__dirname, "config.json"), "utf8"));
+
 /**
  * HashBeast Minting Simulation Script
  * Simulates the cost of minting all hashbeasts using the bonding curve pricing formula.
@@ -9,10 +17,10 @@
 // CONFIGURATION - Edit these values
 // ============================================================================
 
-const BASE_PRICE = 1_000_000_000; // 1 SOL in lamports
-const CURVE_A = 1_775_411; // Targets ~$7M raise at $90/SOL over 36k mints
-const TOTAL_SUPPLY = 36_000; // 3k per country across 12 countries
-const SOL_PRICE_USD = 90; // Mainnet launch planning assumption
+const BASE_PRICE = config.hashbeasts_config.base_price;
+const CURVE_A = config.hashbeasts_config.curve_a;
+const TOTAL_SUPPLY = config.hashbeasts_config.genesis_mint_limit;
+const SOL_PRICE_USD = Number(process.env.SOL_PRICE_USD ?? 90);
 
 // ============================================================================
 // PRICING CALCULATION (matches Rust compute_gene_price)

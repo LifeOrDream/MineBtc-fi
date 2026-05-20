@@ -31,7 +31,12 @@ const REPO_ROOT = path.resolve(__dirname, "..");
 const BACKEND_REPO = path.resolve(REPO_ROOT, "..", "MineBtcBackend");
 const FRONTEND_REPO = path.resolve(REPO_ROOT, "..", "mdogeWifBtcFE");
 
-const WEBSITE_JSON_PATH = path.join(REPO_ROOT, "setup_scripts", "deployments", "website.json");
+const WEBSITE_JSON_PATH = path.join(
+  REPO_ROOT,
+  "setup_scripts",
+  "deployments",
+  "website.json",
+);
 const IDL_SOURCE_DIR = path.join(REPO_ROOT, "target", "idl");
 
 const BACKEND_IDL_DIR = path.join(BACKEND_REPO, "idl");
@@ -44,7 +49,9 @@ const FRONTEND_CONFIG_PATH = path.join(FRONTEND_REPO, "hooks", "config.ts");
 function assertDir(p, name) {
   if (!fs.existsSync(p)) {
     console.error(`❌ ${name} not found at: ${p}`);
-    console.error(`   Expected sister folder layout: MineBtc-fi/  MineBtcBackend/  mdogeWifBtcFE/`);
+    console.error(
+      `   Expected sister folder layout: MineBtc-fi/  MineBtcBackend/  mdogeWifBtcFE/`,
+    );
     process.exit(1);
   }
 }
@@ -58,7 +65,9 @@ try {
   website = JSON.parse(fs.readFileSync(WEBSITE_JSON_PATH, "utf-8"));
 } catch (e) {
   console.error(`❌ Failed to read ${WEBSITE_JSON_PATH}: ${e.message}`);
-  console.error(`   Run: node website_config.js  (to generate website.json first)`);
+  console.error(
+    `   Run: node website_config.js  (to generate website.json first)`,
+  );
   process.exit(1);
 }
 
@@ -74,7 +83,11 @@ console.log(`🔄 Syncing deployment for cluster: ${cluster}`);
 // ═════════════════════════════════════════════════════════════════════════════
 // 1. COPY IDLs
 // ═════════════════════════════════════════════════════════════════════════════
-const IDL_FILES = ["minebtc.json", "degenbtc_market.json", "raydium_cp_swap.json"];
+const IDL_FILES = [
+  "minebtc.json",
+  "degenbtc_market.json",
+  "raydium_cp_swap.json",
+];
 
 function copyIdls() {
   for (const file of IDL_FILES) {
@@ -87,10 +100,14 @@ function copyIdls() {
       if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
       const dest = path.join(destDir, file);
       if (DRY_RUN) {
-        console.log(`[DRY] Would copy IDL ${file} → ${path.relative(process.cwd(), dest)}`);
+        console.log(
+          `[DRY] Would copy IDL ${file} → ${path.relative(process.cwd(), dest)}`,
+        );
       } else {
         fs.copyFileSync(src, dest);
-        console.log(`✅ Copied IDL ${file} → ${path.relative(process.cwd(), dest)}`);
+        console.log(
+          `✅ Copied IDL ${file} → ${path.relative(process.cwd(), dest)}`,
+        );
       }
     }
   }
@@ -143,25 +160,41 @@ function buildBackendDeployment() {
   // Build fee_config with "new" prefix (matches contract admin ix shape)
   const sfc = w.sol_fee_config || {};
   const feeConfig = {
-    newProtocolFeePct: sfc.protocol_fee_pct ?? base.fee_config?.newProtocolFeePct ?? 15,
+    newProtocolFeePct:
+      sfc.protocol_fee_pct ?? base.fee_config?.newProtocolFeePct ?? 15,
     newBuybackPct: sfc.buyback_pct ?? base.fee_config?.newBuybackPct ?? 70,
     newStakersPct: sfc.stakers_pct ?? base.fee_config?.newStakersPct ?? 10,
-    newMinebtcStakersPct: sfc.minebtc_stakers_pct ?? base.fee_config?.newMinebtcStakersPct ?? 3,
-    newMinebtcWinnersPct: sfc.minebtc_winners_pct ?? base.fee_config?.newMinebtcWinnersPct ?? 50,
-    newMinebtcSameFactionPct: sfc.minebtc_same_faction_pct ?? base.fee_config?.newMinebtcSameFactionPct ?? 21,
-    newMinebtcJackpotPct: sfc.minebtc_jackpot_pct ?? base.fee_config?.newMinebtcJackpotPct ?? 5,
+    newMinebtcStakersPct:
+      sfc.minebtc_stakers_pct ?? base.fee_config?.newMinebtcStakersPct ?? 3,
+    newMinebtcWinnersPct:
+      sfc.minebtc_winners_pct ?? base.fee_config?.newMinebtcWinnersPct ?? 50,
+    newMinebtcSameFactionPct:
+      sfc.minebtc_same_faction_pct ??
+      base.fee_config?.newMinebtcSameFactionPct ??
+      21,
+    newMinebtcJackpotPct:
+      sfc.minebtc_jackpot_pct ?? base.fee_config?.newMinebtcJackpotPct ?? 5,
     newHodlTaxPct: sfc.hodl_tax_pct ?? base.fee_config?.newHodlTaxPct ?? 10,
-    snapshotInterval: sfc.snapshot_interval ?? base.fee_config?.snapshotInterval ?? 300,
-    newCycleSolSplitPct: sfc.cycle_sol_split_pct ?? base.fee_config?.newCycleSolSplitPct ?? 5,
-    newNftMarketMakingPct: sfc.nft_market_making_pct ?? base.fee_config?.newNftMarketMakingPct ?? 3,
+    snapshotInterval:
+      sfc.snapshot_interval ?? base.fee_config?.snapshotInterval ?? 300,
+    newCycleSolSplitPct:
+      sfc.cycle_sol_split_pct ?? base.fee_config?.newCycleSolSplitPct ?? 5,
+    newNftMarketMakingPct:
+      sfc.nft_market_making_pct ?? base.fee_config?.newNftMarketMakingPct ?? 3,
   };
 
   const out = {
     [cluster]: {
       // Programs
       MINE_BTC_PROGRAM_ID: v("programs.minebtc", base.MINE_BTC_PROGRAM_ID),
-      DEGENBTC_MARKET_PROGRAM_ID: v("programs.market", base.DEGENBTC_MARKET_PROGRAM_ID),
-      RAYDIUM_CP_PROGRAM_ID: v("programs.raydium_cp_swap", base.RAYDIUM_CP_PROGRAM_ID),
+      DEGENBTC_MARKET_PROGRAM_ID: v(
+        "programs.market",
+        base.DEGENBTC_MARKET_PROGRAM_ID,
+      ),
+      RAYDIUM_CP_PROGRAM_ID: v(
+        "programs.raydium_cp_swap",
+        base.RAYDIUM_CP_PROGRAM_ID,
+      ),
 
       // Network
       rpc_url: v("network.rpc_url", base.rpc_url),
@@ -171,16 +204,31 @@ function buildBackendDeployment() {
       dbtc_mintAddress: v("dbtc.mint", base.dbtc_mintAddress),
       dbtc_mintAuthority: base.dbtc_mintAuthority ?? null,
       dbtc_burnTaxBps: v("dbtc.transfer_fee_bps", base.dbtc_burnTaxBps),
-      dbtc_maxBurnAmount: v("dbtc.max_transfer_fee_lamports", base.dbtc_maxBurnAmount),
+      dbtc_maxBurnAmount: v(
+        "dbtc.max_transfer_fee_lamports",
+        base.dbtc_maxBurnAmount,
+      ),
       dbtc_decimals: v("dbtc.decimals", base.dbtc_decimals),
 
       // Raydium pool
       raydium_pool_state: v("raydium_pool.pool_state", base.raydium_pool_state),
       raydium_lp_mint: v("raydium_pool.lp_mint", base.raydium_lp_mint),
-      raydium_token0_vault: v("raydium_pool.token_0_vault", base.raydium_token0_vault),
-      raydium_token1_vault: v("raydium_pool.token_1_vault", base.raydium_token1_vault),
-      raydium_authority: v("raydium_pool.pool_authority", base.raydium_authority),
-      raydium_observation_state: v("raydium_pool.observation_state", base.raydium_observation_state),
+      raydium_token0_vault: v(
+        "raydium_pool.token_0_vault",
+        base.raydium_token0_vault,
+      ),
+      raydium_token1_vault: v(
+        "raydium_pool.token_1_vault",
+        base.raydium_token1_vault,
+      ),
+      raydium_authority: v(
+        "raydium_pool.pool_authority",
+        base.raydium_authority,
+      ),
+      raydium_observation_state: v(
+        "raydium_pool.observation_state",
+        base.raydium_observation_state,
+      ),
       raydium_amm_config: v("raydium_pool.amm_config", base.raydium_amm_config),
       is_dbtc_token0: v("raydium_pool.is_dbtc_token_0", base.is_dbtc_token0),
       token0_mint: v("raydium_pool.token_0_mint", base.token0_mint),
@@ -190,81 +238,185 @@ function buildBackendDeployment() {
       globalConfig_pda: v("minebtc.global_config", base.globalConfig_pda),
       mineBtcMining_pda: v("minebtc.dbtc_mining", base.mineBtcMining_pda),
       sol_treasury_pda: v("minebtc.sol_treasury", base.sol_treasury_pda),
-      hashbeasts_treasury_pda: v("minebtc.sol_treasury", base.hashbeasts_treasury_pda),
+      hashbeasts_treasury_pda: v(
+        "minebtc.sol_treasury",
+        base.hashbeasts_treasury_pda,
+      ),
       unrefinedRewards_pda: v("minebtc.hodl_pool", base.unrefinedRewards_pda),
       hodlPool_pda: v("minebtc.hodl_pool", base.hodlPool_pda),
-      autominerCustody_pda: v("minebtc.autominer_custody", base.autominerCustody_pda),
+      autominerCustody_pda: v(
+        "minebtc.autominer_custody",
+        base.autominerCustody_pda,
+      ),
 
       // Mining vault
       dbtc_token_vault: v("mining_vault.vault", base.dbtc_token_vault),
-      minebtc_vault_authority: v("mining_vault.authority", base.minebtc_vault_authority),
+      minebtc_vault_authority: v(
+        "mining_vault.authority",
+        base.minebtc_vault_authority,
+      ),
       mining_start_timestamp: base.mining_start_timestamp ?? 1778457600,
-      degen_btc_per_round: v("mining_vault.per_round_emission_lamports", base.degen_btc_per_round),
+      degen_btc_per_round: v(
+        "mining_vault.per_round_emission_lamports",
+        base.degen_btc_per_round,
+      ),
 
       // Game
-      hashpowerConfig_pda: v("minebtc.hashpower_config", base.hashpowerConfig_pda),
+      hashpowerConfig_pda: v(
+        "minebtc.hashpower_config",
+        base.hashpowerConfig_pda,
+      ),
       global_game_state_pda: v("game.global_state", base.global_game_state_pda),
-      round_duration_seconds: v("game.round_duration_seconds", base.round_duration_seconds),
+      round_duration_seconds: v(
+        "game.round_duration_seconds",
+        base.round_duration_seconds,
+      ),
 
       // Faction war
-      faction_war_config_pda: v("faction_war.config", base.faction_war_config_pda),
-      starting_faction_war_id: v("faction_war.starting_war_id", base.starting_faction_war_id),
-      sol_rewards_vault: v("faction_war.sol_rewards_vault", base.sol_rewards_vault),
-      sol_prize_pot_vault: v("faction_war.sol_prize_pot_vault", base.sol_prize_pot_vault),
+      faction_war_config_pda: v(
+        "faction_war.config",
+        base.faction_war_config_pda,
+      ),
+      starting_faction_war_id: v(
+        "faction_war.starting_war_id",
+        base.starting_faction_war_id,
+      ),
+      sol_rewards_vault: v(
+        "faction_war.sol_rewards_vault",
+        base.sol_rewards_vault,
+      ),
+      sol_prize_pot_vault: v(
+        "faction_war.sol_prize_pot_vault",
+        base.sol_prize_pot_vault,
+      ),
 
       // HashBeasts
-      hashbeast_collection: v("hashbeasts.collection", base.hashbeast_collection),
-      hashbeast_collection_authority: v("hashbeasts.collection_authority", base.hashbeast_collection_authority),
+      hashbeast_collection: v(
+        "hashbeasts.collection",
+        base.hashbeast_collection,
+      ),
+      hashbeast_collection_authority: v(
+        "hashbeasts.collection_authority",
+        base.hashbeast_collection_authority,
+      ),
       lp_token_account: v("lp_token.token_account", base.lp_token_account),
       lp_token_mint: v("lp_token.mint", base.lp_token_mint),
 
       // System
-      referral_rewards_pda: v("system.referral_rewards_sentinel", base.referral_rewards_pda),
-      buybacks_account_pda: v("system.buybacks_account", base.buybacks_account_pda),
-      buybacks_sol_vault_pda: v("system.buybacks_sol_vault", base.buybacks_sol_vault_pda),
+      referral_rewards_pda: v(
+        "system.referral_rewards_sentinel",
+        base.referral_rewards_pda,
+      ),
+      buybacks_account_pda: v(
+        "system.buybacks_account",
+        base.buybacks_account_pda,
+      ),
+      buybacks_sol_vault_pda: v(
+        "system.buybacks_sol_vault",
+        base.buybacks_sol_vault_pda,
+      ),
 
       // Custodians
       minebtcCustodian_pda: v("custodians.dbtc", base.minebtcCustodian_pda),
-      minebtcCustodian_authority: v("custodians.dbtc_authority", base.minebtcCustodian_authority),
+      minebtcCustodian_authority: v(
+        "custodians.dbtc_authority",
+        base.minebtcCustodian_authority,
+      ),
       liquidityCustodian_pda: v("custodians.lp", base.liquidityCustodian_pda),
-      liquidityCustodian_authority: v("custodians.lp_authority", base.liquidityCustodian_authority),
+      liquidityCustodian_authority: v(
+        "custodians.lp_authority",
+        base.liquidityCustodian_authority,
+      ),
 
       // HashBeast config
       hashbeast_config_pda: v("hashbeasts.config", base.hashbeast_config_pda),
-      hashbeast_base_price: v("hashbeasts.base_price_lamports", base.hashbeast_base_price),
+      hashbeast_base_price: v(
+        "hashbeasts.base_price_lamports",
+        base.hashbeast_base_price,
+      ),
       hashbeast_curve_a: v("hashbeasts.curve_a", base.hashbeast_curve_a),
-      hashbeast_max_supply: v("hashbeasts.max_supply", base.hashbeast_max_supply),
-      hashbeast_genesis_mint_limit: v("hashbeasts.genesis_mint_limit", base.hashbeast_genesis_mint_limit),
-      hashbeast_max_genesis_mints_per_faction: v("hashbeasts.max_genesis_mints_per_faction", base.hashbeast_max_genesis_mints_per_faction),
-      hashbeast_mint_config_pda: v("hashbeasts.mint_config", base.hashbeast_mint_config_pda),
+      hashbeast_max_supply: v(
+        "hashbeasts.max_supply",
+        base.hashbeast_max_supply,
+      ),
+      hashbeast_genesis_mint_limit: v(
+        "hashbeasts.genesis_mint_limit",
+        base.hashbeast_genesis_mint_limit,
+      ),
+      hashbeast_max_genesis_mints_per_faction: v(
+        "hashbeasts.max_genesis_mints_per_faction",
+        base.hashbeast_max_genesis_mints_per_faction,
+      ),
+      hashbeast_mint_config_pda: v(
+        "hashbeasts.mint_config",
+        base.hashbeast_mint_config_pda,
+      ),
 
       // Tax
       tax_config_pda: v("tax.config", base.tax_config_pda),
-      withdraw_withheld_authority: v("tax.withdraw_withheld_authority", base.withdraw_withheld_authority),
-      transfer_fee_config_authority: v("tax.withdraw_withheld_authority", base.transfer_fee_config_authority),
-      faction_treasury_vault: v("tax.faction_treasury_vault", base.faction_treasury_vault),
+      withdraw_withheld_authority: v(
+        "tax.withdraw_withheld_authority",
+        base.withdraw_withheld_authority,
+      ),
+      transfer_fee_config_authority: v(
+        "tax.withdraw_withheld_authority",
+        base.transfer_fee_config_authority,
+      ),
+      faction_treasury_vault: v(
+        "tax.faction_treasury_vault",
+        base.faction_treasury_vault,
+      ),
 
       // Marketplace
-      nft_sale_sol_vault: v("marketplace.sale_sol_vault", base.nft_sale_sol_vault),
-      marketplace_config_pda: v("marketplace.config", base.marketplace_config_pda),
-      inventory_pool_pda: v("marketplace.inventory_pool", base.inventory_pool_pda),
+      nft_sale_sol_vault: v(
+        "marketplace.sale_sol_vault",
+        base.nft_sale_sol_vault,
+      ),
+      marketplace_config_pda: v(
+        "marketplace.config",
+        base.marketplace_config_pda,
+      ),
+      inventory_pool_pda: v(
+        "marketplace.inventory_pool",
+        base.inventory_pool_pda,
+      ),
       floor_queue_pda: v("marketplace.floor_queue", base.floor_queue_pda),
       sale_history_pda: v("marketplace.sale_history", base.sale_history_pda),
       floor_history_pda: v("marketplace.floor_history", base.floor_history_pda),
-      inventory_sweep_vault_pda: v("marketplace.inventory_sweep_vault", base.inventory_sweep_vault_pda),
+      inventory_sweep_vault_pda: v(
+        "marketplace.inventory_sweep_vault",
+        base.inventory_sweep_vault_pda,
+      ),
 
       // Preserve marketplace admin/fee fields if they exist
       marketplace_admin: base.marketplace_admin ?? v("marketplace.admin", null),
-      marketplace_fee_bps: base.marketplace_fee_bps ?? v("marketplace.fee_bps", null),
-      marketplace_min_price_lamports: base.marketplace_min_price_lamports ?? v("marketplace.min_price_lamports", null),
-      fee_recipient: v("marketplace.fee_recipient", base.fee_recipient),
+      marketplace_fee_bps:
+        base.marketplace_fee_bps ?? v("marketplace.fee_bps", null),
+      marketplace_min_price_lamports:
+        base.marketplace_min_price_lamports ??
+        v("marketplace.min_price_lamports", null),
+      fee_recipient: v(
+        "authorities.fee_recipient_multisig",
+        v("minebtc.fee_recipient", base.fee_recipient),
+      ),
+      marketplace_fee_recipient: v(
+        "marketplace.fee_recipient",
+        base.marketplace_fee_recipient,
+      ),
 
       // Lootbox / factions
-      lootbox_queues: Object.keys(lootboxQueues).length ? lootboxQueues : base.lootbox_queues,
-      faction_war_sol_vault: v("faction_war.sol_vault", base.faction_war_sol_vault),
+      lootbox_queues: Object.keys(lootboxQueues).length
+        ? lootboxQueues
+        : base.lootbox_queues,
+      faction_war_sol_vault: v(
+        "faction_war.sol_vault",
+        base.faction_war_sol_vault,
+      ),
 
       // Lists
-      supported_factions: (w.factions || []).map((f) => f.name || f.faction_name),
+      supported_factions: (w.factions || []).map(
+        (f) => f.name || f.faction_name,
+      ),
       faction_states: factionStates,
       ticket_tiers: (w.ticket_tiers || []).map((t) => ({
         tier_index: t.tier_index,
@@ -288,7 +440,9 @@ function buildBackendDeployment() {
 function writeBackendDeployment() {
   const json = buildBackendDeployment();
   if (DRY_RUN) {
-    console.log(`[DRY] Would write ${path.relative(process.cwd(), BACKEND_DEPLOYMENT_PATH)}`);
+    console.log(
+      `[DRY] Would write ${path.relative(process.cwd(), BACKEND_DEPLOYMENT_PATH)}`,
+    );
     return;
   }
   fs.writeFileSync(BACKEND_DEPLOYMENT_PATH, json);
@@ -408,15 +562,16 @@ function generateFrontendDevnetBlock() {
         ticket_value: Number(t.ticket_value_lamports || t.ticket_value),
       })),
       null,
-      6
+      6,
     )},`,
     `    supported_factions: ${JSON.stringify(
       (w.factions || []).map((f) => f.name || f.faction_name),
       null,
-      6
+      6,
     )},`,
     `    faction_states: ${JSON.stringify(factionStates, null, 6)},`,
-    `    fee_recipient: ${fmtStr(v("marketplace.fee_recipient"))},`,
+    `    fee_recipient: ${fmtStr(v("authorities.fee_recipient_multisig", v("minebtc.fee_recipient")))},`,
+    `    marketplace_fee_recipient: ${fmtStr(v("marketplace.fee_recipient"))},`,
     `    transfer_fee_config_authority: ${fmtStr(v("tax.withdraw_withheld_authority"))},`,
     `    faction_war_sol_vault: ${fmtStr(v("faction_war.sol_vault"))},`,
     `    hashbeast_mint_config_pda: ${fmtStr(v("hashbeasts.mint_config"))},`,
@@ -515,7 +670,9 @@ function patchFrontendConfig() {
   const patched = before + newBlock + after;
 
   if (DRY_RUN) {
-    console.log(`[DRY] Would patch ${path.relative(process.cwd(), FRONTEND_CONFIG_PATH)}`);
+    console.log(
+      `[DRY] Would patch ${path.relative(process.cwd(), FRONTEND_CONFIG_PATH)}`,
+    );
     return;
   }
 
@@ -527,7 +684,9 @@ function patchFrontendConfig() {
 // RUN
 // ═════════════════════════════════════════════════════════════════════════════
 
-console.log(DRY_RUN ? "🔍 DRY RUN — no files will be modified\n" : "🚀 LIVE RUN\n");
+console.log(
+  DRY_RUN ? "🔍 DRY RUN — no files will be modified\n" : "🚀 LIVE RUN\n",
+);
 
 copyIdls();
 writeBackendDeployment();

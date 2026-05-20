@@ -306,7 +306,7 @@ fn read_marketplace_listing(info: &AccountInfo) -> Result<degenbtc_market::state
     require!(info.lamports() > 0, ErrorCode::InvalidAccount);
     let data = info.try_borrow_data()?;
     let mut slice: &[u8] = &data;
-    degenbtc_market::state::Listing::try_deserialize(&mut slice).map_err(Into::into)
+    degenbtc_market::state::Listing::try_deserialize(&mut slice)
 }
 
 fn read_marketplace_config_collection(config_info: &AccountInfo) -> Result<Pubkey> {

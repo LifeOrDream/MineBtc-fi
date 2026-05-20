@@ -166,7 +166,6 @@ pub fn internal_crank_harvest_fees<'info>(
 /// mint account and distributes it according to TaxConfig percentages.
 ///
 /// Callable by anyone - program-controlled withdraw authority
-
 fn post_fee_amount<'info>(
     mint_account_info: &AccountInfo<'info>,
     pre_fee_amount: u64,

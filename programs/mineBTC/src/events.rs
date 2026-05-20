@@ -272,15 +272,15 @@ pub struct MineBtcStaked {
     pub multiplier: u16,      // lockup multiplier (100 = 1x, max 300 = 3x)
     pub lockup_duration: u64,
     pub hashpower_contribution: u64, // final hashpower (with hashbeast multiplier)
-    pub new_sol_rewards: u64,  // DELTA: SOL accrued in this update step
-    pub new_dbtc_rewards: u64, // DELTA: staking dBTC accrued in this update step
+    pub new_sol_rewards: u64,        // DELTA: SOL accrued in this update step
+    pub new_dbtc_rewards: u64,       // DELTA: staking dBTC accrued in this update step
     pub unrefined_dbtc: u64,
     // Post-update player state — emitted so the off-chain indexer can keep
     // PlayerData mirrored in DDB without a chain re-read. Backend uses these
     // to compute claimable staking rewards in real time without RPC.
     pub new_degenbtc_sol_reward_debt: u128, // = faction.degenbtc_sol_reward_index after update
     pub new_degenbtc_dbtc_reward_debt: u128, // = faction.degenbtc_degenbtc_reward_index after update
-    pub total_pending_sol_rewards: u64, // absolute player.pending_sol_rewards after accrual
+    pub total_pending_sol_rewards: u64,      // absolute player.pending_sol_rewards after accrual
     pub total_pending_staking_dbtc_rewards: u64, // absolute player.pending_staking_dbtc_rewards after accrual
     pub timestamp: i64,
 }
@@ -316,8 +316,8 @@ pub struct LiquidityStaked {
     pub multiplier: u16,      // lockup multiplier (100 = 1x, max 300 = 3x)
     pub lockup_duration: u64,
     pub hashpower_contribution: u64, // final hashpower (with hashbeast multiplier)
-    pub new_sol_rewards: u64,  // DELTA accrued in this update step
-    pub new_dbtc_rewards: u64, // DELTA accrued in this update step
+    pub new_sol_rewards: u64,        // DELTA accrued in this update step
+    pub new_dbtc_rewards: u64,       // DELTA accrued in this update step
     pub unrefined_dbtc: u64,
     // Post-update player state (see MineBtcStaked).
     pub new_lp_sol_reward_debt: u128, // = faction.lp_sol_reward_index after update
