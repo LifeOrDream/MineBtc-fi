@@ -16,6 +16,11 @@
         "FEE_RECIPIENT_MULTISIG": {
             "devnet": "7qVJSQXe33JVAcDYtkJC1iceDRV1p5NtLk27KrHgEnWW",
             "mainnet": "CRxMur2bSuhBHQnA5FSBocA3kWjSTmhoxPXJ3JNRs8WZ"
+        },
+        "_protocol_admin_notes": "MAINNET protocol admin / BPF upgrade authority = ixQ7TC6ENzVV8Qzdi6xUu5Pm6Pefg42772cqq8EfjBE (Squads multisig). Two distinct roles, both rotate to this address post-deploy: (1) BPF upgrade authority — controls program redeploys; rotate via `solana program set-upgrade-authority <PROGRAM_ID> --new-upgrade-authority ixQ7TC...`. (2) global_config.ext_authority — controls admin ixs (update_config, update_fees, set_pause, etc.); rotate via 2-step `update_config(new_authority = ixQ7TC...)` then have Squads accept_authority. Devnet keeps the deployer wallet (DdktaCvL...) as admin for cranker convenience.",
+        "PROTOCOL_ADMIN": {
+            "devnet": "DdktaCvL7i5c8yqnpiwXgVJpJmVWmhDCBGd9WB8xBc61",
+            "mainnet": "ixQ7TC6ENzVV8Qzdi6xUu5Pm6Pefg42772cqq8EfjBE"
         }
     },
     "token": {
