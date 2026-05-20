@@ -158,7 +158,14 @@ const HELIUS_API_KEY =
 
 const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
 const dbtcMint = new PublicKey(deployment.dbtc_mint_address);
-const FEE_RECIPIENT = new PublicKey(config.deployment.FEE_RECIPIENT_MULTISIG);
+// FEE_RECIPIENT_MULTISIG is keyed by cluster (devnet/mainnet); fall back to a
+// bare string for backward compat if the config hasn't been migrated.
+const feeRecipientRaw = config.deployment.FEE_RECIPIENT_MULTISIG;
+const FEE_RECIPIENT = new PublicKey(
+  typeof feeRecipientRaw === "string"
+    ? feeRecipientRaw
+    : feeRecipientRaw[cluster],
+);
 
 // MineBTC PDAs
 const [globalConfigPda] = PublicKey.findProgramAddressSync(
