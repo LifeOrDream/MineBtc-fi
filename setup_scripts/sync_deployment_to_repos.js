@@ -667,7 +667,14 @@ function patchFrontendConfig() {
   const after = original.slice(afterIdx);
 
   const newBlock = generateFrontendDevnetBlock();
-  const patched = before + newBlock + after;
+  const marketProgramId = w?.programs?.market;
+  let patched = before + newBlock + after;
+  if (marketProgramId) {
+    patched = patched.replace(
+      /const DEVNET_DEGENBTC_MARKET_PROGRAM_ID = ".*?";/,
+      `const DEVNET_DEGENBTC_MARKET_PROGRAM_ID = ${JSON.stringify(marketProgramId)};`,
+    );
+  }
 
   if (DRY_RUN) {
     console.log(
