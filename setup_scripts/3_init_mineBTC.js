@@ -23,6 +23,20 @@ const CLUSTER = config.network.cluster;
 const RPC_URL = config.network.rpc_url;
 const COMMITMENT = config.network.commitment;
 
+// fee_recipient is now keyed by cluster (devnet/mainnet); resolve once at
+// startup. Fall back to a bare string for backward compat.
+const FEE_RECIPIENT_MULTISIG_STR = (() => {
+  const raw = config.deployment.FEE_RECIPIENT_MULTISIG;
+  if (typeof raw === "string") return raw;
+  const resolved = raw?.[CLUSTER];
+  if (!resolved) {
+    throw new Error(
+      `config.deployment.FEE_RECIPIENT_MULTISIG missing entry for cluster '${CLUSTER}'. Expected object like { devnet: '...', mainnet: '...' }.`,
+    );
+  }
+  return resolved;
+})();
+
 // Color constants for consistent logging
 const COLOR_STEP = "\x1b[35m%s\x1b[0m";
 const COLOR_INFO = "\x1b[36m%s\x1b[0m";
@@ -342,7 +356,7 @@ function buildHashBeastCollectionMetadata() {
           share: inventorySweepShare,
         },
         {
-          address: config.deployment.FEE_RECIPIENT_MULTISIG,
+          address: FEE_RECIPIENT_MULTISIG_STR,
           share: multisigShare,
         },
       ],
@@ -968,7 +982,7 @@ async function initializeMinebtcProgram(minebtcProgram) {
   );
 
   const FEE_RECIPIENT_MULTISIG = new PublicKey(
-    config.deployment.FEE_RECIPIENT_MULTISIG
+    FEE_RECIPIENT_MULTISIG_STR
   );
 
   console.log(
@@ -2337,7 +2351,7 @@ async function initializeHashBeastRoyalties(minebtcProgram) {
 
   // Convert addresses to PublicKey objects
   const multisigAddress = new PublicKey(
-    config.deployment.FEE_RECIPIENT_MULTISIG
+    FEE_RECIPIENT_MULTISIG_STR
   );
   const inventorySweepShare = hashBeastCreatorPct("inventory_sweep_vault", 50);
   const multisigShare = hashBeastCreatorPct("multisig_fee_recipient", 50);

@@ -158,7 +158,14 @@ const HELIUS_API_KEY =
 
 const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
 const dbtcMint = new PublicKey(deployment.dbtc_mint_address);
-const FEE_RECIPIENT = new PublicKey(config.deployment.FEE_RECIPIENT_MULTISIG);
+// FEE_RECIPIENT_MULTISIG is keyed by cluster (devnet/mainnet); fall back to a
+// bare string for backward compat if the config hasn't been migrated.
+const feeRecipientRaw = config.deployment.FEE_RECIPIENT_MULTISIG;
+const FEE_RECIPIENT = new PublicKey(
+  typeof feeRecipientRaw === "string"
+    ? feeRecipientRaw
+    : feeRecipientRaw[cluster],
+);
 
 // MineBTC PDAs
 const [globalConfigPda] = PublicKey.findProgramAddressSync(
@@ -837,6 +844,32 @@ async function settleFactionWar() {
   return sig;
 }
 
+/**
+ * Admin one-shot: change the on-chain global_config.fee_recipient to the
+ * cluster-resolved FEE_RECIPIENT_MULTISIG. Signer must be the current
+ * ext_authority (= deployer wallet). Pass `null` for new_authority so only
+ * the fee_recipient changes; the contract's update_config ix treats the
+ * authority arg as Option<Pubkey>.
+ */
+async function updateFeeRecipient() {
+  banner("UPDATE FEE RECIPIENT");
+  console.log(`   cluster:   ${cluster}`);
+  console.log(`   new recip: ${FEE_RECIPIENT.toString()}`);
+
+  const tx = await program.methods
+    .updateConfig(null, FEE_RECIPIENT)
+    .accounts({
+      globalConfig: globalConfigPda,
+      authority: walletKeypair.publicKey,
+    })
+    .transaction();
+
+  const sig = await send(tx, 100_000);
+  ok(`update_config: ${sig}`);
+  console.log(`   ${explorer(sig)}`);
+  return sig;
+}
+
 // ════════════════════════════════════════════════════════════════════
 //  NFT MARKETPLACE CRANKER
 // ════════════════════════════════════════════════════════════════════
@@ -895,6 +928,9 @@ async function main() {
   // ── status / inspection (run anytime) ──
   // await printState();
   // await printGameState();
+
+  // ── one-shot admin: rotate fee_recipient (signer must be ext_authority) ──
+  // await updateFeeRecipient();
 
   // ════════════════════════════════════════════════════════════════
   //  PER 4H CYCLE — call ONCE when current_war_id advances

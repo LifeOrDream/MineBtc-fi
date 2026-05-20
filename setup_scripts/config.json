@@ -12,7 +12,11 @@
             "raydium_idl": "../target/idl/raydium_cp_swap.json",
             "deployments_dir": "./deployments"
         },
-        "FEE_RECIPIENT_MULTISIG": "2FJysLPr83hcJ1nBhzBMjyF6HFhQrf6RptdnyAemUFiL"
+        "_fee_recipient_notes": "SPL Token native 2-of-3 multisigs (program TokenkegQ...). Same 3 signers on both networks: 5DLR6E2VpNsgpnyau1NidACdjGhUBxe2ABxhR4LYonSs, 3ARombQeRwqRpSs9VxzWFFb6exVUQnSEHfUnu9dhaftU, Ap5me949eqhcjdVg5fTN6Bm866aTLQhkMSw5gS66NsRN. Their WSOL ATAs already exist and are funded — distribute_sol_fees will route WSOL deposits to them. 2 of 3 sigs required to spend the accumulated WSOL.",
+        "FEE_RECIPIENT_MULTISIG": {
+            "devnet": "7qVJSQXe33JVAcDYtkJC1iceDRV1p5NtLk27KrHgEnWW",
+            "mainnet": "CRxMur2bSuhBHQnA5FSBocA3kWjSTmhoxPXJ3JNRs8WZ"
+        }
     },
     "token": {
         "name": "degenBTC",
