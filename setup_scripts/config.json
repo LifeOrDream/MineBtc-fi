@@ -1,7 +1,7 @@
 {
     "network": {
         "cluster": "mainnet",
-        "rpc_url": "https://mainnet.helius-rpc.com/?api-key=3d9b19fa-4177-41a8-b0e3-822d4f62152d",
+        "rpc_url": "https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}",
         "commitment": "confirmed"
     },
     "deployment": {

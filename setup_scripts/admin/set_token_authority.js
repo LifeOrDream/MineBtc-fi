@@ -20,7 +20,8 @@ const __dirname = path.dirname(__filename);
 
 // Load config
 const configPath = path.resolve(__dirname, '../config.json');
-const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+import { loadConfig } from "../load_config.js";
+const config = loadConfig(configPath);
 
 const RPC_URL = config.network.rpc_url;
 const COMMITMENT = config.network.commitment;

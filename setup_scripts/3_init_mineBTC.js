@@ -15,7 +15,8 @@ const __dirname = decodeURIComponent(new URL(".", import.meta.url).pathname);
 
 // Load configuration
 const configPath = path.resolve(__dirname, "./config.json");
-const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+import { loadConfig } from "./load_config.js";
+const config = loadConfig(configPath);
 const repoRoot = path.resolve(__dirname, "..");
 const irysWalletPath = path.resolve(repoRoot, "mainnet-irys-upload-wallet-keypair.json");
 

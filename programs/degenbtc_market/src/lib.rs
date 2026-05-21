@@ -24,6 +24,20 @@
 
 use anchor_lang::prelude::*;
 
+#[cfg(not(feature = "no-entrypoint"))]
+use solana_security_txt::security_txt;
+
+#[cfg(not(feature = "no-entrypoint"))]
+security_txt! {
+    name: "DegenBTC Marketplace",
+    project_url: "https://minebtc.fun",
+    contacts: "link:https://github.com/LifeOrDream/MineBtc-fi/security/advisories/new,email:pretentiouspunjabiguy@gmail.com,twitter:minebtcdotfun,link:https://tg.minebtc.fun/",
+    policy: "https://github.com/LifeOrDream/MineBtc-fi/blob/main/SECURITY.md",
+    preferred_languages: "en",
+    source_code: "https://github.com/LifeOrDream/MineBtc-fi",
+    auditors: "None — unaudited at launch"
+}
+
 pub mod errors;
 pub mod events;
 pub mod instructions;

@@ -2,7 +2,7 @@
   "devnet": {
     "network": {
       "cluster": "devnet",
-      "rpc_url": "https://devnet.helius-rpc.com/?api-key=1c296f19-6fe3-4af9-a80f-e29264df7ee3",
+      "rpc_url": "https://devnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}",
       "commitment": "confirmed"
     },
     "programs": {
@@ -351,7 +351,7 @@
   "mainnet": {
     "network": {
       "cluster": "mainnet",
-      "rpc_url": "https://mainnet.helius-rpc.com/?api-key=3d9b19fa-4177-41a8-b0e3-822d4f62152d",
+      "rpc_url": "https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}",
       "commitment": "confirmed"
     },
     "programs": {

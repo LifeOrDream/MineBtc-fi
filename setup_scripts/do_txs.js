@@ -91,9 +91,8 @@ const __dirname = path.dirname(__filename);
 //  SETUP
 // ════════════════════════════════════════════════════════════════════
 
-const config = JSON.parse(
-  fs.readFileSync(path.join(__dirname, "config.json"), "utf8"),
-);
+import { loadConfig } from "./load_config.js";
+const config = loadConfig(path.join(__dirname, "config.json"));
 const cluster = config.network.cluster;
 const deployment = JSON.parse(
   fs.readFileSync(
@@ -149,8 +148,7 @@ const HELIUS_RPC =
   cluster === "devnet"
     ? "https://devnet.helius-rpc.com"
     : "https://mainnet.helius-rpc.com";
-const HELIUS_API_KEY =
-  process.env.HELIUS_API_KEY || "00613837-c378-4a74-bc99-9dd891e24f89";
+const HELIUS_API_KEY = process.env.HELIUS_API_KEY || "";
 
 // ════════════════════════════════════════════════════════════════════
 //  ADDRESSES & PDAS
