@@ -94,7 +94,7 @@ const GAME_CONFIG = {
 
 const GAMEPLAY_TUNING_CONFIG = {
   enableRpgProgression:
-    config.gameplay_tuning?.enable_rpg_progression ?? true,
+    config.gameplay_tuning?.enable_rpg_progression ?? false,
   maxEvolutionStageUnlocked:
     config.gameplay_tuning?.max_evolution_stage_unlocked ?? 0,
   factionWarBaseRewardBps:
@@ -850,12 +850,11 @@ async function main() {
     // Off-chain helper: creates an ATA for LP tokens owned by vaultAuthority PDA
     // Uses @solana/spl-token getOrCreateAssociatedTokenAccount (no program instruction)
     await initializeLpTokenAccounts(minebtcProgram);
-    return;
 
     // 9c. Enable HashBeast minting (default is inactive after init)
     // Instruction: switch_hashbeast_mining() — toggles is_active to true
     // Accounts: hashbeastMintConfig, globalConfig, authority
-    // await enableHashBeastMining(minebtcProgram);
+    await enableHashBeastMining(minebtcProgram);
 
 
     // // 1.5. Update Fee Recipient (if needed - can be called anytime after initialization)
@@ -2669,7 +2668,10 @@ async function applyInitialRoundLaunchState(
   globalConfigPDA,
   roundsEnabledAtLaunch
 ) {
-  const current = await minebtcProgram.account.globalGameState.fetch(
+  // NB: contract struct is misspelled `GlobalGameSate` (missing 'T') so the
+  // IDL exposes it as `globalGameSate` — must match the typo, not the corrected
+  // spelling.
+  const current = await minebtcProgram.account.globalGameSate.fetch(
     globalGameStatePDA
   );
 

@@ -415,5 +415,155 @@
     "rounds_enabled_at_launch": false,
     "tx_signature": "5CHotjghgPxN3JwX6pTXNt6qaidRNqwEuW5msiGxV14983uzdALbYHUGNXYwBT9NuiknbWvDu7a5K1tnezjBME38",
     "timestamp": "2026-05-21T20:12:32.780Z"
+  },
+  "lp_token_accounts_initialized": {
+    "lp_token_account": "8GeWVft9EnizSGtYR8HRCSQN4TaG7dymCTctq2JK6H1c",
+    "lp_token_owner": "9PvRh6m96A69kgNyCPS3AuuZ6jJergX9m9wT3BKmtpLx",
+    "lp_mint": "AAU2ysMqrCdV9r4APyKy7bZ4Q63XRRF4SANUtMAZrVvF",
+    "timestamp": "2026-05-21T20:16:19.972Z"
+  },
+  "hashbeast_mining_enabled": true,
+  "war_config_initialized": {
+    "war_config_pda": "92kBkKFcY41tzEMqDTM5B41CRj2r8bnVscsNdkFD9twy",
+    "starting_war_id": 1,
+    "tx_signature": "3oLgHbjoyNgB6RnuC28sg4SysozZxXzyj61L6fBmJeaHN95HkrckcgonzYPsnDRPvPVwDZ6JDdHrKXiSo1H7aTbg",
+    "timestamp": "2026-05-21T20:18:21.178Z"
+  },
+  "gameplay_tuning_updated": {
+    "gameplay_tuning": {
+      "enable_rpg_progression": false,
+      "max_evolution_stage_unlocked": 0,
+      "war_base_reward_bps": 7500,
+      "war_mvp_reward_bps": 500,
+      "war_hashbeast_reward_bps": 2000,
+      "base_mutation_chance_bps": 2000,
+      "mutation_chance_floor_bps": 25,
+      "mutation_chance_cap_bps": 2500,
+      "faction_volume_threshold_lamports": 85000000,
+      "extra_volume_threshold_per_mutation_lamports": 85000000,
+      "target_mutations_per_cycle": 12,
+      "target_rounds_per_cycle": 240,
+      "pacing_max_adjustment_bps": 4000
+    },
+    "tx_signature": "3AxciuWj7Mz9trQXo88iTrRHrryt9cdsvgo7ziMtvbsbpcv1kfaPxSv7Ew5Rt72yVRq9VutfGjDhPFxYKPnBemu5",
+    "timestamp": "2026-05-21T20:18:22.751Z"
+  },
+  "degenbtc_marketplace_initialized": {
+    "marketplace_config_pda": "9GwDvnUbGaR5mzzjNRnJXWEAWRtSP5KQZMjmD4r4EFpG",
+    "marketplace_config_bump": 253,
+    "collection_mint": "9L1puw4upKfmQsak8MqR6zZVa8vbepE6MUDGwudA3Yo6",
+    "fee_bps": 300,
+    "fee_recipient": "7zXuQt1gYax8fu1ahbsdXe3g1FtVQWkwm55KiF9EQSfX",
+    "min_price_lamports": "10000000",
+    "admin": "7zXuQt1gYax8fu1ahbsdXe3g1FtVQWkwm55KiF9EQSfX",
+    "mpl_core_program": "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d",
+    "program_id": "BCuofnvb7QUP6xLH83EEbKFNjxz5T5Jp4xLqfEdURYRg",
+    "tx_signature": "53nmsBGdn6gvLeEYTAdjocHG6DsoAdz82pVt5H96wURU8KD1H3yRqNBZUn9pPPDRNXaezJiAcFwrYWEVJbGA8YCf",
+    "timestamp": "2026-05-21T20:18:24.365Z"
+  },
+  "inventory_pool_initialized": {
+    "inventory_pool_pda": "Hfxt8pg1JKGxDZoz9hyky6XPojw1ZfgZwaRrZ7w3Unqb",
+    "inventory_pool_bump": 254,
+    "floor_queue_pda": "2GizAjhTbRGK1h3zX5doZTK3w7dnNqBHXSD5NgQYVX1a",
+    "floor_queue_bump": 253,
+    "sale_history_pda": "AwNScMY8Nu47uw29akxyAZoDZFogQZmDsHdC1pbhP46",
+    "sale_history_bump": 255,
+    "floor_history_pda": "8vpRqSVWgKgvZLnbfnp1uL9G92Yhfi4SGeT5h574511s",
+    "floor_history_bump": 254,
+    "inventory_sweep_vault_pda": "4XDwhMaA98MaiVXpiqbevr9Kwmp9xGV2nGzQVeF7hbRq",
+    "inventory_sweep_vault_bump": 255,
+    "marketplace_program": "BCuofnvb7QUP6xLH83EEbKFNjxz5T5Jp4xLqfEdURYRg",
+    "marketplace_config": "9GwDvnUbGaR5mzzjNRnJXWEAWRtSP5KQZMjmD4r4EFpG",
+    "tx_signature": "YNQv9FPHuBEQT47dYWyJw5NVeUuSuGACfi9YT9yFjYVh1TES88L3TZrBjvhJeL4yhChujE8grvnCQf8kCiLomRh",
+    "timestamp": "2026-05-21T20:18:25.960Z"
+  },
+  "lootbox_queues_initialized": {
+    "queues": [
+      {
+        "faction_id": 0,
+        "faction_name": "USA",
+        "queue_pda": "DsriU32agGEVunRhGHjRFKm32VfgGo35aj3DS9uJinrC",
+        "bump": 255,
+        "tx_signature": "3N7orcYDWgcDdrheb9sVeFgqXhEDkXibHGvJSAetzyNLKBi2C79pDyU7WSXuPu2MAnMPpeK1gpS3GuqEf3Ksik8V"
+      },
+      {
+        "faction_id": 1,
+        "faction_name": "China",
+        "queue_pda": "FVuERvZC5gkrFzgrttduo4QCVGCgHzvCByEquUfiLnGa",
+        "bump": 252,
+        "tx_signature": "5v3oFAvzYt7AGcaKZ71vnUX6BzhgGhMQbL4X7GaM6PPskpJ9YXQw9LFSCHtUAoQJ6anjrTpxqyq3yMtn354z6sff"
+      },
+      {
+        "faction_id": 2,
+        "faction_name": "Russia",
+        "queue_pda": "B8BAwW9DndgeJvkqNmPtqMjCyqBJjMomo4qysz5EKDNS",
+        "bump": 254,
+        "tx_signature": "3CutS99xeyjhgSPN8FNfacFgy5b3KAf8GtbVM86ngUoDiaAXFMS6RkDDt2FEmeqNjVNtC1ryfjdb19Qi2tj5MC3o"
+      },
+      {
+        "faction_id": 3,
+        "faction_name": "India",
+        "queue_pda": "Fo9HZtAMRbeegM1eSWcyURbAs3yTP6tgo8mfVP5myDof",
+        "bump": 255,
+        "tx_signature": "5HXHQTsNEvWXpv9eyQB3UeHQf3w69kwngMteZ2maAoTat1LnnSaCNwsbv99DdHkyk52oZWGn9LsWVeJqwApzcB9h"
+      },
+      {
+        "faction_id": 4,
+        "faction_name": "Japan",
+        "queue_pda": "FnV1JSJzcDG1kBymUyH4WnZWq5MHGG4vTgnx3vaFtipu",
+        "bump": 255,
+        "tx_signature": "4hTWeDS11r25B3auU6g43iBHJbSp89BaCcdQYj6kZsC1Tz6yQJFbmA7Uzy7vi3qACjotmBBZaAvkPKzsLjZyYv1x"
+      },
+      {
+        "faction_id": 5,
+        "faction_name": "South Korea",
+        "queue_pda": "9kaMSG77RxjtfsvfNoZqSnrXQF2mkZRQzbPhUuFWcemw",
+        "bump": 252,
+        "tx_signature": "48cJxTkE579MvphA1wYDiPZcSA955cLZ7ZFjvfMRRVUk1W3TDx37XLcKeQSLMGzWbCoYb7MpHDebAe7xYLx7eCWg"
+      },
+      {
+        "faction_id": 6,
+        "faction_name": "Iran",
+        "queue_pda": "HbhDmLjv8PT2boomuWpHEyQL1w2UZgtkV3ftcTh5AZxc",
+        "bump": 254,
+        "tx_signature": "3KANEUB9J19DpUmZ7uaJsxuf2yXTf7fb76k9aaZGhHG6tPjv679PxkwUppQi837ZQ1CQRaFPyhLDsRBRbaZG4AKF"
+      },
+      {
+        "faction_id": 7,
+        "faction_name": "UK",
+        "queue_pda": "48m2uHK4RD9Scj9Xx8NJPd38TKjdXCg5grTuLNavBqZp",
+        "bump": 253,
+        "tx_signature": "gVkzDPeUJcYnofSjwTWoKj5gYs84Z49yuFtBUWvjWm7XCZknd1PS5i79vNHj2G1Pq258DsYKsmEYiDQNDdnKSDd"
+      },
+      {
+        "faction_id": 8,
+        "faction_name": "North Korea",
+        "queue_pda": "5WAVgkVnwRDC27XecxFMkpUvQGbwMLZqD2AtKECNemJ1",
+        "bump": 254,
+        "tx_signature": "2Q2UoBAqGG1hYzF1WqPxAVx6hDYRRPyMMkYTerKMTk9E4U82rDDBEFuYmpffwEHLrZzSUo4qEJ2Uodh2vatYBrEH"
+      },
+      {
+        "faction_id": 9,
+        "faction_name": "France",
+        "queue_pda": "812cThoqanK2o5CuGfreqCrmpLaaM5kD5BX8SDWwCaJm",
+        "bump": 255,
+        "tx_signature": "4mXV7WpAdautGTdVm8KN5j1mxH5Z4GN8HiHg1FpgzGNnRe6GbCGTrHAeRqASVKAXCftVQa3MJYzBg6mE1V7ZrtR7"
+      },
+      {
+        "faction_id": 10,
+        "faction_name": "Brazil",
+        "queue_pda": "8ZLCn2pH6iTv6v753sLc3XsQmX3y9NWpDwUdDXE2hMJY",
+        "bump": 255,
+        "tx_signature": "5T9Diy6MmZp1EWC6NrSbz2JnCA5MYfv6uW5ssMBd5yPg9hFASNyDJ6mCqqPZQdZMX7FqMWRssaGTP3MhXV8q3CND"
+      },
+      {
+        "faction_id": 11,
+        "faction_name": "Israel",
+        "queue_pda": "7Jq9K9U1NhBqtvwVjYmLFrrQDwxt4pwrLTdxzU1V9ecr",
+        "bump": 254,
+        "tx_signature": "3rSv2HpCRLDBzu34hBz3v5cWTxtiZWajbFDkj91Dz9HNdvAqjyv45t4Au6vr8QVdhPH4yqCsNwChC7haBxbiBN58"
+      }
+    ],
+    "timestamp": "2026-05-21T20:18:41.156Z"
   }
 }
