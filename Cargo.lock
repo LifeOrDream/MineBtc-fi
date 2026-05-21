@@ -617,6 +617,7 @@ dependencies = [
  "anchor-lang",
  "mpl-core",
  "solana-program",
+ "solana-security-txt",
 ]
 
 [[package]]
@@ -998,6 +999,7 @@ dependencies = [
  "mpl-token-metadata",
  "raydium-cp-swap",
  "solana-program",
+ "solana-security-txt",
  "spl-token 8.0.0",
  "subtle",
 ]

@@ -55,7 +55,8 @@ if (fs.existsSync(envPath)) {
 
 // Load configuration
 const configPath = path.resolve(__dirname, "../config.json");
-const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+import { loadConfig } from "../load_config.js";
+const config = loadConfig(configPath);
 
 // Load deployment data
 const CLUSTER = config.network.cluster;

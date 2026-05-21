@@ -30,5 +30,6 @@ shutdown_wait = 2000
 upgradeable = false
 
 [programs.mainnet]
-minebtc = "Hw9uxvtmQdS57N6aNwJA5iqjSqzhRDdopCHgm8EPwkqx"
-degenbtc_market = "MarKEt1111111111111111111111111111111111111"
+minebtc = "1eotiTH2UxCpPMmtzUDGqf1b8dwM7AMKb8a2Tio51an"
+degenbtc_market = "BCuofnvb7QUP6xLH83EEbKFNjxz5T5Jp4xLqfEdURYRg"
+raydium_cp_swap = "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C"

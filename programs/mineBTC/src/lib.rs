@@ -31,6 +31,21 @@
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::program::set_return_data;
 use borsh::{BorshDeserialize, BorshSerialize};
+
+#[cfg(not(feature = "no-entrypoint"))]
+use solana_security_txt::security_txt;
+
+#[cfg(not(feature = "no-entrypoint"))]
+security_txt! {
+    name: "MineBTC",
+    project_url: "https://minebtc.fun",
+    contacts: "link:https://github.com/LifeOrDream/MineBtc-fi/security/advisories/new,email:pretentiouspunjabiguy@gmail.com,twitter:minebtcdotfun,link:https://tg.minebtc.fun/",
+    policy: "https://github.com/LifeOrDream/MineBtc-fi/blob/main/SECURITY.md",
+    preferred_languages: "en",
+    source_code: "https://github.com/LifeOrDream/MineBtc-fi",
+    auditors: "None — unaudited at launch"
+}
+
 mod errors;
 mod events;
 mod genescience;
@@ -53,7 +68,7 @@ pub use state::{
     HashBeastMintConfig, PredictionDirection, SolFeeConfig, TaxConfig, TicketTier,
 };
 
-declare_id!("FoACK8AbSqy9rPtRccTyqxhgHX9xSLWYnBEfXvDNPX61");
+declare_id!("1eotiTH2UxCpPMmtzUDGqf1b8dwM7AMKb8a2Tio51an");
 
 #[macro_export]
 macro_rules! log_fn {

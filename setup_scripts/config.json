@@ -1,7 +1,7 @@
 {
     "network": {
         "cluster": "mainnet",
-        "rpc_url": "https://mainnet.helius-rpc.com/?api-key=1c296f19-6fe3-4af9-a80f-e29264df7ee3",
+        "rpc_url": "https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}",
         "commitment": "confirmed"
     },
     "deployment": {
@@ -37,8 +37,8 @@
         "max_transfer_fee_amount": 1000000
     },
     "raydium": {
-        "program_id": "68NJDT912wd5EuCB3jDabR77gCjM3xgfkJ21hUxgfYJ4",
-        "use_official_program": false,
+        "program_id": "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C",
+        "use_official_program": true,
         "amm_config_index": 3,
         "trade_fee_rate": 10000,
         "protocol_fee_rate": 1000,
@@ -151,7 +151,7 @@
         "collection_symbol": "HBEAST",
         "collection_description": "Casino-speed country wars meet evolving NFT beasts. Hashbeasts mutate, breed, rebirth, and help players mine degenBTC on Solana.",
         "collection_image": "https://gateway.irys.xyz/BCBG92F2ZDTcE1EScogd9q2xo8ommh3v28tktsACBaZ1",
-        "collection_uri": "https://gateway.irys.xyz/FV1f82gKwtzvuGcJCuM6g6qrPdcDCaAe8bGvAZ6WiFL2"
+        "collection_uri": "https://gateway.irys.xyz/5SYVgc3ecjGUMNFsxUFxweRdn58ptVdiw7ug2U26Z4p9"
     },
     "tax": {
         "_notes": "Splits sum need not be 100; the residual (100 - faction_treasury - burn) flows back to the mining vault. NFT market making is now funded from SOL — see global sol_fee_config.nft_market_making_pct, default 3%.",
