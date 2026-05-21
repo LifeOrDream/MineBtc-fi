@@ -50,3 +50,4 @@ raydium/tsconfig.json
 raydium/yarn.lock
 raydium/tests/
 new-mainnet-keypair.json
+setup_scripts/config.json

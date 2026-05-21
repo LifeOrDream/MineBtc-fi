@@ -1,7 +1,7 @@
 {
     "network": {
         "cluster": "mainnet",
-        "rpc_url": "https://mainnet.helius-rpc.com/?api-key=1c296f19-6fe3-4af9-a80f-e29264df7ee3",
+        "rpc_url": "https://mainnet.helius-rpc.com/?api-key=3d9b19fa-4177-41a8-b0e3-822d4f62152d",
         "commitment": "confirmed"
     },
     "deployment": {
@@ -37,8 +37,8 @@
         "max_transfer_fee_amount": 1000000
     },
     "raydium": {
-        "program_id": "68NJDT912wd5EuCB3jDabR77gCjM3xgfkJ21hUxgfYJ4",
-        "use_official_program": false,
+        "program_id": "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C",
+        "use_official_program": true,
         "amm_config_index": 3,
         "trade_fee_rate": 10000,
         "protocol_fee_rate": 1000,

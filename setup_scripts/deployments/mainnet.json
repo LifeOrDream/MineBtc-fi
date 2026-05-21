@@ -1,1 +1,8 @@
-{}
+{
+  "MINE_BTC_PROGRAM_ID": "1eotiTH2UxCpPMmtzUDGqf1b8dwM7AMKb8a2Tio51an",
+  "DEGENBTC_MARKET_PROGRAM_ID": "BCuofnvb7QUP6xLH83EEbKFNjxz5T5Jp4xLqfEdURYRg",
+  "game_programs_deployment": {
+    "timestamp": "2026-05-21T19:23:42.835Z",
+    "cluster": "mainnet"
+  }
+}
