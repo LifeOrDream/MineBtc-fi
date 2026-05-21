@@ -180,3 +180,9 @@ The safety posture is adversarial by default:
 - user recipients fixed by PDA/account constraints.
 
 MineBTC is an entertainment protocol and on-chain game. It is not investment advice, financial advice, or a real-world geopolitical oracle.
+
+## License
+
+MineBTC is source-available under the Business Source License 1.1 (`BUSL-1.1`).
+
+You may read, audit, modify, redistribute, and use the code for non-production purposes. Production use, commercial use, revenue-generating forks, or deploying substantial derivatives of the protocol requires a commercial license from LifeOrDream Labs until the license change date. See [LICENSE](LICENSE) for the controlling terms.

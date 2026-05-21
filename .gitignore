@@ -2,6 +2,7 @@
 **/target/release/*
 **/target/sbpf-solana-solana/*
 **/target/debug/*
+target/flycheck*/
 
 /raydium/*
 
