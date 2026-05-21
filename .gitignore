@@ -1,6 +1,9 @@
 # Build artifacts
-target/
-**/target/
+**/target/release/*
+**/target/sbpf-solana-solana/*
+**/target/debug/*
+
+/raydium/*
 
 # Dependencies
 **/node_modules/
@@ -51,3 +54,5 @@ raydium/yarn.lock
 raydium/tests/
 new-mainnet-keypair.json
 setup_scripts/config.json
+target/deploy/degenbtc_market-keypair.json
+target/deploy/minebtc-keypair.json
