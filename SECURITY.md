@@ -1,42 +1,32 @@
-# Security Policy
+# Security
 
-## Reporting security problems in MineBTC programs
+MineBTC moves real SOL through betting rounds, mints real-supply dBTC, and runs a live NFT mint. If you find a bug that breaks any of that, we want to hear from you privately — not on Twitter.
 
-**DO NOT CREATE A GITHUB ISSUE** to report a security problem.
+## How to report
 
-Instead please use this [Report a Vulnerability](https://github.com/LifeOrDream/MineBtc-fi/security/advisories/new) link. Provide a helpful title, detailed description of the vulnerability, and an exploit proof-of-concept. Speculative submissions without proof-of-concept will be closed with no further consideration.
+Open a private advisory at https://github.com/LifeOrDream/MineBtc-fi/security/advisories/new — please do not file a public GitHub issue.
 
-If you haven't done so already, please enable two-factor auth in your GitHub account.
+We aim to acknowledge inside 72 hours. If the advisory goes quiet, email **pretentiouspunjabiguy@gmail.com** with the advisory URL only — no exploit details in the email itself. Still no response? Ping us in Telegram (https://tg.minebtc.fun/) referencing the advisory. Don't paste exploit details in the public chat.
 
-Expect a response as fast as possible in the advisory, **typically within 72 hours**.
-
-If you do not receive a response in the advisory, send an email to **pretentiouspunjabiguy@gmail.com** with the full URL of the advisory you have created. **DO NOT** include attachments or provide detail sufficient for exploitation regarding the security issue in this email. Only provide such details in the advisory.
-
-If you do not receive a response on email either, please follow up with the team directly on Telegram at **https://tg.minebtc.fun/**. Mention that you submitted a security advisory and reference the advisory URL — do not paste exploit details in the public group.
+Please report from a GitHub account with 2FA enabled.
 
 ## In scope
 
 - MineBTC program: `1eotiTH2UxCpPMmtzUDGqf1b8dwM7AMKb8a2Tio51an`
 - DegenBTC Marketplace program: `BCuofnvb7QUP6xLH83EEbKFNjxz5T5Jp4xLqfEdURYRg`
-- dBTC token mint and its Token-2022 transfer-fee config: `CtAu3kc8cQ1jcDMmRTBsDHoPuE3sswCagQ3BuqFDC6dt`
-- dBTC/SOL Raydium CP-Swap pool state: `F87M4sT6Wtfk4enVVbtM4ZnWsqCE9TXzL12Apwj3Cjtj`
 
 ## Out of scope
 
-- Front-end / website bugs (`minebtc.fun`) — report informally on Telegram, not via security advisory.
-- Issues in third-party programs we CPI into (Raydium CP-Swap, Metaplex Core, Token-2022, SPL Token). Report those upstream.
-- Theoretical issues without a concrete exploit path.
-- MEV / sandwich attacks against bettors — this is a public mempool, by design.
-- Reorg / cluster-level Solana issues.
+- Front-end / website (`minebtc.fun`) — reach out on Telegram instead.
+- Third-party programs we only CPI into (Raydium CP-Swap, Metaplex Core, Token-2022, SPL Token). Report upstream.
+- Theoretical findings without a working PoC.
+- MEV / sandwich attacks against bettors — Solana has a public mempool, by design.
+- Reorgs and other cluster-level Solana issues.
 
-## What we want
+## What we care about
 
-In-scope findings that lead to **loss of user funds, theft of protocol funds, unauthorized admin actions, or permanent denial-of-service** of core game functions (round play, claims, mints, marketplace).
+Findings that lead to loss of user funds, theft of protocol funds, unauthorized admin actions, or permanent denial-of-service of round play, claims, mints, or the marketplace.
 
 ## Bounties
 
-We do not run a fixed bounty program. We pay rewards at our discretion, proportional to severity and impact, paid in SOL or dBTC. No bounty for issues already publicly disclosed or reported by another party. We will not pursue legal action against good-faith researchers who follow this policy.
-
-## Hall of fame
-
-Credited at https://minebtc.fun/security (coming post-launch).
+No fixed payout table. We pay at our discretion in SOL or dBTC, scaled to severity and impact. No bounty for issues already public, or already reported by someone else. We won't pursue legal action against good-faith researchers who follow this policy.
