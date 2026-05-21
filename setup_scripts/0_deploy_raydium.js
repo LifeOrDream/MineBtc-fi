@@ -13,7 +13,13 @@ const __dirname = path.dirname(__filename);
 
 const ROOT_DIR = path.join(__dirname, "..");
 const RAYDIUM_DIR = path.join(ROOT_DIR, "raydium");
-const WALLET_KEYPAIR_PATH = path.join(ROOT_DIR, "devnet-wallet-keypair.json");
+const CONFIG_PATH = path.join(__dirname, "config.json");
+const LAUNCH_CONFIG = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+const WALLET_KEYPAIR_PATH = path.resolve(
+  __dirname,
+  LAUNCH_CONFIG.deployment?.paths?.deployer_key ??
+    "../devnet-wallet-keypair.json"
+);
 const RAYDIUM_DEPLOY_DIR = path.join(RAYDIUM_DIR, "target", "deploy");
 const RAYDIUM_KEYPAIR_PATH = path.join(
   RAYDIUM_DEPLOY_DIR,
@@ -149,11 +155,10 @@ function buildRaydium(secretKey) {
 function deployRaydium(programId) {
   console.log(`\x1b[36m🚀 Deploying Raydium CP Swap...\x1b[0m`);
 
-  const configPath = path.join(__dirname, "config.json");
   let clusterUrl = "http://127.0.0.1:8899";
 
   try {
-    const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    const config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
     clusterUrl = config.network?.rpc_url || clusterUrl;
   } catch (error) {}
 
@@ -167,7 +172,7 @@ function deployRaydium(programId) {
   );
   const stagedWalletPath = stageForSolanaCli(
     WALLET_KEYPAIR_PATH,
-    "devnet-wallet-keypair.json"
+    path.basename(WALLET_KEYPAIR_PATH)
   );
 
   const deployCommand = `solana program deploy ${shellEscape(
@@ -330,7 +335,7 @@ function checkIfDeployed() {
     try {
       const stagedWalletPath = stageForSolanaCli(
         WALLET_KEYPAIR_PATH,
-        "devnet-wallet-keypair.json"
+        path.basename(WALLET_KEYPAIR_PATH)
       );
       const checkCommand = `solana program show ${programId} --keypair ${shellEscape(
         stagedWalletPath

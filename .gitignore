@@ -34,6 +34,9 @@ setup_scripts/tmp/
 # Dev scripts
 refactor.sh
 
+# Local agent/project metadata
+.superstack/
+
 # Legacy / unused directories
 v2/
 outdated_dump/
@@ -46,5 +49,4 @@ raydium/package.json
 raydium/tsconfig.json
 raydium/yarn.lock
 raydium/tests/
-.superstack/learnings.md
 new-mainnet-keypair.json

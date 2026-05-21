@@ -87,6 +87,11 @@ const FACTION_WAR_CONFIG = {
   isActive: config.faction_war?.is_active ?? true,
 };
 
+const GAME_CONFIG = {
+  roundDurationSeconds: config.game?.round_duration_seconds ?? 60,
+  roundsEnabledAtLaunch: config.game?.rounds_enabled_at_launch ?? true,
+};
+
 const GAMEPLAY_TUNING_CONFIG = {
   enableRpgProgression:
     config.gameplay_tuning?.enable_rpg_progression ?? true,
@@ -487,6 +492,12 @@ async function validateInitializationConfig() {
 
   if (config.hashpower.base_multiplier !== 100 || config.hashpower.max_multiplier !== 300) {
     throw new Error("Hashpower config should be base=100 and max=300 for 1x..3x lockup multiplier");
+  }
+
+  if (!GAME_CONFIG.roundsEnabledAtLaunch && GAMEPLAY_TUNING_CONFIG.enableRpgProgression) {
+    throw new Error(
+      "Mainnet launch config disables 60s rounds but leaves HashBeast RPG locking enabled. Set gameplay_tuning.enable_rpg_progression=false for the intended launch posture."
+    );
   }
 
   console.log(COLOR_SUCCESS, "✅ Init config validated");
@@ -2588,7 +2599,8 @@ async function initializeGameState(minebtcProgram) {
     minebtcProgram.programId
     );
 
-    const roundDurationSeconds = config.game.round_duration_seconds;
+    const roundDurationSeconds = GAME_CONFIG.roundDurationSeconds;
+    const roundsEnabledAtLaunch = GAME_CONFIG.roundsEnabledAtLaunch;
 
   console.log(
     COLOR_INFO,
@@ -2599,6 +2611,10 @@ async function initializeGameState(minebtcProgram) {
     `⏱️ Round Duration: ${roundDurationSeconds} seconds (${
       roundDurationSeconds / 3600
     } hours)`
+  );
+  console.log(
+    COLOR_INFO,
+    `🎮 60s rounds enabled at launch: ${roundsEnabledAtLaunch}`
   );
 
   try {
@@ -2618,6 +2634,7 @@ async function initializeGameState(minebtcProgram) {
         deploymentFile.game_state_initialized = {
             global_game_state_pda: globalGameStatePDA.toString(),
             round_duration_seconds: roundDurationSeconds,
+            rounds_enabled_at_launch: roundsEnabledAtLaunch,
             tx_signature: tx,
       timestamp: new Date().toISOString(),
         };
@@ -2628,6 +2645,7 @@ async function initializeGameState(minebtcProgram) {
             deploymentFile.game_state_initialized = {
                 global_game_state_pda: globalGameStatePDA.toString(),
                 round_duration_seconds: roundDurationSeconds,
+                rounds_enabled_at_launch: roundsEnabledAtLaunch,
             };
             saveDeploymentData();
         } else {
@@ -2635,6 +2653,69 @@ async function initializeGameState(minebtcProgram) {
             throw error;
         }
     }
+
+  await applyInitialRoundLaunchState(
+    minebtcProgram,
+    globalGameStatePDA,
+    globalConfigPDA,
+    roundsEnabledAtLaunch
+  );
+}
+
+async function applyInitialRoundLaunchState(
+  minebtcProgram,
+  globalGameStatePDA,
+  globalConfigPDA,
+  roundsEnabledAtLaunch
+) {
+  const current = await minebtcProgram.account.globalGameState.fetch(
+    globalGameStatePDA
+  );
+
+  if (current.isActive === roundsEnabledAtLaunch) {
+    console.log(
+      COLOR_INFO,
+      `ℹ️ Round launch state already matches config: is_active=${current.isActive}`
+    );
+    deploymentFile.game_state_launch_configured = {
+      global_game_state_pda: globalGameStatePDA.toString(),
+      rounds_enabled_at_launch: roundsEnabledAtLaunch,
+      tx_signature: null,
+      timestamp: new Date().toISOString(),
+    };
+    saveDeploymentData();
+    return;
+  }
+
+  console.log(
+    COLOR_STEP,
+    "\n================ [ APPLYING ROUND LAUNCH STATE ] ================"
+  );
+  console.log(
+    COLOR_INFO,
+    `🎮 Updating GlobalGameState.is_active ${current.isActive} → ${roundsEnabledAtLaunch}`
+  );
+
+  const tx = await minebtcProgram.methods
+    .updateGameState(roundsEnabledAtLaunch, null)
+    .accounts({
+      globalGameState: globalGameStatePDA,
+      globalConfig: globalConfigPDA,
+      authority: wallet.publicKey,
+      systemProgram: SystemProgram.programId,
+    })
+    .rpc();
+
+  console.log(COLOR_SUCCESS, "✅ Round launch state applied successfully!");
+  console.log(COLOR_DIM, `   Transaction: ${tx}`);
+
+  deploymentFile.game_state_launch_configured = {
+    global_game_state_pda: globalGameStatePDA.toString(),
+    rounds_enabled_at_launch: roundsEnabledAtLaunch,
+    tx_signature: tx,
+    timestamp: new Date().toISOString(),
+  };
+  saveDeploymentData();
 }
 
 async function initializeLpTokenAccounts(minebtcProgram) {
@@ -3377,7 +3458,7 @@ async function updateGameplayTuning(minebtcProgram, gameplayTuningConfig) {
   );
 
   console.log(COLOR_INFO, "   Target gameplay tuning:");
-  console.log(COLOR_INFO, `     RPG progression: ${target.rpgProgression}`);
+  console.log(COLOR_INFO, `     RPG progression: ${target.enableRpgProgression}`);
   console.log(
     COLOR_INFO,
     `     Evolution stage unlocked: ${target.maxEvolutionStageUnlocked}`

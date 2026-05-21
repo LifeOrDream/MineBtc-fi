@@ -1,12 +1,12 @@
 {
     "network": {
-        "cluster": "devnet",
-        "rpc_url": "https://devnet.helius-rpc.com/?api-key=1c296f19-6fe3-4af9-a80f-e29264df7ee3",
+        "cluster": "mainnet",
+        "rpc_url": "https://mainnet.helius-rpc.com/?api-key=1c296f19-6fe3-4af9-a80f-e29264df7ee3",
         "commitment": "confirmed"
     },
     "deployment": {
         "paths": {
-            "deployer_key": "../devnet-wallet-keypair.json",
+            "deployer_key": "../mainnet-wallet-keypair.json",
             "minebtc_idl": "../target/idl/minebtc.json",
             "degenbtc_market_idl": "../target/idl/degenbtc_market.json",
             "raydium_idl": "../target/idl/raydium_cp_swap.json",
@@ -159,7 +159,8 @@
         "burnt_pct": 50
     },
     "game": {
-        "round_duration_seconds": 60
+        "round_duration_seconds": 60,
+        "rounds_enabled_at_launch": false
     },
     "emissions": {
         "price_change_threshold_pct": 3,
@@ -170,7 +171,7 @@
         "is_active": true
     },
     "gameplay_tuning": {
-        "enable_rpg_progression": true,
+        "enable_rpg_progression": false,
         "max_evolution_stage_unlocked": 0,
         "war_base_reward_bps": 7500,
         "war_mvp_reward_bps": 500,
