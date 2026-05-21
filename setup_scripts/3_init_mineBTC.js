@@ -131,7 +131,7 @@ const LIVE_FEE_CONFIG = {
   newMinebtcSameFactionPct: 21,
   newMinebtcJackpotPct: 5,
   newHodlTaxPct: 10,
-  snapshotInterval: 5 * 60,
+  snapshotInterval: 30 * 60,
   // Cycle SOL split: % of user bet reserved for faction-war jackpot (taken from gross bet, in addition to protocol fee)
   newCycleSolSplitPct: 5,
   // NFT market making: % of distribute_sol_fees SOL routed to inventory_sweep_vault
@@ -695,6 +695,7 @@ async function main() {
     );
   }
 
+
   try {
     // 1. Initialize MineBTC Program
     // Instruction: initialize(fee_recipient: Pubkey)
@@ -745,9 +746,9 @@ async function main() {
     //   snapshot_interval: Option<u64>,              — min seconds between price snapshots
     // )
     // Accounts: globalConfig, authority
-    await updateFees(minebtcProgram, LIVE_FEE_CONFIG);
+    // await updateFees(minebtcProgram, LIVE_FEE_CONFIG);
 
-    console.log("\n✅ First 5 init functions completed. Continuing with remaining init functions...");
+    // console.log("\n✅ First 5 init functions completed. Continuing with remaining init functions...");
 
     // 5. Initialize Mining System (Token Vault + Mining Parameters)
     // Instruction: initialize_mining(dbtc_per_round: u64, pool_state: Pubkey)
@@ -849,12 +850,12 @@ async function main() {
     // Off-chain helper: creates an ATA for LP tokens owned by vaultAuthority PDA
     // Uses @solana/spl-token getOrCreateAssociatedTokenAccount (no program instruction)
     await initializeLpTokenAccounts(minebtcProgram);
-    // return;
+    return;
 
     // 9c. Enable HashBeast minting (default is inactive after init)
     // Instruction: switch_hashbeast_mining() — toggles is_active to true
     // Accounts: hashbeastMintConfig, globalConfig, authority
-    await enableHashBeastMining(minebtcProgram);
+    // await enableHashBeastMining(minebtcProgram);
 
 
     // // 1.5. Update Fee Recipient (if needed - can be called anytime after initialization)

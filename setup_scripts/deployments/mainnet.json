@@ -75,5 +75,345 @@
     "new_update_authority": null,
     "removal_signature": "f5T3PSuiJtLf7XjDG1cnKhkeqqefNABABVcfeFsMuehutzYcPDZtB8Akvg6ZhdoyfuQrkpK3H9z8wuwkkjbLeFL",
     "timestamp": "2026-05-21T19:32:15.456Z"
+  },
+  "RAYDIUM_CP_PROGRAM_ID": "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C",
+  "raydium_amm_config_created": {
+    "amm_config_pda": "G95xxie3XbkCqtE39GgQ9Ggc7xBC8Uceve7HFDEFApkc",
+    "raydium_program_id": "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C",
+    "config_index": 3,
+    "is_official_raydium": true,
+    "status": "created_by_raydium_team",
+    "timestamp": "2026-05-22T00:00:00.000Z"
+  },
+  "dbtc_sol_pool_created": {
+    "poolStatePDA": "F87M4sT6Wtfk4enVVbtM4ZnWsqCE9TXzL12Apwj3Cjtj",
+    "lpMintPDA": "AAU2ysMqrCdV9r4APyKy7bZ4Q63XRRF4SANUtMAZrVvF",
+    "token0VaultPDA": "EMDuS9XZesBDo8urJzwgrKC7qJrLQ6hHXVvSLNE6s3ui",
+    "token1VaultPDA": "79nGAzP7D7GvHe4bPPs4DBHHGXspqE16Kn3w5e9QHEQw",
+    "authorityPDA": "GpMZbSM2GgvTKHJirzeGfMFoaZ8UR2X7F4v8vHTvxFbL",
+    "observationStatePDA": "AKntdQ2xdxtt9uXvWFsqDQHV3zdGi2xpac89ri3nQGpJ",
+    "token0Mint": "So11111111111111111111111111111111111111112",
+    "token1Mint": "CtAu3kc8cQ1jcDMmRTBsDHoPuE3sswCagQ3BuqFDC6dt",
+    "isDbtcToken0": false,
+    "txid": null,
+    "wrapTxid": null,
+    "initialDbtcAmount": "1000000000000",
+    "initialSolAmount": "5000000000",
+    "initialDbtcWholeTokens": 1000000,
+    "openTime": 1779392659,
+    "timestamp": "2026-05-22T00:00:00.000Z"
+  },
+  "minebtc_program_initialized": {
+    "globalConfig_address": "HDhaS5Am9BFtB5JH4v3ftsx1R7p5LW4ngLBp4PB5kQHa",
+    "mineBtcMining_address": "29jvLxLujy3Ex749VeqauiE1hfUU6MEMB1gA5YoYRYmu",
+    "solTreasury_address": "2TU3jP7vnhPD1ksVmSMQhuAauuFCuj9magtMWDW65jEx",
+    "autominerCustody_address": "9nGcJTkKb9xwCgzu5qn8dcz8GSD6hsEVfqTGfGKMXgqa",
+    "hodlPool_address": "HEJxyncN1KUiGqfdXMsFSeCPtp52e2W6FNtWEvSusTZq",
+    "FEE_RECIPIENT_MULTISIG": "CRxMur2bSuhBHQnA5FSBocA3kWjSTmhoxPXJ3JNRs8WZ",
+    "tx_signature": "24d4qoSafE7fVP6JxUCZKLfy3KaoSkpmuSZqim1PMTKe65SXoFXihLwn97qDHFPmwt4HsNxsStegb9LTY5yr5McZ",
+    "timestamp": "2026-05-21T19:52:49.218Z"
+  },
+  "raydium_pool_state_set": {
+    "pool_state_address": "F87M4sT6Wtfk4enVVbtM4ZnWsqCE9TXzL12Apwj3Cjtj",
+    "sol_rewards_vault": "FYnbbqMPUetvN22CDeDxAJb4SSXmqZcGEbrwVvoJREvK",
+    "sol_prize_pot_vault": "AMuDuGgeWtmT3b7QPCAqQTducxV1Z2s6GjDY2gwGE91C",
+    "tx_signature": "3UmKfHJFy5GDNzFmPnq8yAULFmGgj25fQzJ5oMS7aNyrZKd2URLHNey48YZZokvMHjjoFfkVC2gEMYNMQUdtc7k7",
+    "timestamp": "2026-05-21T19:53:57.744Z"
+  },
+  "war_sol_vault_pda": "DRnKgn51Mm7t1UneFD6Je5B6XLWmFt9gBdJN5xPcXfMB",
+  "factions_added": {
+    "factions": [
+      {
+        "faction_id": 0,
+        "name": "USA",
+        "faction_state_pda": "GDfHBsJjn7R6W87q31swFt1jxwuAk96ueB4Po7UX21Fd",
+        "tx_signature": "5BuDPBkwTYP4i9hYmBVEmoKLcADoQBwDfnHkai5sWTh8C4x2DBGFBjUPB3n2At9KiQYZh7GyjSuEp5qeuRDwVM9b"
+      },
+      {
+        "faction_id": 1,
+        "name": "China",
+        "faction_state_pda": "AbHPcfnwz2ViqtZwQT7jirtGtrC3kopzNwWeHwxWzoG3",
+        "tx_signature": "69FbKgQmNUGBXssVKP6uXChXE9ZP6XnEJso4idGcGCrKubRJCHPEMVnT3xAvTtVE4QADLwskbgRELbStRgAGk1t"
+      },
+      {
+        "faction_id": 2,
+        "name": "Russia",
+        "faction_state_pda": "DjJnSut8YrFEBxUFp6AiCyjFX9ystY6TucYWpdMExvYX",
+        "tx_signature": "5KtztnURBGqZLwB2urLEZycyByrmJWcpKs8EXbDScBmU1TDwtyjntnvuyjLmQ5YW1M9jM8cvCFKSdgvdUwVD7wKn"
+      },
+      {
+        "faction_id": 3,
+        "name": "India",
+        "faction_state_pda": "29pYKTq4KreYgsMWnpCn437ZFgWQA81Yo27nySMsayLJ",
+        "tx_signature": "pKJGaUeU32upnyu6PT6SsPCBt2369GnjmYw3aZe72eeyd7eucGXufe8cejk4SGsKsgs1njA1KFAAFFeHn5nHQ4D"
+      },
+      {
+        "faction_id": 4,
+        "name": "Japan",
+        "faction_state_pda": "DhNhmrxzNPzWnNoBAV85SsmQThT2gKeNm2GUFnZM9Gt1",
+        "tx_signature": "4MVYYhoXqcwuV7Lj7nwWsmvreZoQGYWCk15xKbpB7M5SSaaVeRsD5FuThXGc4YzfHhakdHEDdctZ34wAnjekjTXp"
+      },
+      {
+        "faction_id": 5,
+        "name": "South Korea",
+        "faction_state_pda": "4mLQSUMooqghe7bCwyQhY7zq7g6jyYDEzzLDHokHD4Y7",
+        "tx_signature": "23CNbVVgDQhy6k4LDnY69C9zScNfukvcfmwg8w9pakKR1bnqkkTHgSUpVUVBBPf2eR5LJRmMBY6pKfDTRXjet7ve"
+      },
+      {
+        "faction_id": 6,
+        "name": "Iran",
+        "faction_state_pda": "BieY5A2iPt9WAvFaZf2HLxQY4NxADedA7UBjDPgXVjwc",
+        "tx_signature": "5jeg2bNY7CCxF9oSAn1zfpjeJn1ZeBBwRWGbtHSYQoLpgqDcj1faAzeHPxXq2ZZPktKvMzVdkhRVhQ2DuPKA2FjP"
+      },
+      {
+        "faction_id": 7,
+        "name": "UK",
+        "faction_state_pda": "EnDqzQz7oqzRNg9bLPqFcM1ToCgiQoYatT69Q1oLH1W7",
+        "tx_signature": "5HL9RkBApKQTRuvMwiS62d6GR6SLEUaKxB5AAvFn2CMC7DD9yusQRKRrEST1MgAszwirJvMYXHtWZaMZuBUtMEGR"
+      },
+      {
+        "faction_id": 8,
+        "name": "North Korea",
+        "faction_state_pda": "8m2BynKH8KrzhtjknjLL2t2K95BzavKytB5Hog3eTbBy",
+        "tx_signature": "41mCmhL1TNrnxW8MrV7xak2zZjcedBKDzmhYHxTG68w7gPPWFQLHGqF3s2ovpe7py6fhp9VecNs9DUprmZM497Az"
+      },
+      {
+        "faction_id": 9,
+        "name": "France",
+        "faction_state_pda": "C26PJ9bmYyjwmGJmqxrK5bFUJCCh1boQLy7ed7yBToUH",
+        "tx_signature": "2uNYX2xWCciQU1naJjHuF4RWw6nJoyZSt13vFsuENkSdSC6JNmsCnTXzmh8Leu1h49zhsw7bKM3JdmRZizdyXQQZ"
+      },
+      {
+        "faction_id": 10,
+        "name": "Brazil",
+        "faction_state_pda": "zrnPhGb5L1WjvWz8bMmB8EENXmXKNFwHKeR163R4gwN",
+        "tx_signature": "2LkKfzX427h2NZW2VHX8ZU3dW5RisgrPHCzBvgkwxGYHQo5MPkpLNA5qMF6DZaoEFsfTKaECGevJnJ6Q2vmFcmw9"
+      },
+      {
+        "faction_id": 11,
+        "name": "Israel",
+        "faction_state_pda": "EzecUZi5ukXcFg5tS9S9b11FwhqfDQRiLpeKJKhb5PhQ",
+        "tx_signature": "5RucaoWiSB6GpZx1zJUZGFvEGwLi3FzKwbcaf3iM4WycWbcQiBqbioxuXMRjjKtz8QnZ94ukGaUkCKvx8i6YmeYb"
+      }
+    ],
+    "timestamp": "2026-05-21T19:56:59.399Z"
+  },
+  "system_accounts_initialized": {
+    "system_referral_rewards_pda": "2Jqdnu36hktws84o61EfeqbGthRmNKubV88C7M549cNu",
+    "buybacks_account_pda": "G8GWDSggYVMEhf7ZTjPajbtfEZRFVpYzpip2EAQ3xTec",
+    "buybacks_sol_vault_pda": "DdatmQD4g2vQdgAw7RvdZFYSouTEB4ebjXWAqH1T86rs",
+    "tx_signature": "49hpzML2XXauy5DknZnUxQ96vzmTykb9iatUGQt5LK43bFoN4YiP5esAwCRFXxA6e4L1KjKHzFB6QQhF8XpbN7Zo",
+    "timestamp": "2026-05-21T19:58:26.336Z"
+  },
+  "fees_updated": {
+    "fee_config": {
+      "newProtocolFeePct": 15,
+      "newBuybackPct": 70,
+      "newStakersPct": 10,
+      "newMinebtcStakersPct": 3,
+      "newMinebtcWinnersPct": 50,
+      "newMinebtcSameFactionPct": 21,
+      "newMinebtcJackpotPct": 5,
+      "newHodlTaxPct": 10,
+      "snapshotInterval": 1800,
+      "newCycleSolSplitPct": 5,
+      "newNftMarketMakingPct": 3
+    },
+    "tx_signature": "2DYpqAUo8sjFurYSnMQ76D6pNJPfXQyDX4sCGgRbPyPFk8oie2cijJH7PvukYiLsMwGn1PtR14rLAUhAEKG31WZp",
+    "timestamp": "2026-05-21T20:07:58.722Z"
+  },
+  "mining_vault_initialized": {
+    "vault_address": "4mbwwmuNuZ66hC2NavamqtmUBqFqZVnpn6iBHipAJc9X",
+    "vault_authority": "9PvRh6m96A69kgNyCPS3AuuZ6jJergX9m9wT3BKmtpLx",
+    "degen_btc_per_round": "1000000000",
+    "tx_signature": "2eSkGcZnovn5aoLm5UkGZmNWBciSthsdQbvMpkoa3SXkXPuxaZAFdrTEKR6jEwKqvc31fPXQmuY89sGV878BMu82",
+    "timestamp": "2026-05-21T20:08:00.695Z"
+  },
+  "mining_tokens_deposited": {
+    "amount": "2099000000000000",
+    "amount_readable": "2,099,000,000 dBTC",
+    "expected_transfer_fee": "1000000",
+    "expected_vault_credit_after_transfer_fee": "2098999999000000",
+    "tx_signature": "2QqgL7XYZQm9j69HviengQajzfmmgyV1t5jkzg8pduQBNTepWuQVZb9kuynxeRqy8prWMBv3WJuuKKG9K4nT1hT3",
+    "timestamp": "2026-05-21T20:08:52.700Z"
+  },
+  "hashpower_config_initialized": {
+    "hashpowerConfig_pda": "AZf4Nvayj6U88dg7VGRRZTbpBbE7gSHaDVcLWAixjVYT",
+    "tx_signature": "31bvEj8oBrch35AWxqbjG1BjodCeZiTp2bj9W9u35a8zRWU54HNvpcYV8mhUUKAq5KRtA11e2qQj8TYuGcMEnxMi",
+    "timestamp": "2026-05-21T20:08:54.562Z"
+  },
+  "custodian_accounts_initialized": {
+    "dbtc_custodian": "HXVe2xLchtKV332QKyh2kRJ6dQf3XxbhsnLGQu4bfLM9",
+    "dbtc_custodian_authority": "4CH1tAxiXoZ2SBnCgyxsm42wppBegTurhGFxoNA89qcV",
+    "liquidity_custodian": "EJ7ZomjToiB68rNFRa83wrBD11rvmDEa29PbJ4ct8ciW",
+    "liquidity_custodian_authority": "C3xQ7NfiwSr8CeZpZYc2KnfkKDM5nN2u3mhoC74QCyhJ",
+    "dbtc_mint": "CtAu3kc8cQ1jcDMmRTBsDHoPuE3sswCagQ3BuqFDC6dt",
+    "lp_mint": "AAU2ysMqrCdV9r4APyKy7bZ4Q63XRRF4SANUtMAZrVvF",
+    "tx_signature": "31pF2fAe3RLrGCE1RMDFd1DgRnR8RAXmAg7LTZFiLd735WLwpm2d7S3YPUS6yEx2MQCjN51yramo9nXd55z4xqSt",
+    "timestamp": "2026-05-21T20:08:56.279Z"
+  },
+  "hashbeast_config_initialized": {
+    "hashbeasts_config_pda": "E7YUJk8UjRzbqBDniYo7LimFoKNo4mstk1RiDeH1TuRo",
+    "tx_signature": "5HkgDAE5u41RPc2sVitYevUhqfaiA9fRu739im5rW9LRQxSDxbmgz2MGK5Fvi9nToKs6hZYBeKmLHXThtc755oSC",
+    "timestamp": "2026-05-21T20:12:00.032Z"
+  },
+  "breeding_config_seeded": {
+    "breeding_allowed": false,
+    "breed_parent_prices_lamports": [
+      "750000000",
+      "1000000000",
+      "1350000000",
+      "1850000000",
+      "2500000000"
+    ],
+    "floor_multiplier_bps": 15000,
+    "tx_signature": "3VaQdW6Ye4hyH1nzTfCxRgFAuWLtVnp52DP7SDHRF2jQ7yaoQyEG3qd9PNxviK6jWChksXy6QS1ERkDzG3rkbXrN",
+    "timestamp": "2026-05-21T20:12:01.853Z"
+  },
+  "hashbeast_mint_config_initialized": {
+    "hashbeast_mint_config_pda": "9m5ExrhZrzTPyKYit4zUCheKoZEKti4GnepCUhixzmv",
+    "base_price": "1000000000",
+    "curve_a": "2935780",
+    "genesis_mint_limit": "36000",
+    "max_genesis_mints_per_faction": "3000",
+    "tx_signature": "NfdQXaaGGzoLrx97vCNzFw6PhLd1Z7cCtv1DcTP8peuouJERGk9dBZiWvqi2LymiGPGCv6KfXfcAmgEWqGMb5gm",
+    "timestamp": "2026-05-21T20:12:03.403Z"
+  },
+  "hashbeast_collection_metadata_uploaded": {
+    "uri": "https://gateway.irys.xyz/5SYVgc3ecjGUMNFsxUFxweRdn58ptVdiw7ug2U26Z4p9",
+    "id": "5SYVgc3ecjGUMNFsxUFxweRdn58ptVdiw7ug2U26Z4p9",
+    "size": 883,
+    "metadata_fingerprint": "{\"name\":\"Hashbeasts\",\"symbol\":\"HBEAST\",\"description\":\"Casino-speed country wars meet evolving NFT beasts. Hashbeasts mutate, breed, rebirth, and help players mine degenBTC on Solana.\",\"seller_fee_basis_points\":420,\"image\":\"https://gateway.irys.xyz/BCBG92F2ZDTcE1EScogd9q2xo8ommh3v28tktsACBaZ1\",\"external_url\":\"https://minebtc.fun\",\"collection\":{\"name\":\"Hashbeasts\",\"family\":\"MineBTC\"},\"attributes\":[],\"properties\":{\"category\":\"image\",\"files\":[{\"uri\":\"https://gateway.irys.xyz/BCBG92F2ZDTcE1EScogd9q2xo8ommh3v28tktsACBaZ1\",\"type\":\"image/png\"}],\"creators\":[{\"address\":\"4XDwhMaA98MaiVXpiqbevr9Kwmp9xGV2nGzQVeF7hbRq\",\"share\":50},{\"address\":\"CRxMur2bSuhBHQnA5FSBocA3kWjSTmhoxPXJ3JNRs8WZ\",\"share\":50}]}}",
+    "metadata": {
+      "name": "Hashbeasts",
+      "symbol": "HBEAST",
+      "description": "Casino-speed country wars meet evolving NFT beasts. Hashbeasts mutate, breed, rebirth, and help players mine degenBTC on Solana.",
+      "seller_fee_basis_points": 420,
+      "image": "https://gateway.irys.xyz/BCBG92F2ZDTcE1EScogd9q2xo8ommh3v28tktsACBaZ1",
+      "external_url": "https://minebtc.fun",
+      "collection": {
+        "name": "Hashbeasts",
+        "family": "MineBTC"
+      },
+      "attributes": [],
+      "properties": {
+        "category": "image",
+        "files": [
+          {
+            "uri": "https://gateway.irys.xyz/BCBG92F2ZDTcE1EScogd9q2xo8ommh3v28tktsACBaZ1",
+            "type": "image/png"
+          }
+        ],
+        "creators": [
+          {
+            "address": "4XDwhMaA98MaiVXpiqbevr9Kwmp9xGV2nGzQVeF7hbRq",
+            "share": 50
+          },
+          {
+            "address": "CRxMur2bSuhBHQnA5FSBocA3kWjSTmhoxPXJ3JNRs8WZ",
+            "share": 50
+          }
+        ]
+      }
+    },
+    "timestamp": "2026-05-21T20:12:21.754Z"
+  },
+  "hashbeast_collection_created": {
+    "collection_address": "9L1puw4upKfmQsak8MqR6zZVa8vbepE6MUDGwudA3Yo6",
+    "collection_name": "Hashbeasts",
+    "collection_uri": "https://gateway.irys.xyz/5SYVgc3ecjGUMNFsxUFxweRdn58ptVdiw7ug2U26Z4p9",
+    "collection_metadata_upload": {
+      "uri": "https://gateway.irys.xyz/5SYVgc3ecjGUMNFsxUFxweRdn58ptVdiw7ug2U26Z4p9",
+      "id": "5SYVgc3ecjGUMNFsxUFxweRdn58ptVdiw7ug2U26Z4p9",
+      "size": 883,
+      "metadata_fingerprint": "{\"name\":\"Hashbeasts\",\"symbol\":\"HBEAST\",\"description\":\"Casino-speed country wars meet evolving NFT beasts. Hashbeasts mutate, breed, rebirth, and help players mine degenBTC on Solana.\",\"seller_fee_basis_points\":420,\"image\":\"https://gateway.irys.xyz/BCBG92F2ZDTcE1EScogd9q2xo8ommh3v28tktsACBaZ1\",\"external_url\":\"https://minebtc.fun\",\"collection\":{\"name\":\"Hashbeasts\",\"family\":\"MineBTC\"},\"attributes\":[],\"properties\":{\"category\":\"image\",\"files\":[{\"uri\":\"https://gateway.irys.xyz/BCBG92F2ZDTcE1EScogd9q2xo8ommh3v28tktsACBaZ1\",\"type\":\"image/png\"}],\"creators\":[{\"address\":\"4XDwhMaA98MaiVXpiqbevr9Kwmp9xGV2nGzQVeF7hbRq\",\"share\":50},{\"address\":\"CRxMur2bSuhBHQnA5FSBocA3kWjSTmhoxPXJ3JNRs8WZ\",\"share\":50}]}}",
+      "metadata": {
+        "name": "Hashbeasts",
+        "symbol": "HBEAST",
+        "description": "Casino-speed country wars meet evolving NFT beasts. Hashbeasts mutate, breed, rebirth, and help players mine degenBTC on Solana.",
+        "seller_fee_basis_points": 420,
+        "image": "https://gateway.irys.xyz/BCBG92F2ZDTcE1EScogd9q2xo8ommh3v28tktsACBaZ1",
+        "external_url": "https://minebtc.fun",
+        "collection": {
+          "name": "Hashbeasts",
+          "family": "MineBTC"
+        },
+        "attributes": [],
+        "properties": {
+          "category": "image",
+          "files": [
+            {
+              "uri": "https://gateway.irys.xyz/BCBG92F2ZDTcE1EScogd9q2xo8ommh3v28tktsACBaZ1",
+              "type": "image/png"
+            }
+          ],
+          "creators": [
+            {
+              "address": "4XDwhMaA98MaiVXpiqbevr9Kwmp9xGV2nGzQVeF7hbRq",
+              "share": 50
+            },
+            {
+              "address": "CRxMur2bSuhBHQnA5FSBocA3kWjSTmhoxPXJ3JNRs8WZ",
+              "share": 50
+            }
+          ]
+        }
+      },
+      "timestamp": "2026-05-21T20:12:21.754Z"
+    },
+    "collection_authority": "4n8enYfcoD6Ewep6m7cMjGTYGCkTkDSLgDLmUa1KMCp6",
+    "tx_signature": "33WpjqE5a9o1Fr42wpmoZ1qzyMpymiKtkfrrDpX5dGj9gNNkptXpBVi7P6TfXoFonGbRPJbAwt9tpgJ4qMvBRBmg",
+    "timestamp": "2026-05-21T20:12:23.808Z"
+  },
+  "hashbeast_royalties_initialized": {
+    "basis_points": 420,
+    "creators": [
+      {
+        "address": "4XDwhMaA98MaiVXpiqbevr9Kwmp9xGV2nGzQVeF7hbRq",
+        "percentage": 50
+      },
+      {
+        "address": "CRxMur2bSuhBHQnA5FSBocA3kWjSTmhoxPXJ3JNRs8WZ",
+        "percentage": 50
+      }
+    ],
+    "tx_signature": "4PgS9VsgB8gsGf2SiM7gD1wDZNR663ioWs95hHCcgn6oWv4kvx1HRrLFp7Niiwwro63yhVdXfSbinNuXTm9qMYM6",
+    "timestamp": "2026-05-21T20:12:25.562Z"
+  },
+  "ticket_tier_configs_initialized": {
+    "ticket_tiers": [
+      {
+        "tier_index": 0,
+        "ticket_value": 1000000,
+        "tx_signature": "41hcppdwUi7RZT9SXjeLvyp9YJwy76ZNS67oL9riygJAp9dehgMzLMukWj9anySM2QiRKiouVFGo24PS8eDGghAR"
+      },
+      {
+        "tier_index": 1,
+        "ticket_value": 10000000,
+        "tx_signature": "5WYr1X7G4vhikx6DXMnHxv4U8Wki1YbuSR5jmkQfaWwETViDAV6hYMMjT9oqRcr4v7YEw5P3otFmCqmtPptrKipd"
+      },
+      {
+        "tier_index": 2,
+        "ticket_value": 100000000,
+        "tx_signature": "3EpJomiYEF6HSi3GDZ9UYng9S4QhDXTmHt1Z9BkpguUuKW36E5yGPxhSh1KZU5i9x4RrkwP3Kqg9iTbhNutrfbNS"
+      }
+    ],
+    "timestamp": "2026-05-21T20:12:29.897Z"
+  },
+  "tax_config_initialized": {
+    "tax_config_pda": "CfAJt8xA91K9i3n7Rzu98xNBPVeskh9jYWJ4HAKBbqDB",
+    "withdraw_withheld_authority": "GfBvNvgTc2Cr8WLewM3Mx8J5fmb1JvmxmCGkCcGMFSZx",
+    "faction_treasury_vault": "1gYoc7ojYQdkABsAVFnFQhmYphe532EDnxheRZBDuqr",
+    "treasury_pct": 25,
+    "burn_pct": 50,
+    "tx_signature": "4UziCC4HCBvhDozQz1AQDGRhHpWsfq8CmNuRqNhfVZs2hYjjgj7xePXTpjc83FMnfsE7vBWRdFJGr2SBPN4QUYDq",
+    "timestamp": "2026-05-21T20:12:31.143Z"
+  },
+  "game_state_initialized": {
+    "global_game_state_pda": "9mjtwm3XmLr18raN69DQGomNpd2gQZncGV2JnS9TZ2Fh",
+    "round_duration_seconds": 60,
+    "rounds_enabled_at_launch": false,
+    "tx_signature": "5CHotjghgPxN3JwX6pTXNt6qaidRNqwEuW5msiGxV14983uzdALbYHUGNXYwBT9NuiknbWvDu7a5K1tnezjBME38",
+    "timestamp": "2026-05-21T20:12:32.780Z"
   }
 }
