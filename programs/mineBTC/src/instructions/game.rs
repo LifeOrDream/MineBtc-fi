@@ -328,16 +328,15 @@ pub fn int_close_game_session(ctx: Context<CloseGameSession>, round_id: u64) -> 
     Ok(())
 }
 
-/// Admin migration helper for rounds that existed before `RoundCloseState`
-/// was introduced. The pending count must be computed off-chain from live
-/// `UserGameBet` accounts for this round before calling.
-pub fn backfill_round_close_state_internal(
-    ctx: Context<BackfillRoundCloseState>,
+/// One-time admin cleanup for `GameSession` accounts that were created before
+/// round close sidecars existed. This deliberately does not check user bet
+/// counters because those counters did not exist for legacy rounds; the
+/// migration runner must close/handle any legacy `UserGameBet` accounts first.
+pub fn admin_close_legacy_game_session_internal(
+    ctx: Context<AdminCloseLegacyGameSession>,
     round_id: u64,
-    pending_claim_count: u64,
-    rent_payer: Pubkey,
 ) -> Result<()> {
-    crate::log_fn!("game", "backfill_round_close_state_internal");
+    crate::log_fn!("game", "admin_close_legacy_game_session_internal");
     require!(
         ctx.accounts.global_config.ext_authority == ctx.accounts.authority.key(),
         ErrorCode::Unauthorized
@@ -346,17 +345,16 @@ pub fn backfill_round_close_state_internal(
         ctx.accounts.game_session.round_id == round_id,
         ErrorCode::InvalidRound
     );
+    require!(
+        ctx.accounts.game_session.stage == 2,
+        ErrorCode::InvalidStage
+    );
 
-    let round_close_state = &mut ctx.accounts.round_close_state;
-    round_close_state.bump = ctx.bumps.round_close_state;
-    round_close_state.round_id = round_id;
-    round_close_state.rent_payer = rent_payer;
-    round_close_state.pending_claim_count = pending_claim_count;
-
-    emit!(RoundCloseStateInitialized {
+    emit!(GameSessionClosed {
         round_id,
-        close_state: round_close_state.key(),
-        rent_payer,
+        game_session: ctx.accounts.game_session.key(),
+        rent_payer: ctx.accounts.rent_recipient.key(),
+        caller: ctx.accounts.authority.key(),
         timestamp: Clock::get()?.unix_timestamp,
     });
 
@@ -1690,7 +1688,7 @@ pub struct CloseGameSession<'info> {
 
 #[derive(Accounts)]
 #[instruction(round_id: u64)]
-pub struct BackfillRoundCloseState<'info> {
+pub struct AdminCloseLegacyGameSession<'info> {
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump,
@@ -1698,24 +1696,19 @@ pub struct BackfillRoundCloseState<'info> {
     pub global_config: Box<Account<'info, GlobalConfig>>,
 
     #[account(
+        mut,
+        close = rent_recipient,
         seeds = [GAME_SESSION_SEED.as_ref(), &round_id.to_le_bytes()],
         bump = game_session.bump,
     )]
     pub game_session: Box<Account<'info, GameSession>>,
 
-    #[account(
-        init,
-        payer = authority,
-        space = RoundCloseState::LEN,
-        seeds = [ROUND_CLOSE_STATE_SEED.as_ref(), &round_id.to_le_bytes()],
-        bump
-    )]
-    pub round_close_state: Box<Account<'info, RoundCloseState>>,
+    /// CHECK: Receives legacy account rent during the one-time admin sweep.
+    #[account(mut)]
+    pub rent_recipient: UncheckedAccount<'info>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]

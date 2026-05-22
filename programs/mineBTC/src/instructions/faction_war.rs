@@ -1736,12 +1736,14 @@ pub fn close_faction_war_accounts_internal(
     Ok(())
 }
 
-pub fn backfill_user_game_bet_close_state_internal(
-    ctx: Context<BackfillUserGameBetCloseState>,
+/// One-time admin cleanup for legacy `UserGameBet` PDAs that predate close
+/// sidecars. This is intentionally not part of the steady-state lifecycle: use
+/// it only in the migration upgrade, then remove the instruction.
+pub fn admin_close_legacy_user_game_bet_internal(
+    ctx: Context<AdminCloseLegacyUserGameBet>,
     round_id: u64,
-    rent_payer: Pubkey,
 ) -> Result<()> {
-    crate::log_fn!("faction_war", "backfill_user_game_bet_close_state_internal");
+    crate::log_fn!("faction_war", "admin_close_legacy_user_game_bet_internal");
     require!(
         ctx.accounts.global_config.ext_authority == ctx.accounts.authority.key(),
         ErrorCode::Unauthorized
@@ -1750,32 +1752,110 @@ pub fn backfill_user_game_bet_close_state_internal(
         ctx.accounts.user_game_bet.round_id == round_id,
         ErrorCode::InvalidRound
     );
+    require_keys_eq!(
+        ctx.accounts.player_data.owner,
+        ctx.accounts.user_game_bet.owner,
+        ErrorCode::InvalidOwner
+    );
 
-    let close_state = &mut ctx.accounts.user_game_bet_close_state;
-    close_state.bump = ctx.bumps.user_game_bet_close_state;
-    close_state.owner = ctx.accounts.user_game_bet.owner;
-    close_state.round_id = round_id;
-    close_state.rent_payer = rent_payer;
+    if ctx.accounts.player_data.pending_round_claims > 0 {
+        ctx.accounts.player_data.pending_round_claims = ctx
+            .accounts
+            .player_data
+            .pending_round_claims
+            .checked_sub(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+    }
 
-    emit!(UserGameBetCloseStateInitialized {
-        round_id,
-        owner: ctx.accounts.user_game_bet.owner,
-        close_state: close_state.key(),
-        rent_payer,
+    Ok(())
+}
+
+/// One-time admin cleanup for legacy `UserFactionWarBets` PDAs that predate
+/// close sidecars. Use only during the migration upgrade.
+pub fn admin_close_legacy_user_war_bets_internal(
+    ctx: Context<AdminCloseLegacyUserWarBets>,
+    war_id: u64,
+) -> Result<()> {
+    crate::log_fn!("faction_war", "admin_close_legacy_user_war_bets_internal");
+    require!(
+        ctx.accounts.global_config.ext_authority == ctx.accounts.authority.key(),
+        ErrorCode::Unauthorized
+    );
+    require!(
+        ctx.accounts.user_war_bets.war_id == war_id,
+        ErrorCode::InvalidState
+    );
+    require_keys_eq!(
+        ctx.accounts.player_data.owner,
+        ctx.accounts.user_war_bets.owner,
+        ErrorCode::InvalidOwner
+    );
+
+    if ctx.accounts.player_data.pending_war_claims > 0 {
+        ctx.accounts.player_data.pending_war_claims = ctx
+            .accounts
+            .player_data
+            .pending_war_claims
+            .checked_sub(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+    }
+
+    Ok(())
+}
+
+/// One-time admin cleanup for settled legacy faction-war state + settlement
+/// PDAs. This bypasses the sidecar counters because legacy cycles did not have
+/// them. Only settled historical wars can be swept.
+pub fn admin_close_legacy_faction_war_accounts_internal(
+    ctx: Context<AdminCloseLegacyFactionWarAccounts>,
+    war_id: u64,
+) -> Result<()> {
+    crate::log_fn!(
+        "faction_war",
+        "admin_close_legacy_faction_war_accounts_internal"
+    );
+    require!(
+        ctx.accounts.global_config.ext_authority == ctx.accounts.authority.key(),
+        ErrorCode::Unauthorized
+    );
+    require!(
+        ctx.accounts.war_state.war_id == war_id,
+        ErrorCode::InvalidState
+    );
+    require!(
+        ctx.accounts.war_settlement.war_id == war_id,
+        ErrorCode::InvalidState
+    );
+    require!(
+        ctx.accounts.war_state.stage == 1,
+        ErrorCode::FactionWarNotSettled
+    );
+    require!(
+        ctx.accounts.war_config.current_war_id > war_id,
+        ErrorCode::FactionWarNotSettled
+    );
+
+    emit!(FactionWarAccountsClosed {
+        war_id,
+        rent_payer: ctx.accounts.rent_recipient.key(),
+        caller: ctx.accounts.authority.key(),
         timestamp: Clock::get()?.unix_timestamp,
     });
 
     Ok(())
 }
 
-pub fn backfill_faction_war_close_state_internal(
-    ctx: Context<BackfillFactionWarCloseState>,
+pub fn admin_init_legacy_faction_war_close_state_internal(
+    ctx: Context<AdminInitLegacyFactionWarCloseState>,
     war_id: u64,
     open_game_session_count: u64,
     pending_war_claim_count: u64,
     rent_payer: Pubkey,
 ) -> Result<()> {
-    crate::log_fn!("faction_war", "backfill_faction_war_close_state_internal");
+    crate::log_fn!(
+        "faction_war",
+        "admin_init_legacy_faction_war_close_state_internal"
+    );
     require!(
         ctx.accounts.global_config.ext_authority == ctx.accounts.authority.key(),
         ErrorCode::Unauthorized
@@ -1798,40 +1878,6 @@ pub fn backfill_faction_war_close_state_internal(
 
     emit!(FactionWarCloseStateInitialized {
         war_id,
-        close_state: close_state.key(),
-        rent_payer,
-        timestamp: Clock::get()?.unix_timestamp,
-    });
-
-    Ok(())
-}
-
-pub fn backfill_user_war_bet_close_state_internal(
-    ctx: Context<BackfillUserWarBetCloseState>,
-    war_id: u64,
-    rent_payer: Pubkey,
-    open_round_claim_count: u64,
-) -> Result<()> {
-    crate::log_fn!("faction_war", "backfill_user_war_bet_close_state_internal");
-    require!(
-        ctx.accounts.global_config.ext_authority == ctx.accounts.authority.key(),
-        ErrorCode::Unauthorized
-    );
-    require!(
-        ctx.accounts.user_war_bets.war_id == war_id,
-        ErrorCode::InvalidState
-    );
-
-    let close_state = &mut ctx.accounts.user_war_bet_close_state;
-    close_state.bump = ctx.bumps.user_war_bet_close_state;
-    close_state.owner = ctx.accounts.user_war_bets.owner;
-    close_state.war_id = war_id;
-    close_state.rent_payer = rent_payer;
-    close_state.open_round_claim_count = open_round_claim_count;
-
-    emit!(UserFactionWarBetCloseStateInitialized {
-        war_id,
-        owner: ctx.accounts.user_war_bets.owner,
         close_state: close_state.key(),
         rent_payer,
         timestamp: Clock::get()?.unix_timestamp,
@@ -2042,7 +2088,7 @@ pub struct CloseFactionWarAccounts<'info> {
 
 #[derive(Accounts)]
 #[instruction(round_id: u64)]
-pub struct BackfillUserGameBetCloseState<'info> {
+pub struct AdminCloseLegacyUserGameBet<'info> {
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump,
@@ -2050,29 +2096,104 @@ pub struct BackfillUserGameBetCloseState<'info> {
     pub global_config: Box<Account<'info, GlobalConfig>>,
 
     #[account(
+        mut,
+        seeds = [PLAYER_DATA_SEED, user_game_bet.owner.as_ref()],
+        bump = player_data.bump,
+        constraint = player_data.owner == user_game_bet.owner @ ErrorCode::InvalidOwner,
+    )]
+    pub player_data: Box<Account<'info, PlayerData>>,
+
+    #[account(
+        mut,
+        close = rent_recipient,
         seeds = [USER_GAME_BET_SEED, user_game_bet.owner.as_ref(), &round_id.to_le_bytes()],
         bump = user_game_bet.bump,
     )]
     pub user_game_bet: Box<Account<'info, UserGameBet>>,
 
-    #[account(
-        init,
-        payer = authority,
-        space = UserGameBetCloseState::LEN,
-        seeds = [USER_GAME_BET_CLOSE_STATE_SEED, user_game_bet.owner.as_ref(), &round_id.to_le_bytes()],
-        bump,
-    )]
-    pub user_game_bet_close_state: Box<Account<'info, UserGameBetCloseState>>,
+    /// CHECK: Receives legacy account rent during the one-time admin sweep.
+    #[account(mut)]
+    pub rent_recipient: UncheckedAccount<'info>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
 #[instruction(war_id: u64)]
-pub struct BackfillFactionWarCloseState<'info> {
+pub struct AdminCloseLegacyUserWarBets<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+    )]
+    pub global_config: Box<Account<'info, GlobalConfig>>,
+
+    #[account(
+        mut,
+        seeds = [PLAYER_DATA_SEED, user_war_bets.owner.as_ref()],
+        bump = player_data.bump,
+        constraint = player_data.owner == user_war_bets.owner @ ErrorCode::InvalidOwner,
+    )]
+    pub player_data: Box<Account<'info, PlayerData>>,
+
+    #[account(
+        mut,
+        close = rent_recipient,
+        seeds = [USER_FACTION_WAR_BETS_SEED, user_war_bets.owner.as_ref(), &war_id.to_le_bytes()],
+        bump = user_war_bets.bump,
+    )]
+    pub user_war_bets: Box<Account<'info, UserFactionWarBets>>,
+
+    /// CHECK: Receives legacy account rent during the one-time admin sweep.
+    #[account(mut)]
+    pub rent_recipient: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+}
+
+#[derive(Accounts)]
+#[instruction(war_id: u64)]
+pub struct AdminCloseLegacyFactionWarAccounts<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+    )]
+    pub global_config: Box<Account<'info, GlobalConfig>>,
+
+    #[account(
+        seeds = [FACTION_WAR_CONFIG_SEED],
+        bump = war_config.bump,
+    )]
+    pub war_config: Box<Account<'info, FactionWarConfig>>,
+
+    #[account(
+        mut,
+        close = rent_recipient,
+        seeds = [FACTION_WAR_STATE_SEED, &war_id.to_le_bytes()],
+        bump = war_state.bump,
+    )]
+    pub war_state: Box<Account<'info, FactionWarState>>,
+
+    #[account(
+        mut,
+        close = rent_recipient,
+        seeds = [FACTION_WAR_SETTLEMENT_SEED, &war_id.to_le_bytes()],
+        bump = war_settlement.bump,
+    )]
+    pub war_settlement: Box<Account<'info, FactionWarSettlement>>,
+
+    /// CHECK: Receives legacy account rent during the one-time admin sweep.
+    #[account(mut)]
+    pub rent_recipient: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+}
+
+#[derive(Accounts)]
+#[instruction(war_id: u64)]
+pub struct AdminInitLegacyFactionWarCloseState<'info> {
     #[account(
         seeds = [GLOBAL_CONFIG_SEED.as_ref()],
         bump = global_config.bump,
@@ -2099,36 +2220,6 @@ pub struct BackfillFactionWarCloseState<'info> {
         bump,
     )]
     pub war_close_state: Box<Account<'info, FactionWarCloseState>>,
-
-    #[account(mut)]
-    pub authority: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-#[instruction(war_id: u64)]
-pub struct BackfillUserWarBetCloseState<'info> {
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump = global_config.bump,
-    )]
-    pub global_config: Box<Account<'info, GlobalConfig>>,
-
-    #[account(
-        seeds = [USER_FACTION_WAR_BETS_SEED, user_war_bets.owner.as_ref(), &war_id.to_le_bytes()],
-        bump = user_war_bets.bump,
-    )]
-    pub user_war_bets: Box<Account<'info, UserFactionWarBets>>,
-
-    #[account(
-        init,
-        payer = authority,
-        space = UserFactionWarBetCloseState::LEN,
-        seeds = [USER_FACTION_WAR_BET_CLOSE_STATE_SEED, user_war_bets.owner.as_ref(), &war_id.to_le_bytes()],
-        bump,
-    )]
-    pub user_war_bet_close_state: Box<Account<'info, UserFactionWarBetCloseState>>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
