@@ -1,10 +1,13 @@
 # Build artifacts
+target/
 **/target/release/*
 **/target/sbpf-solana-solana/*
 **/target/debug/*
 target/flycheck*/
 
-/raydium/*
+# Local Raydium scratch files. Existing tracked CPI shim files are kept for
+# this no-contract-change cleanup PR.
+raydium/
 
 # Dependencies
 **/node_modules/
@@ -15,6 +18,8 @@ target/flycheck*/
 
 # Environment & secrets
 .env
+.env.*
+!.env.example
 *.keypair.json
 wallet-keypair.json
 game_keypair.json
@@ -22,9 +27,8 @@ devnet-wallet-keypair.json
 mainnet-wallet-keypair.json
 mainnet-irys-upload-wallet-keypair.json
 
-# Test user wallets & activity scripts
-setup_scripts/user_activity/
-setup_scripts/tmp/
+# Private deployment/admin automation
+setup_scripts/
 
 # Runtime state
 **/game_loop_state.json
@@ -48,12 +52,6 @@ future_scope/
 tweets/
 p_tweets/
 
-# Raydium local files
-raydium/package.json
-raydium/tsconfig.json
-raydium/yarn.lock
-raydium/tests/
 new-mainnet-keypair.json
-setup_scripts/config.json
 target/deploy/degenbtc_market-keypair.json
 target/deploy/minebtc-keypair.json
