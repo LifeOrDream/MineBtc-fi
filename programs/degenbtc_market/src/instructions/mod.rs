@@ -3,6 +3,7 @@ pub mod cancel_listing;
 pub mod initialize;
 pub mod list_nft;
 pub mod reclaim_stale_listing;
+pub mod transfer_admin;
 pub mod update_config;
 pub mod update_listing_price;
 
@@ -20,6 +21,8 @@ pub use initialize::*;
 pub use list_nft::*;
 #[allow(ambiguous_glob_reexports)]
 pub use reclaim_stale_listing::*;
+#[allow(ambiguous_glob_reexports)]
+pub use transfer_admin::*;
 #[allow(ambiguous_glob_reexports)]
 pub use update_config::*;
 #[allow(ambiguous_glob_reexports)]

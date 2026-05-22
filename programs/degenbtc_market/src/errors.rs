@@ -32,4 +32,6 @@ pub enum MarketError {
     InvalidAsset,
     #[msg("Listing is not stale — asset is still held by marketplace escrow")]
     ListingNotStale,
+    #[msg("Invalid admin (zero pubkey or same as current admin)")]
+    InvalidAdmin,
 }
