@@ -27,7 +27,9 @@ mpl-core = { version = "0.11", features = ["anchor"] }
 mpl-token-metadata = { version = "5.1.1" }
 spl-token = { version = "8.0.0", features = ["no-entrypoint"] }
 solana-program = "2.3.0"
-raydium-cp-swap = { path = "../../raydium/programs/cp-swap", features = ["cpi"] }
+raydium-cp-swap = { git = "https://github.com/raydium-io/raydium-cp-swap.git", rev = "b0b2a08ff69f3d8e999efa07e7a14b9d9f0ff02b", package = "raydium-cp-swap", features = [
+    "cpi",
+] }
 degenbtc_market = { path = "../degenbtc_market", features = ["cpi"] }
 subtle = { version = "2", default-features = false }
 constant_time_eq = "0.3"

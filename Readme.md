@@ -139,13 +139,13 @@ These are deployment setup values, not governance promises forever.
 programs/
   mineBTC/              Main game, economy, HashBeast, staking, tax contracts
   degenbtc_market/      Standalone HashBeast marketplace used by MineBTC
-raydium/
-  programs/cp-swap/     Raydium CP-Swap CPI/build dependency
 idl/
   minebtc.json          Public Anchor IDL for the main game program
   degenbtc_market.json  Public Anchor IDL for the marketplace program
 docs/                   Protocol, gameplay, economy, and NFT design notes
 ```
+
+MineBTC CPI-calls Raydium CP-Swap for liquidity operations. Raydium source is not vendored in this repo; the CPI dependency is pinned in `programs/mineBTC/Cargo.toml` to a public Raydium Git revision compatible with this Anchor toolchain.
 
 Deployment, initialization, keeper, wallet, and admin scripts are intentionally not tracked in the public repo. They are operational automation, not part of the public contract surface.
 
