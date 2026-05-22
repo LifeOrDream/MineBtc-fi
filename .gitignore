@@ -5,8 +5,7 @@ target/
 **/target/debug/*
 target/flycheck*/
 
-# Local Raydium scratch files. Existing tracked CPI shim files are kept for
-# this no-contract-change cleanup PR.
+# Local Raydium checkout. MineBTC uses a pinned public Raydium dependency.
 raydium/
 
 # Dependencies
@@ -19,7 +18,6 @@ raydium/
 # Environment & secrets
 .env
 .env.*
-!.env.example
 *.keypair.json
 wallet-keypair.json
 game_keypair.json
