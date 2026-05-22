@@ -558,6 +558,23 @@ pub mod minebtc {
         game::int_start_round(ctx, round_id)
     }
 
+    /// Close a settled round session once all user bet accounts have claimed.
+    pub fn close_game_session(ctx: Context<CloseGameSession>, round_id: u64) -> Result<()> {
+        crate::log_fn!("lib", "close_game_session");
+        game::int_close_game_session(ctx, round_id)
+    }
+
+    /// Admin migration helper for pre-upgrade round close sidecars.
+    pub fn backfill_round_close_state(
+        ctx: Context<BackfillRoundCloseState>,
+        round_id: u64,
+        pending_claim_count: u64,
+        rent_payer: Pubkey,
+    ) -> Result<()> {
+        crate::log_fn!("lib", "backfill_round_close_state");
+        game::backfill_round_close_state_internal(ctx, round_id, pending_claim_count, rent_payer)
+    }
+
     /// DONE -::- Finalize the current round using scheduled slot-hash entropy.
     pub fn end_round(ctx: Context<EndRound>) -> Result<()> {
         crate::log_fn!("lib", "end_round");
@@ -580,6 +597,59 @@ pub mod minebtc {
     pub fn initialize_faction_war(ctx: Context<InitializeFactionWar>, war_id: u64) -> Result<()> {
         crate::log_fn!("lib", "initialize_faction_war");
         faction_war::initialize_war_internal(ctx, war_id)
+    }
+
+    /// Close a fully claimed historical faction-war cycle.
+    pub fn close_faction_war_accounts(
+        ctx: Context<CloseFactionWarAccounts>,
+        war_id: u64,
+    ) -> Result<()> {
+        crate::log_fn!("lib", "close_faction_war_accounts");
+        faction_war::close_faction_war_accounts_internal(ctx, war_id)
+    }
+
+    /// Admin migration helper for pre-upgrade user round-bet close sidecars.
+    pub fn backfill_user_game_bet_close_state(
+        ctx: Context<BackfillUserGameBetCloseState>,
+        round_id: u64,
+        rent_payer: Pubkey,
+    ) -> Result<()> {
+        crate::log_fn!("lib", "backfill_user_game_bet_close_state");
+        faction_war::backfill_user_game_bet_close_state_internal(ctx, round_id, rent_payer)
+    }
+
+    /// Admin migration helper for pre-upgrade faction-war close sidecars.
+    pub fn backfill_faction_war_close_state(
+        ctx: Context<BackfillFactionWarCloseState>,
+        war_id: u64,
+        open_game_session_count: u64,
+        pending_war_claim_count: u64,
+        rent_payer: Pubkey,
+    ) -> Result<()> {
+        crate::log_fn!("lib", "backfill_faction_war_close_state");
+        faction_war::backfill_faction_war_close_state_internal(
+            ctx,
+            war_id,
+            open_game_session_count,
+            pending_war_claim_count,
+            rent_payer,
+        )
+    }
+
+    /// Admin migration helper for pre-upgrade user faction-war close sidecars.
+    pub fn backfill_user_war_bet_close_state(
+        ctx: Context<BackfillUserWarBetCloseState>,
+        war_id: u64,
+        rent_payer: Pubkey,
+        open_round_claim_count: u64,
+    ) -> Result<()> {
+        crate::log_fn!("lib", "backfill_user_war_bet_close_state");
+        faction_war::backfill_user_war_bet_close_state_internal(
+            ctx,
+            war_id,
+            rent_payer,
+            open_round_claim_count,
+        )
     }
 
     /// DONE -::- Settle faction_war: finalize gameplay-score rankings and compute reward pools.
@@ -655,7 +725,9 @@ pub mod minebtc {
             amount_per_bet,
             use_ticket,
             bumps.user_game_bet,
+            bumps.user_game_bet_close_state,
             bumps.user_war_bets,
+            bumps.user_war_bet_close_state,
         )
     }
 
@@ -694,7 +766,9 @@ pub mod minebtc {
             current_round_id,
             war_id,
             bumps.user_game_bet,
+            bumps.user_game_bet_close_state,
             bumps.user_war_bets,
+            bumps.user_war_bet_close_state,
             bumps.autominer_custody,
         )
     }

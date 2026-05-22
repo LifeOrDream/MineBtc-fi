@@ -334,7 +334,9 @@ pub fn internal_join_bets<'info>(
     amount_per_bet: u64,
     use_ticket: Option<u8>,
     user_game_bet_bump: u8,
+    user_game_bet_close_state_bump: u8,
     user_war_bets_bump: u8,
+    user_war_bet_close_state_bump: u8,
 ) -> Result<()> {
     crate::log_fn!("user", "internal_join_bets");
     let global_config = load_global_config(&accounts.global_config.to_account_info())?;
@@ -357,6 +359,9 @@ pub fn internal_join_bets<'info>(
         &mut accounts.player_data,
         &mut accounts.game_session,
         &mut accounts.user_game_bet,
+        &accounts.user_game_bet_close_state.to_account_info(),
+        &accounts.round_close_state.to_account_info(),
+        &accounts.authority.to_account_info(),
         &accounts.authority.to_account_info(),
         &accounts.sol_treasury.to_account_info(),
         &accounts.sol_rewards_vault.to_account_info(),
@@ -364,6 +369,7 @@ pub fn internal_join_bets<'info>(
         &accounts.war_sol_vault.to_account_info(),
         &accounts.system_program.to_account_info(),
         user_game_bet_bump,
+        user_game_bet_close_state_bump,
         accounts.authority.key(),
         amount_per_bet,
         bet_types.clone(),
@@ -371,7 +377,10 @@ pub fn internal_join_bets<'info>(
         None, // User wallet signs the transaction
         None, // No autominer info
         &mut accounts.user_war_bets,
+        &accounts.user_war_bet_close_state.to_account_info(),
+        &accounts.war_close_state.to_account_info(),
         user_war_bets_bump,
+        user_war_bet_close_state_bump,
         accounts.referrer_rewards.as_mut(),
     )?;
     Ok(())
@@ -380,8 +389,7 @@ pub fn internal_join_bets<'info>(
 /// Execute autominer bets (keeper instruction - callable by anyone).
 /// Generates faction-direction bets dynamically from the configured country set.
 /// Pays the caller a small keeper compensation for tx costs.
-/// SOL mode: 0.1% of `sol_per_round`, capped at 0.00005 SOL.
-/// Ticket mode: pays a fixed 0.00005 SOL keeper reserve per round.
+/// SOL and ticket modes both pay a fixed 0.00005 SOL keeper reserve per round.
 /// Uses the same round/faction_war betting path as manual users.
 #[inline(never)]
 pub fn internal_execute_autominer_bet<'info>(
@@ -389,7 +397,9 @@ pub fn internal_execute_autominer_bet<'info>(
     current_round_id: u64,
     war_id: u64,
     user_game_bet_bump: u8,
+    user_game_bet_close_state_bump: u8,
     user_war_bets_bump: u8,
+    user_war_bet_close_state_bump: u8,
     custody_bump: u8,
 ) -> Result<()> {
     crate::log_fn!("user", "internal_execute_autominer_bet");
@@ -524,13 +534,17 @@ pub fn internal_execute_autominer_bet<'info>(
         &mut accounts.player_data,
         &mut accounts.game_session,
         &mut accounts.user_game_bet,
+        &accounts.user_game_bet_close_state.to_account_info(),
+        &accounts.round_close_state.to_account_info(),
         &autominer_custody_info,
+        &accounts.caller.to_account_info(),
         &accounts.sol_treasury.to_account_info(),
         &accounts.sol_rewards_vault.to_account_info(),
         &accounts.sol_prize_pot_vault.to_account_info(),
         &accounts.war_sol_vault.to_account_info(),
         &accounts.system_program.to_account_info(),
         user_game_bet_bump,
+        user_game_bet_close_state_bump,
         owner_key,
         bet_size_per_bet,
         bet_types.clone(),
@@ -538,7 +552,10 @@ pub fn internal_execute_autominer_bet<'info>(
         Some(autominer_seeds), // PDA signs via seeds
         Some(autominer_info),
         &mut accounts.user_war_bets,
+        &accounts.user_war_bet_close_state.to_account_info(),
+        &accounts.war_close_state.to_account_info(),
         user_war_bets_bump,
+        user_war_bet_close_state_bump,
         accounts.referrer_rewards.as_mut(),
     )?;
 
@@ -696,6 +713,9 @@ pub fn internal_stop_autominer(ctx: Context<StopAutominer>) -> Result<()> {
 
 /// Claim rewards for a user after round ends.
 /// Round payouts depend on the winning faction plus the randomly resolved round direction.
+/// `remaining_accounts[0]` must be the user's `UserFactionWarBetCloseState`
+/// for `game_session.war_id_when_played`; it is validated manually to keep the
+/// hot claim account parser below the SBF stack ceiling.
 pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundRewards>) -> Result<()> {
     crate::log_fn!("user", "internal_claim_round_rewards");
 
@@ -713,6 +733,26 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
     );
     require_keys_eq!(player_data.owner, owner_key, ErrorCode::InvalidOwner);
     require_keys_eq!(user_bet.owner, owner_key, ErrorCode::InvalidOwner);
+    let user_game_bet_close_state: UserGameBetCloseState =
+        helper::load_account_data(&ctx.accounts.user_game_bet_close_state.to_account_info())?;
+    validate_user_game_bet_close_state(&user_game_bet_close_state, owner_key, round_id)?;
+    require_keys_eq!(
+        ctx.accounts.user_bet_rent_payer.key(),
+        user_game_bet_close_state.rent_payer,
+        ErrorCode::InvalidCloseState
+    );
+    let mut round_close_state: RoundCloseState =
+        helper::load_account_data(&ctx.accounts.round_close_state.to_account_info())?;
+    require!(
+        round_close_state.round_id == round_id,
+        ErrorCode::InvalidCloseState
+    );
+    let (user_war_bet_close_state_info, mut user_war_bet_close_state) =
+        load_round_claim_war_bet_close_state(
+            ctx.remaining_accounts,
+            owner_key,
+            game_session.war_id_when_played,
+        )?;
 
     let (total_sol_reward, total_dbtc_reward) = calculate_round_rewards(user_bet, game_session)?;
     let claim_won = total_sol_reward > 0 || total_dbtc_reward > 0;
@@ -814,6 +854,23 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
         .pending_round_claims
         .checked_sub(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
+    round_close_state.pending_claim_count = round_close_state
+        .pending_claim_count
+        .checked_sub(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    user_war_bet_close_state.open_round_claim_count = user_war_bet_close_state
+        .open_round_claim_count
+        .checked_sub(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    helper::store_account_data(
+        &ctx.accounts.round_close_state.to_account_info(),
+        &round_close_state,
+    )?;
+    helper::store_account_data(&user_war_bet_close_state_info, &user_war_bet_close_state)?;
+    helper::close_owned_account(
+        &ctx.accounts.user_game_bet_close_state.to_account_info(),
+        &ctx.accounts.user_bet_rent_payer.to_account_info(),
+    )?;
 
     emit!(RoundRewardsClaimed {
         user: ctx.accounts.player_data.owner,
@@ -829,6 +886,9 @@ pub fn internal_claim_round_rewards(round_id: u64, ctx: Context<ClaimRoundReward
 
 /// Claim autominer rewards with auto-reload feature
 /// Called by backend script - no owner check, uses SOL rewards to reload autominer
+/// `remaining_accounts[0]` must be the owner's `UserFactionWarBetCloseState`
+/// for `game_session.war_id_when_played`; it is validated manually to keep the
+/// hot claim account parser below the SBF stack ceiling.
 pub fn internal_claim_autominer_rewards(
     round_id: u64,
     ctx: Context<ClaimAutominerRewards>,
@@ -850,6 +910,26 @@ pub fn internal_claim_autominer_rewards(
     );
     require_keys_eq!(player_data.owner, owner_key, ErrorCode::InvalidOwner);
     require_keys_eq!(user_bet.owner, owner_key, ErrorCode::InvalidOwner);
+    let user_game_bet_close_state: UserGameBetCloseState =
+        helper::load_account_data(&ctx.accounts.user_game_bet_close_state.to_account_info())?;
+    validate_user_game_bet_close_state(&user_game_bet_close_state, owner_key, round_id)?;
+    require_keys_eq!(
+        ctx.accounts.user_bet_rent_payer.key(),
+        user_game_bet_close_state.rent_payer,
+        ErrorCode::InvalidCloseState
+    );
+    let mut round_close_state: RoundCloseState =
+        helper::load_account_data(&ctx.accounts.round_close_state.to_account_info())?;
+    require!(
+        round_close_state.round_id == round_id,
+        ErrorCode::InvalidCloseState
+    );
+    let (user_war_bet_close_state_info, mut user_war_bet_close_state) =
+        load_round_claim_war_bet_close_state(
+            ctx.remaining_accounts,
+            owner_key,
+            game_session.war_id_when_played,
+        )?;
 
     let (total_sol_reward, total_dbtc_reward) = calculate_round_rewards(user_bet, game_session)?;
     let claim_won = total_sol_reward > 0 || total_dbtc_reward > 0;
@@ -933,6 +1013,23 @@ pub fn internal_claim_autominer_rewards(
         .pending_round_claims
         .checked_sub(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
+    round_close_state.pending_claim_count = round_close_state
+        .pending_claim_count
+        .checked_sub(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    user_war_bet_close_state.open_round_claim_count = user_war_bet_close_state
+        .open_round_claim_count
+        .checked_sub(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+    helper::store_account_data(
+        &ctx.accounts.round_close_state.to_account_info(),
+        &round_close_state,
+    )?;
+    helper::store_account_data(&user_war_bet_close_state_info, &user_war_bet_close_state)?;
+    helper::close_owned_account(
+        &ctx.accounts.user_game_bet_close_state.to_account_info(),
+        &ctx.accounts.user_bet_rent_payer.to_account_info(),
+    )?;
 
     // === AUTO-RELOAD LOGIC ===
     // Auto-reload uses SOL winnings to fund more rounds in both modes.
@@ -1301,6 +1398,64 @@ pub fn internal_withdraw_hashbeast_from_gameplay(
 // =============================== HELPER FUNCTIONS ======================================
 // ========================================================================================
 
+fn validate_user_game_bet_close_state(
+    close_state: &UserGameBetCloseState,
+    owner: Pubkey,
+    round_id: u64,
+) -> Result<()> {
+    require_keys_eq!(close_state.owner, owner, ErrorCode::InvalidCloseState);
+    require!(
+        close_state.round_id == round_id,
+        ErrorCode::InvalidCloseState
+    );
+    require!(
+        close_state.rent_payer != Pubkey::default(),
+        ErrorCode::InvalidCloseState
+    );
+    Ok(())
+}
+
+fn validate_user_war_bet_close_state(
+    close_state: &UserFactionWarBetCloseState,
+    owner: Pubkey,
+    war_id: u64,
+) -> Result<()> {
+    require_keys_eq!(close_state.owner, owner, ErrorCode::InvalidCloseState);
+    require!(close_state.war_id == war_id, ErrorCode::InvalidCloseState);
+    require!(
+        close_state.rent_payer != Pubkey::default(),
+        ErrorCode::InvalidCloseState
+    );
+    Ok(())
+}
+
+fn load_round_claim_war_bet_close_state<'info>(
+    remaining_accounts: &[AccountInfo<'info>],
+    owner: Pubkey,
+    war_id: u64,
+) -> Result<(AccountInfo<'info>, UserFactionWarBetCloseState)> {
+    let close_state_info = remaining_accounts
+        .first()
+        .ok_or(ErrorCode::InvalidAccount)?;
+    let war_id_bytes = war_id.to_le_bytes();
+    let (expected_close_state, _) = Pubkey::find_program_address(
+        &[
+            USER_FACTION_WAR_BET_CLOSE_STATE_SEED,
+            owner.as_ref(),
+            war_id_bytes.as_ref(),
+        ],
+        &crate::ID,
+    );
+    require_keys_eq!(
+        *close_state_info.key,
+        expected_close_state,
+        ErrorCode::InvalidCloseState
+    );
+    let close_state: UserFactionWarBetCloseState = helper::load_account_data(close_state_info)?;
+    validate_user_war_bet_close_state(&close_state, owner, war_id)?;
+    Ok((close_state_info.clone(), close_state))
+}
+
 /// Internal join_bets logic for batched processing
 /// Calculates totals, performs single transfers, and updates state for all bets
 #[allow(clippy::too_many_arguments)]
@@ -1312,13 +1467,17 @@ fn internal_process_bets<'info>(
     player_data: &mut Account<'info, PlayerData>,
     game_session: &mut Account<'info, GameSession>,
     user_game_bet: &mut Account<'info, UserGameBet>,
+    user_game_bet_close_state_info: &AccountInfo<'info>,
+    round_close_state_info: &AccountInfo<'info>,
     payer: &AccountInfo<'info>,
+    close_rent_payer: &AccountInfo<'info>,
     sol_treasury: &AccountInfo<'info>,
     sol_rewards_vault: &AccountInfo<'info>,
     sol_prize_pot_vault: &AccountInfo<'info>,
     war_sol_vault: &AccountInfo<'info>,
     system_program: &AccountInfo<'info>,
     user_game_bet_bump: u8,
+    user_game_bet_close_state_bump: u8,
     owner_key: Pubkey,
     amount_per_bet: u64,
     bet_types: Vec<BetType>,
@@ -1326,7 +1485,10 @@ fn internal_process_bets<'info>(
     signer_seeds: Option<&[&[u8]]>,
     autominer_info: Option<AutominerBetInfo>,
     user_war_bets: &mut UserFactionWarBets,
+    user_war_bet_close_state_info: &AccountInfo<'info>,
+    war_close_state_info: &AccountInfo<'info>,
     user_war_bets_bump: u8,
+    user_war_bet_close_state_bump: u8,
     referrer_rewards: Option<&mut Account<'info, ReferralRewards>>,
 ) -> Result<()> {
     let clock = Clock::get()?;
@@ -1356,8 +1518,21 @@ fn internal_process_bets<'info>(
         war_id == game_session.war_id_when_played,
         ErrorCode::InvalidState
     );
+    let mut round_close_state: RoundCloseState = helper::load_account_data(round_close_state_info)?;
+    let mut war_close_state: FactionWarCloseState =
+        helper::load_account_data(war_close_state_info)?;
+    require!(
+        round_close_state.round_id == round_id,
+        ErrorCode::InvalidCloseState
+    );
+    require!(
+        war_close_state.war_id == war_id,
+        ErrorCode::InvalidCloseState
+    );
 
-    if user_war_bets.owner == Pubkey::default() {
+    let new_user_war_bets = user_war_bets.owner == Pubkey::default();
+
+    let mut user_war_bet_close_state = if new_user_war_bets {
         user_war_bets.bump = user_war_bets_bump;
         user_war_bets.owner = owner_key;
         user_war_bets.war_id = war_id;
@@ -1365,14 +1540,54 @@ fn internal_process_bets<'info>(
         user_war_bets.mutation_score = 0;
         user_war_bets.direction_bets = [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
         user_war_bets.sol_direction_bets = [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS];
+        let user_war_bet_close_state = UserFactionWarBetCloseState {
+            bump: user_war_bet_close_state_bump,
+            owner: owner_key,
+            war_id,
+            rent_payer: close_rent_payer.key(),
+            open_round_claim_count: 0,
+        };
+        let war_id_bytes = war_id.to_le_bytes();
+        let user_war_bet_close_bump = [user_war_bet_close_state_bump];
+        let user_war_bet_close_seeds = &[
+            USER_FACTION_WAR_BET_CLOSE_STATE_SEED,
+            owner_key.as_ref(),
+            war_id_bytes.as_ref(),
+            user_war_bet_close_bump.as_ref(),
+        ];
+        let created = helper::init_pda_account_if_needed(
+            close_rent_payer,
+            user_war_bet_close_state_info,
+            system_program,
+            user_war_bet_close_seeds,
+            UserFactionWarBetCloseState::LEN,
+            &user_war_bet_close_state,
+        )?;
+        require!(created, ErrorCode::InvalidCloseState);
+        war_close_state.pending_war_claim_count = war_close_state
+            .pending_war_claim_count
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
         player_data.pending_war_claims = player_data
             .pending_war_claims
             .checked_add(1)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
+        emit!(UserFactionWarBetCloseStateInitialized {
+            war_id,
+            owner: owner_key,
+            close_state: *user_war_bet_close_state_info.key,
+            rent_payer: close_rent_payer.key(),
+            timestamp: clock.unix_timestamp,
+        });
+        user_war_bet_close_state
     } else {
         require!(user_war_bets.owner == owner_key, ErrorCode::Unauthorized);
         require!(user_war_bets.war_id == war_id, ErrorCode::InvalidState);
-    }
+        let user_war_bet_close_state: UserFactionWarBetCloseState =
+            helper::load_account_data(user_war_bet_close_state_info)?;
+        validate_user_war_bet_close_state(&user_war_bet_close_state, owner_key, war_id)?;
+        user_war_bet_close_state
+    };
 
     // faction_count snapshot lives on war_state which we no longer load here.
     // Read from global_config — mid-war faction additions are not expected
@@ -1616,7 +1831,8 @@ fn internal_process_bets<'info>(
     }
 
     // Initialize UserGameBet if needed.
-    if user_game_bet.owner == Pubkey::default() {
+    let new_user_game_bet = user_game_bet.owner == Pubkey::default();
+    if new_user_game_bet {
         user_game_bet.owner = owner_key;
         user_game_bet.round_id = round_id;
         user_game_bet.war_id = war_id;
@@ -1633,13 +1849,55 @@ fn internal_process_bets<'info>(
         user_game_bet.bump = user_game_bet_bump;
         user_game_bet.mutation_type = 0;
 
+        let user_game_bet_close_state = UserGameBetCloseState {
+            bump: user_game_bet_close_state_bump,
+            owner: owner_key,
+            round_id,
+            rent_payer: close_rent_payer.key(),
+        };
+        let round_id_bytes = round_id.to_le_bytes();
+        let user_game_bet_close_bump = [user_game_bet_close_state_bump];
+        let user_game_bet_close_seeds = &[
+            USER_GAME_BET_CLOSE_STATE_SEED.as_ref(),
+            owner_key.as_ref(),
+            round_id_bytes.as_ref(),
+            user_game_bet_close_bump.as_ref(),
+        ];
+        let created = helper::init_pda_account_if_needed(
+            close_rent_payer,
+            user_game_bet_close_state_info,
+            system_program,
+            user_game_bet_close_seeds,
+            UserGameBetCloseState::LEN,
+            &user_game_bet_close_state,
+        )?;
+        require!(created, ErrorCode::InvalidCloseState);
+        round_close_state.pending_claim_count = round_close_state
+            .pending_claim_count
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        user_war_bet_close_state.open_round_claim_count = user_war_bet_close_state
+            .open_round_claim_count
+            .checked_add(1)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        helper::store_account_data(user_war_bet_close_state_info, &user_war_bet_close_state)?;
         player_data.pending_round_claims = player_data
             .pending_round_claims
             .checked_add(1)
             .ok_or(ErrorCode::ArithmeticOverflow)?;
+        emit!(UserGameBetCloseStateInitialized {
+            round_id,
+            owner: owner_key,
+            close_state: *user_game_bet_close_state_info.key,
+            rent_payer: close_rent_payer.key(),
+            timestamp: clock.unix_timestamp,
+        });
     } else {
         require!(user_game_bet.round_id == round_id, ErrorCode::InvalidRound);
         require!(user_game_bet.war_id == war_id, ErrorCode::InvalidState);
+        let user_game_bet_close_state: UserGameBetCloseState =
+            helper::load_account_data(user_game_bet_close_state_info)?;
+        validate_user_game_bet_close_state(&user_game_bet_close_state, owner_key, round_id)?;
     }
 
     // Process each faction-direction bet.
@@ -1795,6 +2053,9 @@ fn internal_process_bets<'info>(
         .stakers_fee
         .checked_add(total_stakers_fee)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
+
+    helper::store_account_data(round_close_state_info, &round_close_state)?;
+    helper::store_account_data(war_close_state_info, &war_close_state)?;
 
     // Emit consolidated event
     let (
@@ -2735,10 +2996,9 @@ fn make_bets_vec(
     Ok(bet_types)
 }
 
-/// Calculate caller compensation: 0.1% of sol_per_round, max 0.00005 SOL.
-fn get_caller_compensation(sol_per_round: u64) -> Result<u64> {
-    let caller_compensation = (sol_per_round / 1_000).min(crate::state::MAX_CALLER_COMPENSATION);
-    Ok(caller_compensation)
+/// Fixed caller compensation per autominer round.
+fn get_caller_compensation(_sol_per_round: u64) -> Result<u64> {
+    Ok(crate::state::AUTOMINER_CALLER_COMPENSATION)
 }
 
 /// Ticket autominers use a fixed keeper gas reserve per round.
@@ -3008,6 +3268,14 @@ pub struct JoinBets<'info> {
     )]
     pub game_session: Box<Account<'info, GameSession>>,
 
+    /// CHECK: PDA verified by seeds; loaded/stored manually to keep account parser stack small.
+    #[account(
+        mut,
+        seeds = [ROUND_CLOSE_STATE_SEED.as_ref(), &round_id.to_le_bytes()],
+        bump,
+    )]
+    pub round_close_state: UncheckedAccount<'info>,
+
     /// UserGameBet PDA for this user's bet in this round
     #[account(
         init_if_needed,
@@ -3017,6 +3285,14 @@ pub struct JoinBets<'info> {
         bump
     )]
     pub user_game_bet: Box<Account<'info, UserGameBet>>,
+
+    /// CHECK: PDA verified by seeds; created/loaded manually to keep account parser stack small.
+    #[account(
+        mut,
+        seeds = [USER_GAME_BET_CLOSE_STATE_SEED.as_ref(), authority.key().as_ref(), &round_id.to_le_bytes()],
+        bump
+    )]
+    pub user_game_bet_close_state: UncheckedAccount<'info>,
 
     /// CHECK: SOL treasury PDA (fees go here)
     #[account(
@@ -3061,6 +3337,22 @@ pub struct JoinBets<'info> {
         bump,
     )]
     pub user_war_bets: Box<Account<'info, UserFactionWarBets>>,
+
+    /// CHECK: PDA verified by seeds; created/loaded manually to keep account parser stack small.
+    #[account(
+        mut,
+        seeds = [USER_FACTION_WAR_BET_CLOSE_STATE_SEED, authority.key().as_ref(), &war_id.to_le_bytes()],
+        bump,
+    )]
+    pub user_war_bet_close_state: UncheckedAccount<'info>,
+
+    /// CHECK: PDA verified by seeds; loaded/stored manually to keep account parser stack small.
+    #[account(
+        mut,
+        seeds = [FACTION_WAR_CLOSE_STATE_SEED, &war_id.to_le_bytes()],
+        bump,
+    )]
+    pub war_close_state: UncheckedAccount<'info>,
 
     /// Referrer's commission account. Required when the betting player has a referrer
     /// (`player_data.referral_code != system_program`); the SDK derives the PDA via
@@ -3123,6 +3415,14 @@ pub struct ExecuteAutominerBet<'info> {
     )]
     pub game_session: Box<Account<'info, GameSession>>,
 
+    /// CHECK: PDA verified by seeds; loaded/stored manually to keep account parser stack small.
+    #[account(
+        mut,
+        seeds = [ROUND_CLOSE_STATE_SEED.as_ref(), &current_round_id.to_le_bytes()],
+        bump,
+    )]
+    pub round_close_state: UncheckedAccount<'info>,
+
     /// UserGameBet PDA for autominer bets (aggregates all bets from this vault for this round)
     #[account(
         init_if_needed,
@@ -3132,6 +3432,14 @@ pub struct ExecuteAutominerBet<'info> {
         bump
     )]
     pub user_game_bet: Box<Account<'info, UserGameBet>>,
+
+    /// CHECK: PDA verified by seeds; created/loaded manually to keep account parser stack small.
+    #[account(
+        mut,
+        seeds = [USER_GAME_BET_CLOSE_STATE_SEED.as_ref(), autominer_vault.owner.as_ref(), &current_round_id.to_le_bytes()],
+        bump
+    )]
+    pub user_game_bet_close_state: UncheckedAccount<'info>,
 
     /// CHECK: SOL treasury PDA
     #[account(
@@ -3176,6 +3484,22 @@ pub struct ExecuteAutominerBet<'info> {
         bump,
     )]
     pub user_war_bets: Box<Account<'info, UserFactionWarBets>>,
+
+    /// CHECK: PDA verified by seeds; created/loaded manually to keep account parser stack small.
+    #[account(
+        mut,
+        seeds = [USER_FACTION_WAR_BET_CLOSE_STATE_SEED, autominer_vault.owner.as_ref(), &war_id.to_le_bytes()],
+        bump,
+    )]
+    pub user_war_bet_close_state: UncheckedAccount<'info>,
+
+    /// CHECK: PDA verified by seeds; loaded/stored manually to keep account parser stack small.
+    #[account(
+        mut,
+        seeds = [FACTION_WAR_CLOSE_STATE_SEED, &war_id.to_le_bytes()],
+        bump,
+    )]
+    pub war_close_state: UncheckedAccount<'info>,
 
     /// Referrer's commission account. Required when the autominer's owner has a referrer.
     /// SDK derives `[REFERRAL_REWARDS_SEED, player_data.referral_code]`.
@@ -3279,6 +3603,14 @@ pub struct ClaimRoundRewards<'info> {
     #[account(mut, seeds = [GAME_SESSION_SEED.as_ref(), &round_id.to_le_bytes()], bump = game_session.bump)]
     pub game_session: Box<Account<'info, GameSession>>,
 
+    /// CHECK: PDA verified by seeds; loaded/stored manually to keep account parser stack small.
+    #[account(
+        mut,
+        seeds = [ROUND_CLOSE_STATE_SEED.as_ref(), &round_id.to_le_bytes()],
+        bump,
+    )]
+    pub round_close_state: UncheckedAccount<'info>,
+
     #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump)]
     pub global_config: Box<Account<'info, GlobalConfig>>,
 
@@ -3294,9 +3626,21 @@ pub struct ClaimRoundRewards<'info> {
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
 
+    /// CHECK: Receives the `UserGameBet` rent refund; validated against close-state in handler.
+    #[account(mut)]
+    pub user_bet_rent_payer: UncheckedAccount<'info>,
+
+    /// CHECK: PDA verified by seeds; loaded and manually closed in handler.
     #[account(
         mut,
-        close = caller,
+        seeds = [USER_GAME_BET_CLOSE_STATE_SEED.as_ref(), user_wallet.key().as_ref(), &round_id.to_le_bytes()],
+        bump,
+    )]
+    pub user_game_bet_close_state: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        close = user_bet_rent_payer,
         seeds = [USER_GAME_BET_SEED.as_ref(), user_wallet.key().as_ref(), &round_id.to_le_bytes()],
         bump = user_game_bet.bump,
         constraint = user_game_bet.owner == user_wallet.key() @ ErrorCode::InvalidOwner
@@ -3395,6 +3739,14 @@ pub struct ClaimAutominerRewards<'info> {
     #[account(mut, seeds = [GAME_SESSION_SEED.as_ref(), &round_id.to_le_bytes()], bump = game_session.bump)]
     pub game_session: Box<Account<'info, GameSession>>,
 
+    /// CHECK: PDA verified by seeds; loaded/stored manually to keep account parser stack small.
+    #[account(
+        mut,
+        seeds = [ROUND_CLOSE_STATE_SEED.as_ref(), &round_id.to_le_bytes()],
+        bump,
+    )]
+    pub round_close_state: UncheckedAccount<'info>,
+
     #[account(seeds = [GLOBAL_CONFIG_SEED.as_ref()], bump)]
     pub global_config: Box<Account<'info, GlobalConfig>>,
 
@@ -3406,10 +3758,22 @@ pub struct ClaimAutominerRewards<'info> {
     )]
     pub sol_prize_pot_vault: UncheckedAccount<'info>,
 
+    /// CHECK: Receives the `UserGameBet` rent refund; validated against close-state in handler.
+    #[account(mut)]
+    pub user_bet_rent_payer: UncheckedAccount<'info>,
+
+    /// CHECK: PDA verified by seeds; loaded and manually closed in handler.
+    #[account(
+        mut,
+        seeds = [USER_GAME_BET_CLOSE_STATE_SEED.as_ref(), autominer_vault.owner.as_ref(), &round_id.to_le_bytes()],
+        bump,
+    )]
+    pub user_game_bet_close_state: UncheckedAccount<'info>,
+
     /// User game bet account - will be closed
     #[account(
         mut,
-        close = caller,
+        close = user_bet_rent_payer,
         seeds = [USER_GAME_BET_SEED.as_ref(), autominer_vault.owner.as_ref(), &round_id.to_le_bytes()],
         bump = user_game_bet.bump,
         constraint = user_game_bet.owner == autominer_vault.owner @ ErrorCode::InvalidOwner

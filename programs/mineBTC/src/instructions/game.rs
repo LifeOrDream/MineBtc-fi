@@ -240,6 +240,18 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
     // mutation-bonus score-add for that case.
     game_session.war_id_when_played = ctx.accounts.war_config.current_war_id;
 
+    let round_close_state = &mut ctx.accounts.round_close_state;
+    round_close_state.bump = ctx.bumps.round_close_state;
+    round_close_state.round_id = round_id;
+    round_close_state.rent_payer = ctx.accounts.authority.key();
+    round_close_state.pending_claim_count = 0;
+    ctx.accounts.war_close_state.open_game_session_count = ctx
+        .accounts
+        .war_close_state
+        .open_game_session_count
+        .checked_add(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+
     global_state.can_begin_round = false;
 
     emit!(RoundStarted {
@@ -251,6 +263,101 @@ pub fn int_start_round(ctx: Context<StartRound>, round_id: u64) -> Result<()> {
         round_end_timestamp: game_session.round_end_timestamp,
         scheduled_entropy_slot: game_session.scheduled_entropy_slot,
         timestamp: clock.unix_timestamp,
+    });
+    emit!(RoundCloseStateInitialized {
+        round_id,
+        close_state: round_close_state.key(),
+        rent_payer: ctx.accounts.authority.key(),
+        timestamp: clock.unix_timestamp,
+    });
+
+    Ok(())
+}
+
+/// Close a settled `GameSession` once every user bet from that round has been
+/// claimed and closed. The rent goes back to the account that started the
+/// round.
+pub fn int_close_game_session(ctx: Context<CloseGameSession>, round_id: u64) -> Result<()> {
+    crate::log_fn!("game", "int_close_game_session");
+    let game_session = &ctx.accounts.game_session;
+    let round_close_state = &ctx.accounts.round_close_state;
+
+    require!(game_session.round_id == round_id, ErrorCode::InvalidRound);
+    require!(game_session.stage == 2, ErrorCode::InvalidStage);
+    require!(
+        round_close_state.round_id == round_id,
+        ErrorCode::InvalidCloseState
+    );
+    require_keys_eq!(
+        ctx.accounts.rent_payer.key(),
+        round_close_state.rent_payer,
+        ErrorCode::InvalidCloseState
+    );
+    require!(
+        round_close_state.pending_claim_count == 0,
+        ErrorCode::PendingClaimsRemaining
+    );
+    require!(
+        ctx.accounts
+            .global_game_state
+            .current_round_id
+            .saturating_sub(round_id)
+            >= GAME_SESSION_CLOSE_GRACE_ROUNDS,
+        ErrorCode::CloseGraceWindowActive
+    );
+    require!(
+        ctx.accounts.war_close_state.war_id == game_session.war_id_when_played,
+        ErrorCode::InvalidCloseState
+    );
+
+    ctx.accounts.war_close_state.open_game_session_count = ctx
+        .accounts
+        .war_close_state
+        .open_game_session_count
+        .checked_sub(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
+
+    emit!(GameSessionClosed {
+        round_id,
+        game_session: ctx.accounts.game_session.key(),
+        rent_payer: ctx.accounts.rent_payer.key(),
+        caller: ctx.accounts.caller.key(),
+        timestamp: Clock::get()?.unix_timestamp,
+    });
+
+    Ok(())
+}
+
+/// Admin migration helper for rounds that existed before `RoundCloseState`
+/// was introduced. The pending count must be computed off-chain from live
+/// `UserGameBet` accounts for this round before calling.
+pub fn backfill_round_close_state_internal(
+    ctx: Context<BackfillRoundCloseState>,
+    round_id: u64,
+    pending_claim_count: u64,
+    rent_payer: Pubkey,
+) -> Result<()> {
+    crate::log_fn!("game", "backfill_round_close_state_internal");
+    require!(
+        ctx.accounts.global_config.ext_authority == ctx.accounts.authority.key(),
+        ErrorCode::Unauthorized
+    );
+    require!(
+        ctx.accounts.game_session.round_id == round_id,
+        ErrorCode::InvalidRound
+    );
+
+    let round_close_state = &mut ctx.accounts.round_close_state;
+    round_close_state.bump = ctx.bumps.round_close_state;
+    round_close_state.round_id = round_id;
+    round_close_state.rent_payer = rent_payer;
+    round_close_state.pending_claim_count = pending_claim_count;
+
+    emit!(RoundCloseStateInitialized {
+        round_id,
+        close_state: round_close_state.key(),
+        rent_payer,
+        timestamp: Clock::get()?.unix_timestamp,
     });
 
     Ok(())
@@ -1503,6 +1610,15 @@ pub struct StartRound<'info> {
     pub game_session: Box<Account<'info, GameSession>>,
 
     #[account(
+        init,
+        payer = authority,
+        space = RoundCloseState::LEN,
+        seeds = [ROUND_CLOSE_STATE_SEED.as_ref(), &round_id.to_le_bytes()],
+        bump
+    )]
+    pub round_close_state: Box<Account<'info, RoundCloseState>>,
+
+    #[account(
         seeds = [FACTION_WAR_CONFIG_SEED],
         bump = war_config.bump,
     )]
@@ -1520,6 +1636,81 @@ pub struct StartRound<'info> {
         constraint = war_state.stage == 0 @ ErrorCode::FactionWarNotActive,
     )]
     pub war_state: Box<Account<'info, FactionWarState>>,
+
+    #[account(
+        mut,
+        seeds = [FACTION_WAR_CLOSE_STATE_SEED, &war_config.current_war_id.to_le_bytes()],
+        bump = war_close_state.bump,
+        constraint = war_close_state.war_id == war_config.current_war_id @ ErrorCode::InvalidCloseState,
+    )]
+    pub war_close_state: Box<Account<'info, FactionWarCloseState>>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(round_id: u64)]
+pub struct CloseGameSession<'info> {
+    #[account(
+        mut,
+        close = rent_payer,
+        seeds = [GAME_SESSION_SEED.as_ref(), &round_id.to_le_bytes()],
+        bump = game_session.bump,
+    )]
+    pub game_session: Box<Account<'info, GameSession>>,
+
+    #[account(
+        mut,
+        close = rent_payer,
+        seeds = [ROUND_CLOSE_STATE_SEED.as_ref(), &round_id.to_le_bytes()],
+        bump = round_close_state.bump,
+    )]
+    pub round_close_state: Box<Account<'info, RoundCloseState>>,
+
+    #[account(
+        mut,
+        seeds = [FACTION_WAR_CLOSE_STATE_SEED, &game_session.war_id_when_played.to_le_bytes()],
+        bump = war_close_state.bump,
+    )]
+    pub war_close_state: Box<Account<'info, FactionWarCloseState>>,
+
+    #[account(seeds = [GLOBAL_GAME_STATE_SEED.as_ref()], bump = global_game_state.bump)]
+    pub global_game_state: Box<Account<'info, GlobalGameSate>>,
+
+    /// CHECK: Must equal `round_close_state.rent_payer`; handler validates.
+    #[account(mut)]
+    pub rent_payer: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub caller: Signer<'info>,
+}
+
+#[derive(Accounts)]
+#[instruction(round_id: u64)]
+pub struct BackfillRoundCloseState<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+    )]
+    pub global_config: Box<Account<'info, GlobalConfig>>,
+
+    #[account(
+        seeds = [GAME_SESSION_SEED.as_ref(), &round_id.to_le_bytes()],
+        bump = game_session.bump,
+    )]
+    pub game_session: Box<Account<'info, GameSession>>,
+
+    #[account(
+        init,
+        payer = authority,
+        space = RoundCloseState::LEN,
+        seeds = [ROUND_CLOSE_STATE_SEED.as_ref(), &round_id.to_le_bytes()],
+        bump
+    )]
+    pub round_close_state: Box<Account<'info, RoundCloseState>>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
