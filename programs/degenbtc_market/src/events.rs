@@ -56,3 +56,10 @@ pub struct ListingReclaimed {
     pub new_owner: Pubkey,
     pub timestamp: i64,
 }
+
+#[event]
+pub struct AdminTransferred {
+    pub config: Pubkey,
+    pub old_admin: Pubkey,
+    pub new_admin: Pubkey,
+}

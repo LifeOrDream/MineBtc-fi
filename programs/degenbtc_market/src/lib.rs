@@ -15,6 +15,7 @@
 //! Surface area (intentionally small):
 //! - `initialize_marketplace` — admin one-shot per collection
 //! - `update_marketplace_config` — admin tunes fee / recipient / min price / enabled
+//! - `transfer_admin` — admin hands control of the marketplace to a new pubkey
 //! - `list_nft` — owner escrows the asset under a deterministic PDA
 //! - `cancel_listing` — owner pulls escrow back
 //! - `update_listing_price` — owner re-prices in place
@@ -93,6 +94,13 @@ pub mod degenbtc_market {
             min_price_lamports,
             enabled,
         )
+    }
+
+    /// Admin-only single-step admin rotation. New admin takes effect immediately
+    /// on success — there is no pending/accept dance. Rejects zero pubkey and
+    /// no-op (new_admin == current_admin).
+    pub fn transfer_admin(ctx: Context<TransferAdmin>, new_admin: Pubkey) -> Result<()> {
+        instructions::transfer_admin::handler(ctx, new_admin)
     }
 
     /// Escrow asset to `[b"escrow", config, asset]` PDA and create a `Listing`.
