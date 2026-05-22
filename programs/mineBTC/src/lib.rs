@@ -804,6 +804,20 @@ pub mod minebtc {
         user::internal_claim_round_rewards(round_id, ctx)
     }
 
+    /// Transitional rescue path for pre-sidecar round claims whose
+    /// UserFactionWarBets PDA was already closed by an old war claim.
+    ///
+    /// It is permissionless and pays rewards/rent only to the original user.
+    /// Gated to legacy sidecar-less, already-settled war rounds so it cannot
+    /// bypass the new close-counter lifecycle.
+    pub fn legacy_claim_round_rewards(
+        ctx: Context<LegacyClaimRoundRewards>,
+        round_id: u64,
+    ) -> Result<()> {
+        crate::log_fn!("lib", "legacy_claim_round_rewards");
+        user::legacy_claim_round_rewards_internal(round_id, ctx)
+    }
+
     /// Claim autominer rewards with auto-reload (keeper instruction)
     /// Uses SOL rewards to add more rounds to autominer, leftover SOL goes to owner
     pub fn claim_autominer_rewards(
