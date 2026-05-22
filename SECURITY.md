@@ -6,7 +6,7 @@ MineBTC moves real SOL through betting rounds, mints real-supply dBTC, and runs 
 
 Open a private advisory at https://github.com/LifeOrDream/MineBtc-fi/security/advisories/new — please do not file a public GitHub issue.
 
-We aim to acknowledge inside 72 hours. If the advisory goes quiet, email **pretentiouspunjabiguy@gmail.com** with the advisory URL only — no exploit details in the email itself. Still no response? Ping us in Telegram (https://tg.minebtc.fun/) referencing the advisory. Don't paste exploit details in the public chat.
+We aim to acknowledge inside 72 hours. If the advisory goes quiet, ping us in Telegram (https://tg.minebtc.fun/) with the advisory URL only. Don't paste exploit details in the public chat.
 
 Please report from a GitHub account with 2FA enabled.
 

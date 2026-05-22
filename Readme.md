@@ -139,15 +139,28 @@ programs/
   mineBTC/              Main game, economy, HashBeast, staking, tax contracts
   degenbtc_market/      Standalone HashBeast marketplace used by MineBTC
 raydium/
-  programs/cp-swap/     Local/devnet Raydium CP-Swap program
-setup_scripts/          Deployment, initialization, keeper, and devnet scripts
-tests/                  Anchor / TypeScript tests
+  programs/cp-swap/     Raydium CP-Swap CPI/build dependency
+idl/
+  minebtc.json          Public Anchor IDL for the main game program
+  degenbtc_market.json  Public Anchor IDL for the marketplace program
+docs/                   Protocol, gameplay, economy, and NFT design notes
 ```
+
+Deployment, initialization, keeper, wallet, and admin scripts are intentionally not tracked in the public repo. They are operational automation, not part of the public contract surface.
+
+## Public IDLs
+
+The checked-in IDLs live in [`idl/`](./idl/) so integrators do not need to pull generated `target/` artifacts from Git:
+
+| Program | IDL |
+|---|---|
+| MineBTC | [`idl/minebtc.json`](./idl/minebtc.json) |
+| DegenBTC Marketplace | [`idl/degenbtc_market.json`](./idl/degenbtc_market.json) |
 
 ## Build And Verify
 
 ```bash
-cargo fmt
+cargo fmt --all -- --check
 cargo check -p minebtc
 cargo check -p degenbtc_market
 cargo test -p minebtc

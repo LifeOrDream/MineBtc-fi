@@ -5,8 +5,7 @@
     "version": "1.0.0",
     "spec": "0.1.0",
     "description": "MineBTC — Faction warfare game on Solana with betting, staking, NFTs, and deflationary tokenomics",
-    "repository": "https://github.com/LifeOrDream/MineBtc-fi",
-    "address": "1eotiTH2UxCpPMmtzUDGqf1b8dwM7AMKb8a2Tio51an"
+    "repository": "https://github.com/LifeOrDream/MineBtc-fi"
   },
   "instructions": [
     {

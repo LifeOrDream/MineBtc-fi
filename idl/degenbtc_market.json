@@ -1,20 +1,14 @@
-/**
- * Program IDL in camelCase format in order to be used in JS/TS.
- *
- * Note that this is only a type helper and is not the actual IDL. The original
- * IDL can be found at `target/idl/degenbtc_market.json`.
- */
-export type DegenbtcMarket = {
-  "address": "Dh4LLRQHqmBeYHYXs3haYTsXTkBa11APJqq6korkc4hg",
+{
+  "address": "BCuofnvb7QUP6xLH83EEbKFNjxz5T5Jp4xLqfEdURYRg",
   "metadata": {
-    "name": "degenbtcMarket",
+    "name": "degenbtc_market",
     "version": "0.1.0",
     "spec": "0.1.0",
     "description": "MineBTC degenBTC marketplace — minimal mpl-core NFT marketplace for the HashBeast collection"
   },
   "instructions": [
     {
-      "name": "buyListing",
+      "name": "buy_listing",
       "docs": [
         "Buyer pays SOL (fee + proceeds), asset hops escrow → buyer, listing closes."
       ],
@@ -54,7 +48,7 @@ export type DegenbtcMarket = {
           "writable": true
         },
         {
-          "name": "marketplaceConfig",
+          "name": "marketplace_config",
           "pda": {
             "seeds": [
               {
@@ -83,7 +77,7 @@ export type DegenbtcMarket = {
               {
                 "kind": "account",
                 "path": "marketplace_config.collection_mint",
-                "account": "marketplaceConfig"
+                "account": "MarketplaceConfig"
               }
             ]
           }
@@ -107,7 +101,7 @@ export type DegenbtcMarket = {
               },
               {
                 "kind": "account",
-                "path": "marketplaceConfig"
+                "path": "marketplace_config"
               },
               {
                 "kind": "account",
@@ -144,7 +138,7 @@ export type DegenbtcMarket = {
               },
               {
                 "kind": "account",
-                "path": "marketplaceConfig"
+                "path": "marketplace_config"
               },
               {
                 "kind": "account",
@@ -154,26 +148,26 @@ export type DegenbtcMarket = {
           }
         },
         {
-          "name": "feeRecipient",
+          "name": "fee_recipient",
           "writable": true
         },
         {
-          "name": "mplCoreProgram"
+          "name": "mpl_core_program"
         },
         {
-          "name": "systemProgram",
+          "name": "system_program",
           "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
         {
-          "name": "maxPriceLamports",
+          "name": "max_price_lamports",
           "type": "u64"
         }
       ]
     },
     {
-      "name": "cancelListing",
+      "name": "cancel_listing",
       "docs": [
         "Seller cancels — asset returns to seller, listing closes (rent refund)."
       ],
@@ -208,7 +202,7 @@ export type DegenbtcMarket = {
           "signer": true
         },
         {
-          "name": "marketplaceConfig",
+          "name": "marketplace_config",
           "pda": {
             "seeds": [
               {
@@ -237,7 +231,7 @@ export type DegenbtcMarket = {
               {
                 "kind": "account",
                 "path": "marketplace_config.collection_mint",
-                "account": "marketplaceConfig"
+                "account": "MarketplaceConfig"
               }
             ]
           }
@@ -261,7 +255,7 @@ export type DegenbtcMarket = {
               },
               {
                 "kind": "account",
-                "path": "marketplaceConfig"
+                "path": "marketplace_config"
               },
               {
                 "kind": "account",
@@ -304,7 +298,7 @@ export type DegenbtcMarket = {
               },
               {
                 "kind": "account",
-                "path": "marketplaceConfig"
+                "path": "marketplace_config"
               },
               {
                 "kind": "account",
@@ -314,17 +308,17 @@ export type DegenbtcMarket = {
           }
         },
         {
-          "name": "mplCoreProgram"
+          "name": "mpl_core_program"
         },
         {
-          "name": "systemProgram",
+          "name": "system_program",
           "address": "11111111111111111111111111111111"
         }
       ],
       "args": []
     },
     {
-      "name": "initializeMarketplace",
+      "name": "initialize_marketplace",
       "docs": [
         "One-shot per collection. Initializes a `MarketplaceConfig` PDA, records",
         "the verified collection mint, and caches the mpl-core program id used",
@@ -357,7 +351,7 @@ export type DegenbtcMarket = {
           "signer": true
         },
         {
-          "name": "marketplaceConfig",
+          "name": "marketplace_config",
           "writable": true,
           "pda": {
             "seeds": [
@@ -386,43 +380,43 @@ export type DegenbtcMarket = {
               },
               {
                 "kind": "account",
-                "path": "collectionMint"
+                "path": "collection_mint"
               }
             ]
           }
         },
         {
-          "name": "collectionMint",
+          "name": "collection_mint",
           "docs": [
             "mpl-core `CollectionV1` mint. Validated by Anchor via the `Owner` impl."
           ]
         },
         {
-          "name": "systemProgram",
+          "name": "system_program",
           "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
         {
-          "name": "feeBps",
+          "name": "fee_bps",
           "type": "u16"
         },
         {
-          "name": "feeRecipient",
+          "name": "fee_recipient",
           "type": "pubkey"
         },
         {
-          "name": "minPriceLamports",
+          "name": "min_price_lamports",
           "type": "u64"
         },
         {
-          "name": "mplCoreProgram",
+          "name": "mpl_core_program",
           "type": "pubkey"
         }
       ]
     },
     {
-      "name": "listNft",
+      "name": "list_nft",
       "docs": [
         "Escrow asset to `[b\"escrow\", config, asset]` PDA and create a `Listing`."
       ],
@@ -457,7 +451,7 @@ export type DegenbtcMarket = {
           "signer": true
         },
         {
-          "name": "marketplaceConfig",
+          "name": "marketplace_config",
           "pda": {
             "seeds": [
               {
@@ -486,7 +480,7 @@ export type DegenbtcMarket = {
               {
                 "kind": "account",
                 "path": "marketplace_config.collection_mint",
-                "account": "marketplaceConfig"
+                "account": "MarketplaceConfig"
               }
             ]
           }
@@ -510,7 +504,7 @@ export type DegenbtcMarket = {
               },
               {
                 "kind": "account",
-                "path": "marketplaceConfig"
+                "path": "marketplace_config"
               },
               {
                 "kind": "account",
@@ -556,7 +550,7 @@ export type DegenbtcMarket = {
               },
               {
                 "kind": "account",
-                "path": "marketplaceConfig"
+                "path": "marketplace_config"
               },
               {
                 "kind": "account",
@@ -566,22 +560,22 @@ export type DegenbtcMarket = {
           }
         },
         {
-          "name": "mplCoreProgram"
+          "name": "mpl_core_program"
         },
         {
-          "name": "systemProgram",
+          "name": "system_program",
           "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
         {
-          "name": "priceLamports",
+          "name": "price_lamports",
           "type": "u64"
         }
       ]
     },
     {
-      "name": "reclaimStaleListing",
+      "name": "reclaim_stale_listing",
       "docs": [
         "Permissionless reclaim of a stale listing whose asset owner no longer",
         "matches the recorded seller. Closes the listing and refunds rent to caller."
@@ -606,7 +600,7 @@ export type DegenbtcMarket = {
           "signer": true
         },
         {
-          "name": "marketplaceConfig",
+          "name": "marketplace_config",
           "pda": {
             "seeds": [
               {
@@ -635,7 +629,7 @@ export type DegenbtcMarket = {
               {
                 "kind": "account",
                 "path": "marketplace_config.collection_mint",
-                "account": "marketplaceConfig"
+                "account": "MarketplaceConfig"
               }
             ]
           }
@@ -659,7 +653,7 @@ export type DegenbtcMarket = {
               },
               {
                 "kind": "account",
-                "path": "marketplaceConfig"
+                "path": "marketplace_config"
               },
               {
                 "kind": "account",
@@ -699,7 +693,7 @@ export type DegenbtcMarket = {
               },
               {
                 "kind": "account",
-                "path": "marketplaceConfig"
+                "path": "marketplace_config"
               },
               {
                 "kind": "account",
@@ -709,17 +703,54 @@ export type DegenbtcMarket = {
           }
         },
         {
-          "name": "mplCoreProgram"
+          "name": "mpl_core_program"
         },
         {
-          "name": "systemProgram",
+          "name": "system_program",
           "address": "11111111111111111111111111111111"
         }
       ],
       "args": []
     },
     {
-      "name": "updateListingPrice",
+      "name": "transfer_admin",
+      "docs": [
+        "Admin-only single-step admin rotation. New admin takes effect immediately",
+        "on success — there is no pending/accept dance. Rejects zero pubkey and",
+        "no-op (new_admin == current_admin)."
+      ],
+      "discriminator": [
+        42,
+        242,
+        66,
+        106,
+        228,
+        10,
+        111,
+        156
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "marketplace_config"
+          ]
+        },
+        {
+          "name": "marketplace_config",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "new_admin",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "update_listing_price",
       "docs": [
         "Seller re-prices an existing listing. Subject to `min_price_lamports`."
       ],
@@ -739,7 +770,7 @@ export type DegenbtcMarket = {
           "signer": true
         },
         {
-          "name": "marketplaceConfig",
+          "name": "marketplace_config",
           "pda": {
             "seeds": [
               {
@@ -768,7 +799,7 @@ export type DegenbtcMarket = {
               {
                 "kind": "account",
                 "path": "marketplace_config.collection_mint",
-                "account": "marketplaceConfig"
+                "account": "MarketplaceConfig"
               }
             ]
           }
@@ -792,12 +823,12 @@ export type DegenbtcMarket = {
               },
               {
                 "kind": "account",
-                "path": "marketplaceConfig"
+                "path": "marketplace_config"
               },
               {
                 "kind": "account",
                 "path": "listing.asset",
-                "account": "listing"
+                "account": "Listing"
               }
             ]
           }
@@ -805,13 +836,13 @@ export type DegenbtcMarket = {
       ],
       "args": [
         {
-          "name": "newPriceLamports",
+          "name": "new_price_lamports",
           "type": "u64"
         }
       ]
     },
     {
-      "name": "updateMarketplaceConfig",
+      "name": "update_marketplace_config",
       "docs": [
         "Admin-only. Each `Some` field is overwritten; `None` leaves the field as-is."
       ],
@@ -830,29 +861,29 @@ export type DegenbtcMarket = {
           "name": "admin",
           "signer": true,
           "relations": [
-            "marketplaceConfig"
+            "marketplace_config"
           ]
         },
         {
-          "name": "marketplaceConfig",
+          "name": "marketplace_config",
           "writable": true
         }
       ],
       "args": [
         {
-          "name": "feeBps",
+          "name": "fee_bps",
           "type": {
             "option": "u16"
           }
         },
         {
-          "name": "feeRecipient",
+          "name": "fee_recipient",
           "type": {
             "option": "pubkey"
           }
         },
         {
-          "name": "minPriceLamports",
+          "name": "min_price_lamports",
           "type": {
             "option": "u64"
           }
@@ -868,13 +899,13 @@ export type DegenbtcMarket = {
   ],
   "accounts": [
     {
-      "name": "baseCollectionV1",
+      "name": "BaseCollectionV1",
       "discriminator": [
         5
       ]
     },
     {
-      "name": "listing",
+      "name": "Listing",
       "discriminator": [
         218,
         32,
@@ -887,7 +918,7 @@ export type DegenbtcMarket = {
       ]
     },
     {
-      "name": "marketplaceConfig",
+      "name": "MarketplaceConfig",
       "discriminator": [
         169,
         22,
@@ -902,7 +933,20 @@ export type DegenbtcMarket = {
   ],
   "events": [
     {
-      "name": "listingCancelled",
+      "name": "AdminTransferred",
+      "discriminator": [
+        255,
+        147,
+        182,
+        5,
+        199,
+        217,
+        38,
+        179
+      ]
+    },
+    {
+      "name": "ListingCancelled",
       "discriminator": [
         11,
         46,
@@ -915,7 +959,7 @@ export type DegenbtcMarket = {
       ]
     },
     {
-      "name": "listingPriceUpdated",
+      "name": "ListingPriceUpdated",
       "discriminator": [
         85,
         181,
@@ -928,7 +972,7 @@ export type DegenbtcMarket = {
       ]
     },
     {
-      "name": "listingReclaimed",
+      "name": "ListingReclaimed",
       "discriminator": [
         28,
         100,
@@ -941,7 +985,7 @@ export type DegenbtcMarket = {
       ]
     },
     {
-      "name": "marketplaceConfigUpdated",
+      "name": "MarketplaceConfigUpdated",
       "discriminator": [
         126,
         55,
@@ -954,7 +998,7 @@ export type DegenbtcMarket = {
       ]
     },
     {
-      "name": "marketplaceInitialized",
+      "name": "MarketplaceInitialized",
       "discriminator": [
         22,
         167,
@@ -967,7 +1011,7 @@ export type DegenbtcMarket = {
       ]
     },
     {
-      "name": "nftListed",
+      "name": "NftListed",
       "discriminator": [
         115,
         235,
@@ -980,7 +1024,7 @@ export type DegenbtcMarket = {
       ]
     },
     {
-      "name": "nftSold",
+      "name": "NftSold",
       "discriminator": [
         82,
         21,
@@ -996,83 +1040,108 @@ export type DegenbtcMarket = {
   "errors": [
     {
       "code": 6000,
-      "name": "marketplaceDisabled",
+      "name": "MarketplaceDisabled",
       "msg": "Marketplace is disabled"
     },
     {
       "code": 6001,
-      "name": "priceTooLow",
+      "name": "PriceTooLow",
       "msg": "Price below minimum"
     },
     {
       "code": 6002,
-      "name": "priceTooHigh",
+      "name": "PriceTooHigh",
       "msg": "Listing price exceeds buyer max price"
     },
     {
       "code": 6003,
-      "name": "feeTooHigh",
+      "name": "FeeTooHigh",
       "msg": "Fee exceeds max 10%"
     },
     {
       "code": 6004,
-      "name": "notCollectionMember",
+      "name": "NotCollectionMember",
       "msg": "Asset not in registered collection"
     },
     {
       "code": 6005,
-      "name": "sellerMismatch",
+      "name": "SellerMismatch",
       "msg": "Seller mismatch"
     },
     {
       "code": 6006,
-      "name": "insufficientFunds",
+      "name": "InsufficientFunds",
       "msg": "Insufficient buyer funds"
     },
     {
       "code": 6007,
-      "name": "invalidMplCoreProgram",
+      "name": "InvalidMplCoreProgram",
       "msg": "Invalid MPL Core program"
     },
     {
       "code": 6008,
-      "name": "unauthorized",
+      "name": "Unauthorized",
       "msg": "Admin only"
     },
     {
       "code": 6009,
-      "name": "unsupportedPlugin",
+      "name": "UnsupportedPlugin",
       "msg": "Asset has unsupported plugin"
     },
     {
       "code": 6010,
-      "name": "mathOverflow",
+      "name": "MathOverflow",
       "msg": "Math overflow"
     },
     {
       "code": 6011,
-      "name": "invalidFeeRecipient",
+      "name": "InvalidFeeRecipient",
       "msg": "Invalid fee recipient"
     },
     {
       "code": 6012,
-      "name": "invalidCollection",
+      "name": "InvalidCollection",
       "msg": "Invalid collection"
     },
     {
       "code": 6013,
-      "name": "invalidAsset",
+      "name": "InvalidAsset",
       "msg": "Asset deserialization failed"
     },
     {
       "code": 6014,
-      "name": "listingNotStale",
+      "name": "ListingNotStale",
       "msg": "Listing is not stale — asset is still held by marketplace escrow"
+    },
+    {
+      "code": 6015,
+      "name": "InvalidAdmin",
+      "msg": "Invalid admin (zero pubkey or same as current admin)"
     }
   ],
   "types": [
     {
-      "name": "baseCollectionV1",
+      "name": "AdminTransferred",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "config",
+            "type": "pubkey"
+          },
+          {
+            "name": "old_admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "new_admin",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BaseCollectionV1",
       "type": {
         "kind": "struct",
         "fields": [
@@ -1080,12 +1149,12 @@ export type DegenbtcMarket = {
             "name": "key",
             "type": {
               "defined": {
-                "name": "key"
+                "name": "Key"
               }
             }
           },
           {
-            "name": "updateAuthority",
+            "name": "update_authority",
             "type": "pubkey"
           },
           {
@@ -1097,44 +1166,44 @@ export type DegenbtcMarket = {
             "type": "string"
           },
           {
-            "name": "numMinted",
+            "name": "num_minted",
             "type": "u32"
           },
           {
-            "name": "currentSize",
+            "name": "current_size",
             "type": "u32"
           }
         ]
       }
     },
     {
-      "name": "key",
+      "name": "Key",
       "type": {
         "kind": "enum",
         "variants": [
           {
-            "name": "uninitialized"
+            "name": "Uninitialized"
           },
           {
-            "name": "assetV1"
+            "name": "AssetV1"
           },
           {
-            "name": "hashedAssetV1"
+            "name": "HashedAssetV1"
           },
           {
-            "name": "pluginHeaderV1"
+            "name": "PluginHeaderV1"
           },
           {
-            "name": "pluginRegistryV1"
+            "name": "PluginRegistryV1"
           },
           {
-            "name": "collectionV1"
+            "name": "CollectionV1"
           }
         ]
       }
     },
     {
-      "name": "listing",
+      "name": "Listing",
       "docs": [
         "PDA: `[b\"listing\", marketplace_config, asset]`",
         "",
@@ -1157,18 +1226,18 @@ export type DegenbtcMarket = {
             "type": "pubkey"
           },
           {
-            "name": "priceLamports",
+            "name": "price_lamports",
             "type": "u64"
           },
           {
-            "name": "createdAt",
+            "name": "created_at",
             "type": "i64"
           }
         ]
       }
     },
     {
-      "name": "listingCancelled",
+      "name": "ListingCancelled",
       "type": {
         "kind": "struct",
         "fields": [
@@ -1188,7 +1257,7 @@ export type DegenbtcMarket = {
       }
     },
     {
-      "name": "listingPriceUpdated",
+      "name": "ListingPriceUpdated",
       "type": {
         "kind": "struct",
         "fields": [
@@ -1201,7 +1270,7 @@ export type DegenbtcMarket = {
             "type": "pubkey"
           },
           {
-            "name": "newPriceLamports",
+            "name": "new_price_lamports",
             "type": "u64"
           },
           {
@@ -1212,7 +1281,7 @@ export type DegenbtcMarket = {
       }
     },
     {
-      "name": "listingReclaimed",
+      "name": "ListingReclaimed",
       "type": {
         "kind": "struct",
         "fields": [
@@ -1221,11 +1290,11 @@ export type DegenbtcMarket = {
             "type": "pubkey"
           },
           {
-            "name": "oldSeller",
+            "name": "old_seller",
             "type": "pubkey"
           },
           {
-            "name": "newOwner",
+            "name": "new_owner",
             "type": "pubkey"
           },
           {
@@ -1236,7 +1305,7 @@ export type DegenbtcMarket = {
       }
     },
     {
-      "name": "marketplaceConfig",
+      "name": "MarketplaceConfig",
       "docs": [
         "PDA: `[b\"marketplace-config\", collection_mint]`",
         "",
@@ -1260,35 +1329,35 @@ export type DegenbtcMarket = {
             "type": "bool"
           },
           {
-            "name": "collectionMint",
+            "name": "collection_mint",
             "docs": [
               "Verified mpl-core `CollectionV1` mint."
             ],
             "type": "pubkey"
           },
           {
-            "name": "feeBps",
+            "name": "fee_bps",
             "docs": [
               "300 = 3.00%"
             ],
             "type": "u16"
           },
           {
-            "name": "feeRecipient",
+            "name": "fee_recipient",
             "docs": [
               "SOL recipient for marketplace fees (mineBTC `fee_recipient`)."
             ],
             "type": "pubkey"
           },
           {
-            "name": "minPriceLamports",
+            "name": "min_price_lamports",
             "docs": [
               "Hard floor on listing prices in lamports."
             ],
             "type": "u64"
           },
           {
-            "name": "mplCoreProgram",
+            "name": "mpl_core_program",
             "docs": [
               "Cached MPL Core program id used in transfer CPIs."
             ],
@@ -1298,7 +1367,7 @@ export type DegenbtcMarket = {
       }
     },
     {
-      "name": "marketplaceConfigUpdated",
+      "name": "MarketplaceConfigUpdated",
       "type": {
         "kind": "struct",
         "fields": [
@@ -1307,11 +1376,11 @@ export type DegenbtcMarket = {
             "type": "pubkey"
           },
           {
-            "name": "feeBps",
+            "name": "fee_bps",
             "type": "u16"
           },
           {
-            "name": "feeRecipient",
+            "name": "fee_recipient",
             "type": "pubkey"
           },
           {
@@ -1319,14 +1388,14 @@ export type DegenbtcMarket = {
             "type": "bool"
           },
           {
-            "name": "minPriceLamports",
+            "name": "min_price_lamports",
             "type": "u64"
           }
         ]
       }
     },
     {
-      "name": "marketplaceInitialized",
+      "name": "MarketplaceInitialized",
       "type": {
         "kind": "struct",
         "fields": [
@@ -1335,18 +1404,18 @@ export type DegenbtcMarket = {
             "type": "pubkey"
           },
           {
-            "name": "collectionMint",
+            "name": "collection_mint",
             "type": "pubkey"
           },
           {
-            "name": "feeBps",
+            "name": "fee_bps",
             "type": "u16"
           }
         ]
       }
     },
     {
-      "name": "nftListed",
+      "name": "NftListed",
       "type": {
         "kind": "struct",
         "fields": [
@@ -1359,7 +1428,7 @@ export type DegenbtcMarket = {
             "type": "pubkey"
           },
           {
-            "name": "priceLamports",
+            "name": "price_lamports",
             "type": "u64"
           },
           {
@@ -1370,7 +1439,7 @@ export type DegenbtcMarket = {
       }
     },
     {
-      "name": "nftSold",
+      "name": "NftSold",
       "type": {
         "kind": "struct",
         "fields": [
@@ -1387,11 +1456,11 @@ export type DegenbtcMarket = {
             "type": "pubkey"
           },
           {
-            "name": "priceLamports",
+            "name": "price_lamports",
             "type": "u64"
           },
           {
-            "name": "feeLamports",
+            "name": "fee_lamports",
             "type": "u64"
           },
           {
@@ -1402,4 +1471,4 @@ export type DegenbtcMarket = {
       }
     }
   ]
-};
+}
