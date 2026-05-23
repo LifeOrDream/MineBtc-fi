@@ -642,6 +642,26 @@ pub mod minebtc {
         )
     }
 
+    /// Transitional admin-only initialization of close sidecars for
+    /// pre-upgrade user faction-war bet PDAs. Needed for already-active users
+    /// to keep betting in the active war and claim cycle rewards after settle.
+    pub fn admin_init_legacy_user_war_bet_close_state(
+        ctx: Context<AdminInitLegacyUserWarBetCloseState>,
+        war_id: u64,
+        owner: Pubkey,
+        open_round_claim_count: u64,
+        rent_payer: Pubkey,
+    ) -> Result<()> {
+        crate::log_fn!("lib", "admin_init_legacy_user_war_bet_close_state");
+        faction_war::admin_init_legacy_user_war_bet_close_state_internal(
+            ctx,
+            war_id,
+            owner,
+            open_round_claim_count,
+            rent_payer,
+        )
+    }
+
     /// Transitional admin-only cleanup for pre-sidecar user faction-war PDAs.
     pub fn admin_close_legacy_user_war_bets(
         ctx: Context<AdminCloseLegacyUserWarBets>,

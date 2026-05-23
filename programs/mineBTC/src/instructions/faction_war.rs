@@ -1886,6 +1886,75 @@ pub fn admin_init_legacy_faction_war_close_state_internal(
     Ok(())
 }
 
+/// One-time admin backfill for pre-upgrade `UserFactionWarBets` accounts.
+///
+/// Legacy active-war user PDAs do not have a `UserFactionWarBetCloseState`,
+/// but the upgraded bet and claim paths require one. This initializer bridges
+/// those accounts into the new close lifecycle without deleting their accrued
+/// cycle entitlement. The war-level pending-claim counter is managed by
+/// `admin_init_legacy_faction_war_close_state`; this function intentionally
+/// only creates the per-user sidecar.
+///
+/// For pre-upgrade round bets that also lack `UserGameBetCloseState`, pass
+/// `open_round_claim_count = 0`: those claims use `legacy_claim_round_rewards`
+/// and do not depend on the per-user war PDA staying open. Only count round
+/// claims that were created through the upgraded sidecar path.
+pub fn admin_init_legacy_user_war_bet_close_state_internal(
+    ctx: Context<AdminInitLegacyUserWarBetCloseState>,
+    war_id: u64,
+    owner: Pubkey,
+    open_round_claim_count: u64,
+    rent_payer: Pubkey,
+) -> Result<()> {
+    crate::log_fn!(
+        "faction_war",
+        "admin_init_legacy_user_war_bet_close_state_internal"
+    );
+    require!(
+        ctx.accounts.global_config.ext_authority == ctx.accounts.authority.key(),
+        ErrorCode::Unauthorized
+    );
+    require!(
+        ctx.accounts.war_state.war_id == war_id,
+        ErrorCode::InvalidState
+    );
+    require_keys_eq!(
+        ctx.accounts.player_data.owner,
+        owner,
+        ErrorCode::InvalidOwner
+    );
+    require_keys_eq!(
+        ctx.accounts.user_war_bets.owner,
+        owner,
+        ErrorCode::InvalidOwner
+    );
+    require!(
+        ctx.accounts.user_war_bets.war_id == war_id,
+        ErrorCode::InvalidState
+    );
+    require!(
+        rent_payer != Pubkey::default(),
+        ErrorCode::InvalidCloseState
+    );
+
+    let close_state = &mut ctx.accounts.user_war_bet_close_state;
+    close_state.bump = ctx.bumps.user_war_bet_close_state;
+    close_state.owner = owner;
+    close_state.war_id = war_id;
+    close_state.rent_payer = rent_payer;
+    close_state.open_round_claim_count = open_round_claim_count;
+
+    emit!(UserFactionWarBetCloseStateInitialized {
+        war_id,
+        owner,
+        close_state: close_state.key(),
+        rent_payer,
+        timestamp: Clock::get()?.unix_timestamp,
+    });
+
+    Ok(())
+}
+
 // ========================================================================================
 // ============================= ACCOUNTS =================================================
 // ========================================================================================
@@ -2220,6 +2289,51 @@ pub struct AdminInitLegacyFactionWarCloseState<'info> {
         bump,
     )]
     pub war_close_state: Box<Account<'info, FactionWarCloseState>>,
+
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(war_id: u64, owner: Pubkey)]
+pub struct AdminInitLegacyUserWarBetCloseState<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+    )]
+    pub global_config: Box<Account<'info, GlobalConfig>>,
+
+    #[account(
+        seeds = [FACTION_WAR_STATE_SEED, &war_id.to_le_bytes()],
+        bump = war_state.bump,
+    )]
+    pub war_state: Box<Account<'info, FactionWarState>>,
+
+    #[account(
+        seeds = [PLAYER_DATA_SEED, owner.as_ref()],
+        bump = player_data.bump,
+        constraint = player_data.owner == owner @ ErrorCode::InvalidOwner,
+    )]
+    pub player_data: Box<Account<'info, PlayerData>>,
+
+    #[account(
+        seeds = [USER_FACTION_WAR_BETS_SEED, owner.as_ref(), &war_id.to_le_bytes()],
+        bump = user_war_bets.bump,
+        constraint = user_war_bets.owner == owner @ ErrorCode::InvalidOwner,
+        constraint = user_war_bets.war_id == war_id @ ErrorCode::InvalidState,
+    )]
+    pub user_war_bets: Box<Account<'info, UserFactionWarBets>>,
+
+    #[account(
+        init,
+        payer = authority,
+        space = UserFactionWarBetCloseState::LEN,
+        seeds = [USER_FACTION_WAR_BET_CLOSE_STATE_SEED, owner.as_ref(), &war_id.to_le_bytes()],
+        bump,
+    )]
+    pub user_war_bet_close_state: Box<Account<'info, UserFactionWarBetCloseState>>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
