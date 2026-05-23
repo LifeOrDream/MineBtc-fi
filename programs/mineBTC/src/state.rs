@@ -188,9 +188,20 @@ pub const MAX_FACTION_NAME_LENGTH: usize = 16; // Maximum length of faction name
 /// This keeps the entropy slot after the round closes under normal slot timing, while the
 /// finalize path can still fall back to the latest available slot hash if the scheduled hash
 /// ages out before anybody settles the round.
-pub const ROUND_ENTROPY_SLOTS_PER_SECOND_ESTIMATE: u64 = 4;
+///
+/// Tuned to mainnet reality: observed slot duration is ~400ms (2.5 slots/sec) under typical
+/// load, occasionally 360ms during burst windows. A value of `3` schedules the entropy slot
+/// `round_duration_seconds * 3` slots ahead — at 400ms/slot that's `round_duration * 1.2s`,
+/// landing comfortably after bets close. At the fastest-realistic 360ms/slot it still lands
+/// `round_duration * 1.08s` later, i.e. ~5s past round-end on a 60s round — safe for MEV.
+///
+/// History: was `4` (assumed 250ms/slot, Solana's theoretical maximum). That overestimated
+/// real slot throughput by ~60%, adding ~38s of dead wait time per 60s round on mainnet.
+pub const ROUND_ENTROPY_SLOTS_PER_SECOND_ESTIMATE: u64 = 3;
 /// Extra slot buffer added on top of the estimated end slot before sampling entropy.
-pub const ROUND_PRIMARY_ENTROPY_DELAY_SLOTS: u64 = 8;
+/// 4 slots ≈ 1.6s at typical mainnet slot rate — enough headroom for the unpredictability
+/// guarantee while keeping the cranker's post-round-end wait short.
+pub const ROUND_PRIMARY_ENTROPY_DELAY_SLOTS: u64 = 4;
 
 // ----- [SEEDS] -----
 
