@@ -85,6 +85,57 @@ pub struct DistributionRateUpdated {
 }
 
 #[event]
+pub struct RoundCloseStateInitialized {
+    pub round_id: u64,
+    pub close_state: Pubkey,
+    pub rent_payer: Pubkey,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct UserGameBetCloseStateInitialized {
+    pub round_id: u64,
+    pub owner: Pubkey,
+    pub close_state: Pubkey,
+    pub rent_payer: Pubkey,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct GameSessionClosed {
+    pub round_id: u64,
+    pub game_session: Pubkey,
+    pub rent_payer: Pubkey,
+    pub caller: Pubkey,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct FactionWarCloseStateInitialized {
+    pub war_id: u64,
+    pub close_state: Pubkey,
+    pub rent_payer: Pubkey,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct UserFactionWarBetCloseStateInitialized {
+    pub war_id: u64,
+    pub owner: Pubkey,
+    pub close_state: Pubkey,
+    pub rent_payer: Pubkey,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct FactionWarAccountsClosed {
+    pub war_id: u64,
+    pub rent_payer: Pubkey,
+    pub caller: Pubkey,
+    pub timestamp: i64,
+}
+
+#[event]
 pub struct FactionWarMultiplierUpdated {
     pub old_multiplier_bps: u16,
     pub new_multiplier_bps: u16,

@@ -246,6 +246,18 @@ pub enum ErrorCode {
     #[msg("No free HashBeast mints remaining for this user")]
     NoFreeHashBeastMintsRemaining,
 
+    #[msg("Close-state account does not match the account being closed")]
+    InvalidCloseState,
+
+    #[msg("Account cannot close while child claim accounts are still pending")]
+    PendingClaimsRemaining,
+
+    #[msg("Account cannot close until the grace window has elapsed")]
+    CloseGraceWindowActive,
+
+    #[msg("Faction treasury claims are still pending for this war")]
+    TreasuryClaimsPending,
+
     // ============================ Inventory / Lootbox / Market ============================
     #[msg("Inventory pool is at MAX_INVENTORY capacity")]
     InventoryFull,

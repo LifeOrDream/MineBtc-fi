@@ -149,6 +149,29 @@ pub fn native_lamports_available_after_rent(account: &AccountInfo<'_>) -> Result
     Ok(account.lamports().saturating_sub(rent_floor))
 }
 
+/// Close a program-owned account manually, sending every remaining lamport to
+/// `destination`, assigning the account back to System Program, and shrinking
+/// data to zero. Use for manually loaded sidecar PDAs in stack-sensitive ix
+/// account parsers where Anchor's `close = ...` constraint would require a
+/// typed `Account<T>`.
+pub fn close_owned_account<'info>(
+    source: &AccountInfo<'info>,
+    destination: &AccountInfo<'info>,
+) -> Result<u64> {
+    require_keys_eq!(*source.owner, crate::ID, ErrorCode::InvalidAccount);
+    let lamports = source.lamports();
+    if lamports > 0 {
+        **source.try_borrow_mut_lamports()? = 0;
+        **destination.try_borrow_mut_lamports()? = destination
+            .lamports()
+            .checked_add(lamports)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+    }
+    source.realloc(0, false)?;
+    source.assign(&system_program::ID);
+    Ok(lamports)
+}
+
 pub fn transfer_from_autominer_custody<'info>(
     autominer_custody: &AccountInfo<'info>,
     to: &AccountInfo<'info>,

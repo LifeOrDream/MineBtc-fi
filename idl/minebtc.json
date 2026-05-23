@@ -2336,6 +2336,40 @@
           }
         },
         {
+          "name": "round_close_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  110,
+                  100,
+                  45,
+                  99,
+                  108,
+                  111,
+                  115,
+                  101,
+                  45,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "round_id"
+              }
+            ]
+          }
+        },
+        {
           "name": "global_config",
           "pda": {
             "seeds": [
@@ -2380,6 +2414,52 @@
                   111,
                   116
                 ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_bet_rent_payer",
+          "writable": true
+        },
+        {
+          "name": "user_game_bet_close_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114,
+                  45,
+                  98,
+                  101,
+                  116,
+                  45,
+                  99,
+                  108,
+                  111,
+                  115,
+                  101,
+                  45,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "autominer_vault.owner",
+                "account": "AutominerVault"
+              },
+              {
+                "kind": "arg",
+                "path": "round_id"
               }
             ]
           }
@@ -3243,6 +3323,40 @@
           }
         },
         {
+          "name": "round_close_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  110,
+                  100,
+                  45,
+                  99,
+                  108,
+                  111,
+                  115,
+                  101,
+                  45,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "round_id"
+              }
+            ]
+          }
+        },
+        {
           "name": "global_config",
           "pda": {
             "seeds": [
@@ -3319,6 +3433,51 @@
                   111,
                   116
                 ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_bet_rent_payer",
+          "writable": true
+        },
+        {
+          "name": "user_game_bet_close_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114,
+                  45,
+                  98,
+                  101,
+                  116,
+                  45,
+                  99,
+                  108,
+                  111,
+                  115,
+                  101,
+                  45,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user_wallet"
+              },
+              {
+                "kind": "arg",
+                "path": "round_id"
               }
             ]
           }
@@ -3786,6 +3945,50 @@
           }
         },
         {
+          "name": "war_close_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  97,
+                  99,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  119,
+                  97,
+                  114,
+                  45,
+                  99,
+                  108,
+                  111,
+                  115,
+                  101,
+                  45,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "war_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_war_bet_rent_payer",
+          "writable": true
+        },
+        {
           "name": "user_war_bets",
           "writable": true,
           "pda": {
@@ -3809,6 +4012,48 @@
                   119,
                   97,
                   114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user_war_bets.owner",
+                "account": "UserFactionWarBets"
+              },
+              {
+                "kind": "arg",
+                "path": "war_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_war_bet_close_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114,
+                  45,
+                  119,
+                  97,
+                  114,
+                  45,
+                  99,
+                  108,
+                  111,
+                  115,
+                  101,
+                  45,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
                 ]
               },
               {
@@ -3950,6 +4195,342 @@
       "args": [
         {
           "name": "war_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "close_faction_war_accounts",
+      "docs": [
+        "Close a fully claimed historical faction-war cycle."
+      ],
+      "discriminator": [
+        27,
+        167,
+        204,
+        251,
+        242,
+        65,
+        97,
+        115
+      ],
+      "accounts": [
+        {
+          "name": "war_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  97,
+                  99,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  119,
+                  97,
+                  114,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "war_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  97,
+                  99,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  119,
+                  97,
+                  114
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "war_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "war_settlement",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  97,
+                  99,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  119,
+                  97,
+                  114,
+                  45,
+                  115,
+                  101,
+                  116,
+                  116,
+                  108,
+                  101,
+                  109,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "war_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "war_close_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  97,
+                  99,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  119,
+                  97,
+                  114,
+                  45,
+                  99,
+                  108,
+                  111,
+                  115,
+                  101,
+                  45,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "war_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "rent_payer",
+          "writable": true
+        },
+        {
+          "name": "caller",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "war_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "close_game_session",
+      "docs": [
+        "Close a settled round session once all user bet accounts have claimed."
+      ],
+      "discriminator": [
+        182,
+        66,
+        175,
+        77,
+        203,
+        131,
+        18,
+        250
+      ],
+      "accounts": [
+        {
+          "name": "game_session",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101,
+                  45,
+                  115,
+                  101,
+                  115,
+                  115,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "round_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "round_close_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  110,
+                  100,
+                  45,
+                  99,
+                  108,
+                  111,
+                  115,
+                  101,
+                  45,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "round_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "war_close_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  97,
+                  99,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  119,
+                  97,
+                  114,
+                  45,
+                  99,
+                  108,
+                  111,
+                  115,
+                  101,
+                  45,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "game_session.war_id_when_played",
+                "account": "GameSession"
+              }
+            ]
+          }
+        },
+        {
+          "name": "global_game_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  108,
+                  111,
+                  98,
+                  97,
+                  108,
+                  45,
+                  103,
+                  97,
+                  109,
+                  101,
+                  45,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rent_payer",
+          "writable": true
+        },
+        {
+          "name": "caller",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "round_id",
           "type": "u64"
         }
       ]
@@ -5103,6 +5684,40 @@
           }
         },
         {
+          "name": "round_close_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  110,
+                  100,
+                  45,
+                  99,
+                  108,
+                  111,
+                  115,
+                  101,
+                  45,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "current_round_id"
+              }
+            ]
+          }
+        },
+        {
           "name": "user_game_bet",
           "docs": [
             "UserGameBet PDA for autominer bets (aggregates all bets from this vault for this round)"
@@ -5121,6 +5736,48 @@
                   98,
                   101,
                   116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "autominer_vault.owner",
+                "account": "AutominerVault"
+              },
+              {
+                "kind": "arg",
+                "path": "current_round_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_game_bet_close_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114,
+                  45,
+                  98,
+                  101,
+                  116,
+                  45,
+                  99,
+                  108,
+                  111,
+                  115,
+                  101,
+                  45,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
                 ]
               },
               {
@@ -5289,6 +5946,88 @@
                 "kind": "account",
                 "path": "autominer_vault.owner",
                 "account": "AutominerVault"
+              },
+              {
+                "kind": "arg",
+                "path": "war_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_war_bet_close_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114,
+                  45,
+                  119,
+                  97,
+                  114,
+                  45,
+                  99,
+                  108,
+                  111,
+                  115,
+                  101,
+                  45,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "autominer_vault.owner",
+                "account": "AutominerVault"
+              },
+              {
+                "kind": "arg",
+                "path": "war_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "war_close_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  97,
+                  99,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  119,
+                  97,
+                  114,
+                  45,
+                  99,
+                  108,
+                  111,
+                  115,
+                  101,
+                  45,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
               },
               {
                 "kind": "arg",
@@ -6832,6 +7571,46 @@
           }
         },
         {
+          "name": "war_close_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  97,
+                  99,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  119,
+                  97,
+                  114,
+                  45,
+                  99,
+                  108,
+                  111,
+                  115,
+                  101,
+                  45,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "war_id"
+              }
+            ]
+          }
+        },
+        {
           "name": "tax_config",
           "writable": true,
           "pda": {
@@ -8137,6 +8916,40 @@
           }
         },
         {
+          "name": "round_close_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  110,
+                  100,
+                  45,
+                  99,
+                  108,
+                  111,
+                  115,
+                  101,
+                  45,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "round_id"
+              }
+            ]
+          }
+        },
+        {
           "name": "user_game_bet",
           "docs": [
             "UserGameBet PDA for this user's bet in this round"
@@ -8155,6 +8968,47 @@
                   98,
                   101,
                   116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              },
+              {
+                "kind": "arg",
+                "path": "round_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_game_bet_close_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114,
+                  45,
+                  98,
+                  101,
+                  116,
+                  45,
+                  99,
+                  108,
+                  111,
+                  115,
+                  101,
+                  45,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
                 ]
               },
               {
@@ -8321,6 +9175,87 @@
               {
                 "kind": "account",
                 "path": "authority"
+              },
+              {
+                "kind": "arg",
+                "path": "war_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_war_bet_close_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114,
+                  45,
+                  119,
+                  97,
+                  114,
+                  45,
+                  99,
+                  108,
+                  111,
+                  115,
+                  101,
+                  45,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              },
+              {
+                "kind": "arg",
+                "path": "war_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "war_close_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  97,
+                  99,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  119,
+                  97,
+                  114,
+                  45,
+                  99,
+                  108,
+                  111,
+                  115,
+                  101,
+                  45,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
               },
               {
                 "kind": "arg",
@@ -11236,6 +12171,40 @@
           }
         },
         {
+          "name": "round_close_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  110,
+                  100,
+                  45,
+                  99,
+                  108,
+                  111,
+                  115,
+                  101,
+                  45,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "round_id"
+              }
+            ]
+          }
+        },
+        {
           "name": "war_config",
           "pda": {
             "seeds": [
@@ -11291,6 +12260,47 @@
                   119,
                   97,
                   114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "war_config.current_war_id",
+                "account": "FactionWarConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "war_close_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  97,
+                  99,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  119,
+                  97,
+                  114,
+                  45,
+                  99,
+                  108,
+                  111,
+                  115,
+                  101,
+                  45,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
                 ]
               },
               {
@@ -14692,6 +15702,19 @@
       ]
     },
     {
+      "name": "FactionWarCloseState",
+      "discriminator": [
+        40,
+        23,
+        21,
+        145,
+        1,
+        120,
+        211,
+        113
+      ]
+    },
+    {
       "name": "FactionWarConfig",
       "discriminator": [
         34,
@@ -14952,6 +15975,19 @@
       ]
     },
     {
+      "name": "RoundCloseState",
+      "discriminator": [
+        239,
+        145,
+        246,
+        66,
+        7,
+        118,
+        182,
+        246
+      ]
+    },
+    {
       "name": "StakedPosition",
       "discriminator": [
         223,
@@ -14975,6 +16011,19 @@
         102,
         30,
         82
+      ]
+    },
+    {
+      "name": "UserFactionWarBetCloseState",
+      "discriminator": [
+        93,
+        216,
+        140,
+        86,
+        78,
+        244,
+        223,
+        223
       ]
     },
     {
@@ -15188,6 +16237,32 @@
       ]
     },
     {
+      "name": "FactionWarAccountsClosed",
+      "discriminator": [
+        79,
+        161,
+        149,
+        162,
+        7,
+        148,
+        176,
+        146
+      ]
+    },
+    {
+      "name": "FactionWarCloseStateInitialized",
+      "discriminator": [
+        141,
+        118,
+        35,
+        114,
+        82,
+        114,
+        222,
+        107
+      ]
+    },
+    {
       "name": "FactionWarMultiplierUpdated",
       "discriminator": [
         47,
@@ -15302,6 +16377,19 @@
         162,
         179,
         64
+      ]
+    },
+    {
+      "name": "GameSessionClosed",
+      "discriminator": [
+        139,
+        61,
+        34,
+        173,
+        204,
+        177,
+        160,
+        190
       ]
     },
     {
@@ -15903,6 +16991,19 @@
       ]
     },
     {
+      "name": "RoundCloseStateInitialized",
+      "discriminator": [
+        207,
+        210,
+        28,
+        229,
+        156,
+        94,
+        8,
+        35
+      ]
+    },
+    {
       "name": "RoundEnded",
       "discriminator": [
         70,
@@ -15991,6 +17092,32 @@
         77,
         185,
         43
+      ]
+    },
+    {
+      "name": "UserFactionWarBetCloseStateInitialized",
+      "discriminator": [
+        189,
+        145,
+        160,
+        101,
+        156,
+        7,
+        134,
+        216
+      ]
+    },
+    {
+      "name": "UserGameBetCloseStateInitialized",
+      "discriminator": [
+        31,
+        239,
+        237,
+        199,
+        75,
+        140,
+        47,
+        163
       ]
     },
     {
@@ -16410,136 +17537,156 @@
     },
     {
       "code": 6080,
+      "name": "InvalidCloseState",
+      "msg": "Close-state account does not match the account being closed"
+    },
+    {
+      "code": 6081,
+      "name": "PendingClaimsRemaining",
+      "msg": "Account cannot close while child claim accounts are still pending"
+    },
+    {
+      "code": 6082,
+      "name": "CloseGraceWindowActive",
+      "msg": "Account cannot close until the grace window has elapsed"
+    },
+    {
+      "code": 6083,
+      "name": "TreasuryClaimsPending",
+      "msg": "Faction treasury claims are still pending for this war"
+    },
+    {
+      "code": 6084,
       "name": "InventoryFull",
       "msg": "Inventory pool is at MAX_INVENTORY capacity"
     },
     {
-      "code": 6081,
+      "code": 6085,
       "name": "InvalidRebornStatus",
       "msg": "Reborn entry is in an invalid status for this operation"
     },
     {
-      "code": 6082,
+      "code": 6086,
       "name": "InvalidMarketplaceProgram",
       "msg": "Marketplace program account does not match cached pubkey"
     },
     {
-      "code": 6083,
+      "code": 6087,
       "name": "InvalidMarketplaceConfig",
       "msg": "Marketplace config account does not match cached pubkey"
     },
     {
-      "code": 6084,
+      "code": 6088,
       "name": "ListingPriceTooLow",
       "msg": "Inventory listing price is below the marketplace minimum"
     },
     {
-      "code": 6085,
+      "code": 6089,
       "name": "ListingPriceExceedsMax",
       "msg": "Listing price exceeds the buyer's max price"
     },
     {
-      "code": 6086,
+      "code": 6090,
       "name": "AssetNotInInventory",
       "msg": "Inventory PDA does not own this asset"
     },
     {
-      "code": 6087,
+      "code": 6091,
       "name": "FloorQueueEmpty",
       "msg": "Floor queue has no entries"
     },
     {
-      "code": 6088,
+      "code": 6092,
       "name": "FloorQueueFull",
       "msg": "Floor queue is full and the new entry is not cheaper than the worst entry"
     },
     {
-      "code": 6089,
+      "code": 6093,
       "name": "AssetAlreadyInQueue",
       "msg": "Asset is already registered in the floor queue"
     },
     {
-      "code": 6090,
+      "code": 6094,
       "name": "NoLiveFloorEntries",
       "msg": "Cached floor entry is stale and was popped; nothing to sweep this tx"
     },
     {
-      "code": 6091,
+      "code": 6095,
       "name": "FloorPriceTooHigh",
       "msg": "Listing price exceeds the attractive ceiling vs current anchor"
     },
     {
-      "code": 6092,
+      "code": 6096,
       "name": "SweepVaultBelowReserve",
       "msg": "Sweep would drop the vault below MIN_SWEEP_RESERVE_LAMPORTS"
     },
     {
-      "code": 6093,
+      "code": 6097,
       "name": "SweepTxCapExceeded",
       "msg": "Sweep tx exceeds the per-tx sweep cap"
     },
     {
-      "code": 6094,
+      "code": 6098,
       "name": "SweepAnchorTooLow",
       "msg": "Sweep anchor is below the minimum sweep threshold (no recent volume)"
     },
     {
-      "code": 6095,
+      "code": 6099,
       "name": "FloorAnchorStale",
       "msg": "Floor anchor is stale; record a fresh floor snapshot before using floor support"
     },
     {
-      "code": 6096,
+      "code": 6100,
       "name": "StaleFloorEntry",
       "msg": "Floor entry data does not match the live marketplace listing"
     },
     {
-      "code": 6097,
+      "code": 6101,
       "name": "ProgramListingNotAllowed",
       "msg": "Program-owned listings cannot be registered in the floor queue"
     },
     {
-      "code": 6098,
+      "code": 6102,
       "name": "ListingNotYetExpirable",
       "msg": "Listing has not yet aged enough for expire_program_listing"
     },
     {
-      "code": 6099,
+      "code": 6103,
       "name": "NotProgramListing",
       "msg": "This ix only operates on program-owned listings"
     },
     {
-      "code": 6100,
+      "code": 6104,
       "name": "NotUserListing",
       "msg": "This ix only operates on user-owned listings"
     },
     {
-      "code": 6101,
+      "code": 6105,
       "name": "SnapshotTooSoon",
       "msg": "Floor snapshot was already recorded within the cadence window"
     },
     {
-      "code": 6102,
+      "code": 6106,
       "name": "SnapshotSwapOutputTooLow",
       "msg": "Oracle snapshot swap output is below the minimum acceptable amount"
     },
     {
-      "code": 6103,
+      "code": 6107,
       "name": "SnapshotPriceDeviationTooHigh",
       "msg": "Oracle snapshot price deviates too far from the recent weighted price"
     },
     {
-      "code": 6104,
+      "code": 6108,
       "name": "AssetStillOwnedByInventory",
       "msg": "Asset is still owned by inventory_pda — sale not actually settled"
     },
     {
-      "code": 6105,
+      "code": 6109,
       "name": "AssetStillListed",
       "msg": "Asset is still held by marketplace escrow — listing has not sold"
     },
     {
-      "code": 6106,
+      "code": 6110,
       "name": "ListingNotInQueue",
       "msg": "Listing is not present in the floor queue"
     }
@@ -17578,6 +18725,90 @@
           {
             "name": "reborn_amount",
             "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FactionWarAccountsClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "war_id",
+            "type": "u64"
+          },
+          {
+            "name": "rent_payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "caller",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FactionWarCloseState",
+      "docs": [
+        "Upgrade-safe close tracker for a faction-war cycle.",
+        "",
+        "Tracks the rent payer for `FactionWarState` + `FactionWarSettlement`, plus",
+        "live child accounts that must close first. The child counters are maintained",
+        "in sidecars so existing mainnet war/state accounts do not need a layout",
+        "migration."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "war_id",
+            "type": "u64"
+          },
+          {
+            "name": "rent_payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "open_game_session_count",
+            "type": "u64"
+          },
+          {
+            "name": "pending_war_claim_count",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FactionWarCloseStateInitialized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "war_id",
+            "type": "u64"
+          },
+          {
+            "name": "close_state",
+            "type": "pubkey"
+          },
+          {
+            "name": "rent_payer",
+            "type": "pubkey"
           },
           {
             "name": "timestamp",
@@ -18996,6 +20227,34 @@
               "`settle_round` rather than touched per-bet — keeps JoinBets fast."
             ],
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "GameSessionClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round_id",
+            "type": "u64"
+          },
+          {
+            "name": "game_session",
+            "type": "pubkey"
+          },
+          {
+            "name": "rent_payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "caller",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
           }
         ]
       }
@@ -22286,6 +23545,63 @@
       }
     },
     {
+      "name": "RoundCloseState",
+      "docs": [
+        "Upgrade-safe close tracker for a round `GameSession`.",
+        "",
+        "This sidecar exists because the program is live on mainnet: appending fields",
+        "to `GameSession` would make old accounts fail Borsh deserialization. New",
+        "rounds create this PDA beside the session. It records who paid the session",
+        "rent and how many `UserGameBet` accounts still need to close before the",
+        "round session can be swept."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "round_id",
+            "type": "u64"
+          },
+          {
+            "name": "rent_payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "pending_claim_count",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RoundCloseStateInitialized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round_id",
+            "type": "u64"
+          },
+          {
+            "name": "close_state",
+            "type": "pubkey"
+          },
+          {
+            "name": "rent_payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
       "name": "RoundEnded",
       "docs": [
         "Event emitted when a round ends (after winner selection and reward calculations).",
@@ -22861,6 +24177,70 @@
       }
     },
     {
+      "name": "UserFactionWarBetCloseState",
+      "docs": [
+        "Upgrade-safe close tracker for a `UserFactionWarBets` account.",
+        "",
+        "Cycle-claim rent refunds go to the account that paid to initialize the",
+        "per-user war PDA instead of the account that happens to submit the claim.",
+        "`open_round_claim_count` keeps the per-cycle war PDA alive until every",
+        "round claim that still depends on it has closed."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "war_id",
+            "type": "u64"
+          },
+          {
+            "name": "rent_payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "open_round_claim_count",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "UserFactionWarBetCloseStateInitialized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "war_id",
+            "type": "u64"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "close_state",
+            "type": "pubkey"
+          },
+          {
+            "name": "rent_payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
       "name": "UserFactionWarBets",
       "docs": [
         "User FactionWar Bets PDA (Seed: `[b\"user-faction-war\", user_pubkey, war_id_u64_le]`)",
@@ -23069,6 +24449,34 @@
               "0 = no mutation, 1 = Evolution, 2 = Power, 3 = Trait"
             ],
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "UserGameBetCloseStateInitialized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round_id",
+            "type": "u64"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "close_state",
+            "type": "pubkey"
+          },
+          {
+            "name": "rent_payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
           }
         ]
       }

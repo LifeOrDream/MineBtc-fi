@@ -188,9 +188,20 @@ pub const MAX_FACTION_NAME_LENGTH: usize = 16; // Maximum length of faction name
 /// This keeps the entropy slot after the round closes under normal slot timing, while the
 /// finalize path can still fall back to the latest available slot hash if the scheduled hash
 /// ages out before anybody settles the round.
-pub const ROUND_ENTROPY_SLOTS_PER_SECOND_ESTIMATE: u64 = 4;
+///
+/// Tuned to mainnet reality: observed slot duration is ~400ms (2.5 slots/sec) under typical
+/// load, occasionally 360ms during burst windows. A value of `3` schedules the entropy slot
+/// `round_duration_seconds * 3` slots ahead — at 400ms/slot that's `round_duration * 1.2s`,
+/// landing comfortably after bets close. At the fastest-realistic 360ms/slot it still lands
+/// `round_duration * 1.08s` later, i.e. ~5s past round-end on a 60s round — safe for MEV.
+///
+/// History: was `4` (assumed 250ms/slot, Solana's theoretical maximum). That overestimated
+/// real slot throughput by ~60%, adding ~38s of dead wait time per 60s round on mainnet.
+pub const ROUND_ENTROPY_SLOTS_PER_SECOND_ESTIMATE: u64 = 3;
 /// Extra slot buffer added on top of the estimated end slot before sampling entropy.
-pub const ROUND_PRIMARY_ENTROPY_DELAY_SLOTS: u64 = 8;
+/// 4 slots ≈ 1.6s at typical mainnet slot rate — enough headroom for the unpredictability
+/// guarantee while keeping the cranker's post-round-end wait short.
+pub const ROUND_PRIMARY_ENTROPY_DELAY_SLOTS: u64 = 4;
 
 // ----- [SEEDS] -----
 
@@ -234,6 +245,8 @@ pub const LIQUIDITY_CUSTODIAN_AUTHORITY_SEED: &[u8] = b"lp-custodian-authority";
 
 pub const GAME_SESSION_SEED: &[u8] = b"game-session"; // Seed: [b"game-session", round_id_u64]
 pub const USER_GAME_BET_SEED: &[u8] = b"user-bet"; // Seed: [b"user-bet", user_pubkey, round_id_u64]
+pub const ROUND_CLOSE_STATE_SEED: &[u8] = b"round-close-state"; // Seed: [b"round-close-state", round_id_u64]
+pub const USER_GAME_BET_CLOSE_STATE_SEED: &[u8] = b"user-bet-close-state"; // Seed: [b"user-bet-close-state", user_pubkey, round_id_u64]
 pub const AUTOMINER_VAULT_SEED: &[u8] = b"autominer";
 pub const AUTOMINER_CUSTODY_SEED: &[u8] = b"autominer-custody";
 pub const JACKPOT_POT_VAULT_SEED: &[u8] = b"jackpot-pot";
@@ -247,6 +260,8 @@ pub const FACTION_WAR_CONFIG_SEED: &[u8] = b"faction-war-config";
 pub const FACTION_WAR_STATE_SEED: &[u8] = b"faction-war"; // Seed: [b"faction-war", war_id_u64]
 pub const FACTION_WAR_SETTLEMENT_SEED: &[u8] = b"faction-war-settlement"; // Seed: [b"faction-war-settlement", war_id_u64]
 pub const USER_FACTION_WAR_BETS_SEED: &[u8] = b"user-faction-war"; // Seed: [b"user-faction-war", user_pubkey, war_id_u64]
+pub const FACTION_WAR_CLOSE_STATE_SEED: &[u8] = b"faction-war-close-state"; // Seed: [b"faction-war-close-state", war_id_u64]
+pub const USER_FACTION_WAR_BET_CLOSE_STATE_SEED: &[u8] = b"user-war-close-state"; // Seed: [b"user-war-close-state", user_pubkey, war_id_u64]
 pub const FACTION_WAR_SOL_VAULT_SEED: &[u8] = b"faction-war-sol-vault";
 
 // PDAs for Tax system
@@ -273,8 +288,9 @@ pub const FLOOR_HISTORY_SEED: &[u8] = b"floor-history";
 pub const MAX_STAKED_HASHBEASTS: usize = 3; // Maximum number of hashbeasts a user can stake
 pub const MAX_FREE_HASHBEAST_MINTS_PER_USER: u8 = 5;
 
-pub const MAX_CALLER_COMPENSATION: u64 = 50_000; // 0.00005 SOL max keeper compensation per autominer round
-pub const TICKET_AUTOMINER_CALLER_COMPENSATION: u64 = 50_000; // 0.00005 SOL keeper reserve for each ticket autominer round
+pub const AUTOMINER_CALLER_COMPENSATION: u64 = 50_000; // 0.00005 SOL fixed keeper compensation per autominer round
+pub const TICKET_AUTOMINER_CALLER_COMPENSATION: u64 = AUTOMINER_CALLER_COMPENSATION; // same fixed reserve in ticket mode
+pub const GAME_SESSION_CLOSE_GRACE_ROUNDS: u64 = 10; // keep a short read window before rent sweeping
 pub const MIN_SOL_BET_PER_POSITION: u64 = 100_000; // 0.0001 SOL minimum per country-direction bet
 
 // ==========  REBIRTH / LOOTBOX / MARKETPLACE TUNABLES ========== //
@@ -1156,6 +1172,50 @@ impl GameSession {
         8; // sol_reward_pool_accumulated
 }
 
+/// Upgrade-safe close tracker for a round `GameSession`.
+///
+/// This sidecar exists because the program is live on mainnet: appending fields
+/// to `GameSession` would make old accounts fail Borsh deserialization. New
+/// rounds create this PDA beside the session. It records who paid the session
+/// rent and how many `UserGameBet` accounts still need to close before the
+/// round session can be swept.
+#[account]
+pub struct RoundCloseState {
+    pub bump: u8,
+    pub round_id: u64,
+    pub rent_payer: Pubkey,
+    pub pending_claim_count: u64,
+}
+
+impl RoundCloseState {
+    pub const LEN: usize = DISCRIMINATOR_SIZE +
+        1 +     // bump
+        8 +     // round_id
+        32 +    // rent_payer
+        8; // pending_claim_count
+}
+
+/// Upgrade-safe close tracker for a `UserGameBet`.
+///
+/// `UserGameBet` rent can be paid by the user (manual bet) or by a keeper
+/// (autominer bet). This sidecar pins the original payer so claim-time close
+/// refunds cannot be stolen by whichever account happens to submit the claim.
+#[account]
+pub struct UserGameBetCloseState {
+    pub bump: u8,
+    pub owner: Pubkey,
+    pub round_id: u64,
+    pub rent_payer: Pubkey,
+}
+
+impl UserGameBetCloseState {
+    pub const LEN: usize = DISCRIMINATOR_SIZE +
+        1 +     // bump
+        32 +    // owner
+        8 +     // round_id
+        32; // rent_payer
+}
+
 // ========================================================================================
 // ============================= 2. USER-SPECIFIC ACCOUNTS ==============================
 // ========================================================================================
@@ -1972,6 +2032,30 @@ impl FactionWarSettlement {
     }
 }
 
+/// Upgrade-safe close tracker for a faction-war cycle.
+///
+/// Tracks the rent payer for `FactionWarState` + `FactionWarSettlement`, plus
+/// live child accounts that must close first. The child counters are maintained
+/// in sidecars so existing mainnet war/state accounts do not need a layout
+/// migration.
+#[account]
+pub struct FactionWarCloseState {
+    pub bump: u8,
+    pub war_id: u64,
+    pub rent_payer: Pubkey,
+    pub open_game_session_count: u64,
+    pub pending_war_claim_count: u64,
+}
+
+impl FactionWarCloseState {
+    pub const LEN: usize = DISCRIMINATOR_SIZE +
+        1 +     // bump
+        8 +     // war_id
+        32 +    // rent_payer
+        8 +     // open_game_session_count
+        8; // pending_war_claim_count
+}
+
 /// User FactionWar Bets PDA (Seed: `[b"user-faction-war", user_pubkey, war_id_u64_le]`)
 /// Tracks how much weighted stake a user bet on each faction's direction during a
 /// specific faction_war. These weights power the global base cycle rewards.
@@ -2021,6 +2105,30 @@ impl UserFactionWarBets {
             sol_direction_bets: [[0u64; PredictionDirection::COUNT]; NUM_FACTIONS],
         }
     }
+}
+
+/// Upgrade-safe close tracker for a `UserFactionWarBets` account.
+///
+/// Cycle-claim rent refunds go to the account that paid to initialize the
+/// per-user war PDA instead of the account that happens to submit the claim.
+/// `open_round_claim_count` keeps the per-cycle war PDA alive until every
+/// round claim that still depends on it has closed.
+#[account]
+pub struct UserFactionWarBetCloseState {
+    pub bump: u8,
+    pub owner: Pubkey,
+    pub war_id: u64,
+    pub rent_payer: Pubkey,
+    pub open_round_claim_count: u64,
+}
+
+impl UserFactionWarBetCloseState {
+    pub const LEN: usize = DISCRIMINATOR_SIZE +
+        1 +     // bump
+        32 +    // owner
+        8 +     // war_id
+        32 +    // rent_payer
+        8; // open_round_claim_count
 }
 
 // ========================================================================================

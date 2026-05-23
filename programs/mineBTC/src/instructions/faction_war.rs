@@ -907,6 +907,13 @@ pub fn initialize_war_internal(ctx: Context<InitializeFactionWar>, war_id: u64) 
     war_settlement.resolved_directions =
         [PredictionDirection::Neutral.as_index() as u8; NUM_FACTIONS];
 
+    let war_close_state = &mut ctx.accounts.war_close_state;
+    war_close_state.bump = ctx.bumps.war_close_state;
+    war_close_state.war_id = war_id;
+    war_close_state.rent_payer = ctx.accounts.authority.key();
+    war_close_state.open_game_session_count = 0;
+    war_close_state.pending_war_claim_count = 0;
+
     tax_config.unassigned_war_treasury_amount = 0;
 
     let lp_ops = ctx.accounts.dbtc_mining.pol_stats.lp_operations_count;
@@ -924,6 +931,12 @@ pub fn initialize_war_internal(ctx: Context<InitializeFactionWar>, war_id: u64) 
         prev_ranks: start_ranks,
         settle_at_lp_op_count: settle_cycle,
         treasury_reward_base_amount: unassigned,
+    });
+    emit!(FactionWarCloseStateInitialized {
+        war_id,
+        close_state: war_close_state.key(),
+        rent_payer: ctx.accounts.authority.key(),
+        timestamp: Clock::get()?.unix_timestamp,
     });
 
     msg!(
@@ -1288,9 +1301,31 @@ pub fn claim_war_rewards_internal(ctx: Context<ClaimFactionWarRewards>, war_id: 
     require!(war_state.war_id == war_id, ErrorCode::InvalidState);
     require!(war_settlement.war_id == war_id, ErrorCode::InvalidState);
     require!(user_war_bets.war_id == war_id, ErrorCode::InvalidState);
+    require!(
+        ctx.accounts.war_close_state.war_id == war_id,
+        ErrorCode::InvalidCloseState
+    );
     require!(war_state.stage == 1, ErrorCode::FactionWarNotSettled);
     msg!("✅ [faction_war.claim_war_rewards_internal] stage==1 check passed");
     require_keys_eq!(player_data.owner, owner_key, ErrorCode::InvalidOwner);
+    require_keys_eq!(
+        ctx.accounts.user_war_bet_close_state.owner,
+        owner_key,
+        ErrorCode::InvalidCloseState
+    );
+    require!(
+        ctx.accounts.user_war_bet_close_state.war_id == war_id,
+        ErrorCode::InvalidCloseState
+    );
+    require_keys_eq!(
+        ctx.accounts.user_war_bet_rent_payer.key(),
+        ctx.accounts.user_war_bet_close_state.rent_payer,
+        ErrorCode::InvalidCloseState
+    );
+    require!(
+        ctx.accounts.user_war_bet_close_state.open_round_claim_count == 0,
+        ErrorCode::PendingClaimsRemaining
+    );
     msg!("✅ [faction_war.claim_war_rewards_internal] owner check passed");
 
     let active_factions = war_state.faction_count as usize;
@@ -1599,6 +1634,12 @@ pub fn claim_war_rewards_internal(ctx: Context<ClaimFactionWarRewards>, war_id: 
         .pending_war_claims
         .checked_sub(1)
         .ok_or(ErrorCode::ArithmeticOverflow)?;
+    ctx.accounts.war_close_state.pending_war_claim_count = ctx
+        .accounts
+        .war_close_state
+        .pending_war_claim_count
+        .checked_sub(1)
+        .ok_or(ErrorCode::ArithmeticOverflow)?;
     msg!(
         "⚔️ [faction_war.claim_war_rewards_internal] pending_war_claims: {} -> {}",
         old_pending,
@@ -1634,6 +1675,64 @@ pub fn claim_war_rewards_internal(ctx: Context<ClaimFactionWarRewards>, war_id: 
     });
 
     msg!("✅ [faction_war.claim_war_rewards_internal] claim complete");
+    Ok(())
+}
+
+/// Close a fully-settled faction-war cycle after all per-user war claims,
+/// child game sessions, and faction treasury claims are closed.
+pub fn close_faction_war_accounts_internal(
+    ctx: Context<CloseFactionWarAccounts>,
+    war_id: u64,
+) -> Result<()> {
+    crate::log_fn!("faction_war", "close_faction_war_accounts_internal");
+    let war_state = &ctx.accounts.war_state;
+    let war_settlement = &ctx.accounts.war_settlement;
+    let war_close_state = &ctx.accounts.war_close_state;
+
+    require!(war_state.war_id == war_id, ErrorCode::InvalidState);
+    require!(war_settlement.war_id == war_id, ErrorCode::InvalidState);
+    require!(
+        war_close_state.war_id == war_id,
+        ErrorCode::InvalidCloseState
+    );
+    require!(war_state.stage == 1, ErrorCode::FactionWarNotSettled);
+    require!(
+        ctx.accounts.war_config.current_war_id > war_id,
+        ErrorCode::FactionWarNotSettled
+    );
+    require_keys_eq!(
+        ctx.accounts.rent_payer.key(),
+        war_close_state.rent_payer,
+        ErrorCode::InvalidCloseState
+    );
+    require!(
+        war_close_state.open_game_session_count == 0,
+        ErrorCode::PendingClaimsRemaining
+    );
+    require!(
+        war_close_state.pending_war_claim_count == 0,
+        ErrorCode::PendingClaimsRemaining
+    );
+
+    let active_factions = war_state.faction_count as usize;
+    require!(active_factions <= NUM_FACTIONS, ErrorCode::InvalidState);
+    let required_mask: u16 = if active_factions == 0 {
+        0
+    } else {
+        ((1u32 << active_factions) - 1) as u16
+    };
+    require!(
+        (war_settlement.treasury_claimed_bitmap & required_mask) == required_mask,
+        ErrorCode::TreasuryClaimsPending
+    );
+
+    emit!(FactionWarAccountsClosed {
+        war_id,
+        rent_payer: ctx.accounts.rent_payer.key(),
+        caller: ctx.accounts.caller.key(),
+        timestamp: Clock::get()?.unix_timestamp,
+    });
+
     Ok(())
 }
 
@@ -1697,6 +1796,15 @@ pub struct InitializeFactionWar<'info> {
         bump,
     )]
     pub war_settlement: Box<Account<'info, FactionWarSettlement>>,
+
+    #[account(
+        init,
+        payer = authority,
+        space = FactionWarCloseState::LEN,
+        seeds = [FACTION_WAR_CLOSE_STATE_SEED, &war_id.to_le_bytes()],
+        bump,
+    )]
+    pub war_close_state: Box<Account<'info, FactionWarCloseState>>,
 
     #[account(
         mut,
@@ -1789,6 +1897,47 @@ pub struct SettleFactionWar<'info> {
 
 #[derive(Accounts)]
 #[instruction(war_id: u64)]
+pub struct CloseFactionWarAccounts<'info> {
+    #[account(
+        seeds = [FACTION_WAR_CONFIG_SEED],
+        bump = war_config.bump,
+    )]
+    pub war_config: Box<Account<'info, FactionWarConfig>>,
+
+    #[account(
+        mut,
+        close = rent_payer,
+        seeds = [FACTION_WAR_STATE_SEED, &war_id.to_le_bytes()],
+        bump = war_state.bump,
+    )]
+    pub war_state: Box<Account<'info, FactionWarState>>,
+
+    #[account(
+        mut,
+        close = rent_payer,
+        seeds = [FACTION_WAR_SETTLEMENT_SEED, &war_id.to_le_bytes()],
+        bump = war_settlement.bump,
+    )]
+    pub war_settlement: Box<Account<'info, FactionWarSettlement>>,
+
+    #[account(
+        mut,
+        close = rent_payer,
+        seeds = [FACTION_WAR_CLOSE_STATE_SEED, &war_id.to_le_bytes()],
+        bump = war_close_state.bump,
+    )]
+    pub war_close_state: Box<Account<'info, FactionWarCloseState>>,
+
+    /// CHECK: Must equal `war_close_state.rent_payer`; handler validates.
+    #[account(mut)]
+    pub rent_payer: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub caller: Signer<'info>,
+}
+
+#[derive(Accounts)]
+#[instruction(war_id: u64)]
 pub struct ClaimFactionWarRewards<'info> {
     #[account(
         seeds = [FACTION_WAR_STATE_SEED, &war_id.to_le_bytes()],
@@ -1804,11 +1953,33 @@ pub struct ClaimFactionWarRewards<'info> {
 
     #[account(
         mut,
-        close = cranker,
+        seeds = [FACTION_WAR_CLOSE_STATE_SEED, &war_id.to_le_bytes()],
+        bump = war_close_state.bump,
+        constraint = war_close_state.war_id == war_id @ ErrorCode::InvalidCloseState,
+    )]
+    pub war_close_state: Box<Account<'info, FactionWarCloseState>>,
+
+    /// CHECK: Receives the `UserFactionWarBets` rent refund; handler validates.
+    #[account(mut)]
+    pub user_war_bet_rent_payer: UncheckedAccount<'info>,
+
+    #[account(
+        mut,
+        close = user_war_bet_rent_payer,
         seeds = [USER_FACTION_WAR_BETS_SEED, user_war_bets.owner.as_ref(), &war_id.to_le_bytes()],
         bump,
     )]
     pub user_war_bets: Box<Account<'info, UserFactionWarBets>>,
+
+    #[account(
+        mut,
+        close = user_war_bet_rent_payer,
+        seeds = [USER_FACTION_WAR_BET_CLOSE_STATE_SEED, user_war_bets.owner.as_ref(), &war_id.to_le_bytes()],
+        bump = user_war_bet_close_state.bump,
+        constraint = user_war_bet_close_state.owner == user_war_bets.owner @ ErrorCode::InvalidCloseState,
+        constraint = user_war_bet_close_state.war_id == war_id @ ErrorCode::InvalidCloseState,
+    )]
+    pub user_war_bet_close_state: Box<Account<'info, UserFactionWarBetCloseState>>,
 
     #[account(
         mut,
