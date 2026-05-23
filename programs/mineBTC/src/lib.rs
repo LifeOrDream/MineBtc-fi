@@ -564,18 +564,6 @@ pub mod minebtc {
         game::int_close_game_session(ctx, round_id)
     }
 
-    /// Transitional admin-only cleanup for pre-sidecar game sessions.
-    ///
-    /// This is intentionally blunt: use it only during the one-time mainnet
-    /// migration, after deciding old round claims are no longer needed.
-    pub fn admin_close_legacy_game_session(
-        ctx: Context<AdminCloseLegacyGameSession>,
-        round_id: u64,
-    ) -> Result<()> {
-        crate::log_fn!("lib", "admin_close_legacy_game_session");
-        game::admin_close_legacy_game_session_internal(ctx, round_id)
-    }
-
     /// DONE -::- Finalize the current round using scheduled slot-hash entropy.
     pub fn end_round(ctx: Context<EndRound>) -> Result<()> {
         crate::log_fn!("lib", "end_round");
@@ -607,96 +595,6 @@ pub mod minebtc {
     ) -> Result<()> {
         crate::log_fn!("lib", "close_faction_war_accounts");
         faction_war::close_faction_war_accounts_internal(ctx, war_id)
-    }
-
-    /// Transitional admin-only cleanup for pre-sidecar user round-bet PDAs.
-    ///
-    /// Closes the account rent to `rent_recipient` and decrements the owner's
-    /// pending-round counter if it is still non-zero. Use only in the one-time
-    /// legacy cleanup upgrade.
-    pub fn admin_close_legacy_user_game_bet(
-        ctx: Context<AdminCloseLegacyUserGameBet>,
-        round_id: u64,
-    ) -> Result<()> {
-        crate::log_fn!("lib", "admin_close_legacy_user_game_bet");
-        faction_war::admin_close_legacy_user_game_bet_internal(ctx, round_id)
-    }
-
-    /// Transitional admin-only initialization of the close sidecar for the
-    /// already-active pre-upgrade faction war. Needed so future `start_round`
-    /// calls can increment the normal close counter.
-    pub fn admin_init_legacy_faction_war_close_state(
-        ctx: Context<AdminInitLegacyFactionWarCloseState>,
-        war_id: u64,
-        open_game_session_count: u64,
-        pending_war_claim_count: u64,
-        rent_payer: Pubkey,
-    ) -> Result<()> {
-        crate::log_fn!("lib", "admin_init_legacy_faction_war_close_state");
-        faction_war::admin_init_legacy_faction_war_close_state_internal(
-            ctx,
-            war_id,
-            open_game_session_count,
-            pending_war_claim_count,
-            rent_payer,
-        )
-    }
-
-    /// Transitional admin-only initialization of close sidecars for
-    /// pre-upgrade user faction-war bet PDAs. Needed for already-active users
-    /// to keep betting in the active war and claim cycle rewards after settle.
-    pub fn admin_init_legacy_user_war_bet_close_state(
-        ctx: Context<AdminInitLegacyUserWarBetCloseState>,
-        war_id: u64,
-        owner: Pubkey,
-        open_round_claim_count: u64,
-        rent_payer: Pubkey,
-    ) -> Result<()> {
-        crate::log_fn!("lib", "admin_init_legacy_user_war_bet_close_state");
-        faction_war::admin_init_legacy_user_war_bet_close_state_internal(
-            ctx,
-            war_id,
-            owner,
-            open_round_claim_count,
-            rent_payer,
-        )
-    }
-
-    /// Transitional admin-only cleanup for pre-sidecar user faction-war PDAs.
-    pub fn admin_close_legacy_user_war_bets(
-        ctx: Context<AdminCloseLegacyUserWarBets>,
-        war_id: u64,
-    ) -> Result<()> {
-        crate::log_fn!("lib", "admin_close_legacy_user_war_bets");
-        faction_war::admin_close_legacy_user_war_bets_internal(ctx, war_id)
-    }
-
-    /// Admin override for the war-level close-state counters. Used during the
-    /// post-upgrade migration if admin_init_legacy_faction_war_close_state
-    /// was originally seeded with incorrect counts.
-    pub fn admin_set_war_close_state_counts(
-        ctx: Context<AdminSetWarCloseStateCounts>,
-        war_id: u64,
-        open_game_session_count: u64,
-        pending_war_claim_count: u64,
-    ) -> Result<()> {
-        crate::log_fn!("lib", "admin_set_war_close_state_counts");
-        faction_war::admin_set_war_close_state_counts_internal(
-            ctx,
-            war_id,
-            open_game_session_count,
-            pending_war_claim_count,
-        )
-    }
-
-    /// Transitional admin-only cleanup for settled pre-sidecar faction-war
-    /// state + settlement accounts.
-    pub fn admin_close_legacy_faction_war_accounts(
-        ctx: Context<AdminCloseLegacyFactionWarAccounts>,
-        war_id: u64,
-    ) -> Result<()> {
-        crate::log_fn!("lib", "admin_close_legacy_faction_war_accounts");
-        faction_war::admin_close_legacy_faction_war_accounts_internal(ctx, war_id)
     }
 
     /// DONE -::- Settle faction_war: finalize gameplay-score rankings and compute reward pools.
@@ -840,20 +738,6 @@ pub mod minebtc {
     pub fn claim_round_rewards(ctx: Context<ClaimRoundRewards>, round_id: u64) -> Result<()> {
         crate::log_fn!("lib", "claim_round_rewards");
         user::internal_claim_round_rewards(round_id, ctx)
-    }
-
-    /// Transitional rescue path for pre-sidecar round claims whose
-    /// UserFactionWarBets PDA was already closed by an old war claim.
-    ///
-    /// It is permissionless and pays rewards/rent only to the original user.
-    /// Gated to legacy sidecar-less, already-settled war rounds so it cannot
-    /// bypass the new close-counter lifecycle.
-    pub fn legacy_claim_round_rewards(
-        ctx: Context<LegacyClaimRoundRewards>,
-        round_id: u64,
-    ) -> Result<()> {
-        crate::log_fn!("lib", "legacy_claim_round_rewards");
-        user::legacy_claim_round_rewards_internal(round_id, ctx)
     }
 
     /// Claim autominer rewards with auto-reload (keeper instruction)

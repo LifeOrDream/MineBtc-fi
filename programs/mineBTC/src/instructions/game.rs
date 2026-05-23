@@ -328,39 +328,6 @@ pub fn int_close_game_session(ctx: Context<CloseGameSession>, round_id: u64) -> 
     Ok(())
 }
 
-/// One-time admin cleanup for `GameSession` accounts that were created before
-/// round close sidecars existed. This deliberately does not check user bet
-/// counters because those counters did not exist for legacy rounds; the
-/// migration runner must close/handle any legacy `UserGameBet` accounts first.
-pub fn admin_close_legacy_game_session_internal(
-    ctx: Context<AdminCloseLegacyGameSession>,
-    round_id: u64,
-) -> Result<()> {
-    crate::log_fn!("game", "admin_close_legacy_game_session_internal");
-    require!(
-        ctx.accounts.global_config.ext_authority == ctx.accounts.authority.key(),
-        ErrorCode::Unauthorized
-    );
-    require!(
-        ctx.accounts.game_session.round_id == round_id,
-        ErrorCode::InvalidRound
-    );
-    require!(
-        ctx.accounts.game_session.stage == 2,
-        ErrorCode::InvalidStage
-    );
-
-    emit!(GameSessionClosed {
-        round_id,
-        game_session: ctx.accounts.game_session.key(),
-        rent_payer: ctx.accounts.rent_recipient.key(),
-        caller: ctx.accounts.authority.key(),
-        timestamp: Clock::get()?.unix_timestamp,
-    });
-
-    Ok(())
-}
-
 fn slot_hash_entry_count(data: &[u8]) -> Result<usize> {
     let length_bytes: [u8; 8] = data
         .get(..8)
@@ -1684,31 +1651,6 @@ pub struct CloseGameSession<'info> {
 
     #[account(mut)]
     pub caller: Signer<'info>,
-}
-
-#[derive(Accounts)]
-#[instruction(round_id: u64)]
-pub struct AdminCloseLegacyGameSession<'info> {
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
-        bump = global_config.bump,
-    )]
-    pub global_config: Box<Account<'info, GlobalConfig>>,
-
-    #[account(
-        mut,
-        close = rent_recipient,
-        seeds = [GAME_SESSION_SEED.as_ref(), &round_id.to_le_bytes()],
-        bump = game_session.bump,
-    )]
-    pub game_session: Box<Account<'info, GameSession>>,
-
-    /// CHECK: Receives legacy account rent during the one-time admin sweep.
-    #[account(mut)]
-    pub rent_recipient: UncheckedAccount<'info>,
-
-    #[account(mut)]
-    pub authority: Signer<'info>,
 }
 
 #[derive(Accounts)]
