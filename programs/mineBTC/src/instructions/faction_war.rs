@@ -1955,6 +1955,37 @@ pub fn admin_init_legacy_user_war_bet_close_state_internal(
     Ok(())
 }
 
+/// One-shot admin override for the war-level close-state counters. The
+/// counters are normally maintained by start_round / close_game_session and
+/// claim_war_rewards, but the post-upgrade migration path needs a way to
+/// patch them when admin_init_legacy_faction_war_close_state was called with
+/// an incorrect snapshot (e.g. before the per-user war_bets backfill count
+/// was finalized). Admin-only; counters are set absolutely, not adjusted.
+pub fn admin_set_war_close_state_counts_internal(
+    ctx: Context<AdminSetWarCloseStateCounts>,
+    war_id: u64,
+    open_game_session_count: u64,
+    pending_war_claim_count: u64,
+) -> Result<()> {
+    crate::log_fn!(
+        "faction_war",
+        "admin_set_war_close_state_counts_internal"
+    );
+    require!(
+        ctx.accounts.global_config.ext_authority == ctx.accounts.authority.key(),
+        ErrorCode::Unauthorized
+    );
+    require!(
+        ctx.accounts.war_close_state.war_id == war_id,
+        ErrorCode::InvalidCloseState
+    );
+    let cs = &mut ctx.accounts.war_close_state;
+    cs.open_game_session_count = open_game_session_count;
+    cs.pending_war_claim_count = pending_war_claim_count;
+
+    Ok(())
+}
+
 // ========================================================================================
 // ============================= ACCOUNTS =================================================
 // ========================================================================================
@@ -2339,6 +2370,25 @@ pub struct AdminInitLegacyUserWarBetCloseState<'info> {
     pub authority: Signer<'info>,
 
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(war_id: u64)]
+pub struct AdminSetWarCloseStateCounts<'info> {
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED.as_ref()],
+        bump = global_config.bump,
+    )]
+    pub global_config: Box<Account<'info, GlobalConfig>>,
+
+    #[account(
+        mut,
+        seeds = [FACTION_WAR_CLOSE_STATE_SEED, &war_id.to_le_bytes()],
+        bump = war_close_state.bump,
+    )]
+    pub war_close_state: Box<Account<'info, FactionWarCloseState>>,
+
+    pub authority: Signer<'info>,
 }
 
 #[derive(Accounts)]

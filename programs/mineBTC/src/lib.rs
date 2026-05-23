@@ -671,6 +671,24 @@ pub mod minebtc {
         faction_war::admin_close_legacy_user_war_bets_internal(ctx, war_id)
     }
 
+    /// Admin override for the war-level close-state counters. Used during the
+    /// post-upgrade migration if admin_init_legacy_faction_war_close_state
+    /// was originally seeded with incorrect counts.
+    pub fn admin_set_war_close_state_counts(
+        ctx: Context<AdminSetWarCloseStateCounts>,
+        war_id: u64,
+        open_game_session_count: u64,
+        pending_war_claim_count: u64,
+    ) -> Result<()> {
+        crate::log_fn!("lib", "admin_set_war_close_state_counts");
+        faction_war::admin_set_war_close_state_counts_internal(
+            ctx,
+            war_id,
+            open_game_session_count,
+            pending_war_claim_count,
+        )
+    }
+
     /// Transitional admin-only cleanup for settled pre-sidecar faction-war
     /// state + settlement accounts.
     pub fn admin_close_legacy_faction_war_accounts(
